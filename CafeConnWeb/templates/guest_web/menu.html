@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}CafeConnect Menu{% endblock %}
+
+{% block content %}
+<section class="toolbar">
+  <div>
+    <p class="eyebrow">CafeConnect</p>
+    <h1>Меню</h1>
+    <p class="subtle">Выберите стол и блюда. Заказ сразу уйдет персоналу.</p>
+  </div>
+  <a class="button" href="/api/menu-items/">API</a>
+</section>
+
+<form class="order-layout" method="post" action="{% url 'guest_web:create-order' %}">
+  {% csrf_token %}
+  <aside class="order-panel">
+    <h2>Стол и заказ</h2>
+    <label>
+      Стол
+      <select name="table" required>
+        <option value="">Выберите стол</option>
+        {% for table in tables %}
+          <option value="{{ table.id }}">{{ table }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Имя гостя
+      <input name="guest_name" placeholder="Например, Алекс">
+    </label>
+    <label>
+      Комментарий
+      <textarea name="notes" rows="4" placeholder="Без сахара, аллергии, пожелания"></textarea>
+    </label>
+    <button class="button full" type="submit">Отправить заказ</button>
+  </aside>
+
+  <section>
+    <div class="chips" aria-label="Категории">
+      <span class="chip active">Все</span>
+      {% for category in categories %}
+        <span class="chip">{{ category }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="grid">
+      {% for item in menu_items %}
+        <article class="card menu-card">
+          {% if item.image_url %}
+            <img class="card-image" src="{{ item.image_url }}" alt="{{ item.name }}">
+          {% endif %}
+          <div class="card-body">
+            <p class="eyebrow">{{ item.category }}</p>
+            <h2>{{ item.name }}</h2>
+            <p>{{ item.description|default:"Свежая позиция из меню." }}</p>
+            <div class="menu-card-footer">
+              <strong>{{ item.price }} EUR</strong>
+              <label class="check-pill">
+                <input type="checkbox" name="items" value="{{ item.id }}">
+                <span>В заказ</span>
+              </label>
+            </div>
+            <label class="quantity-label">
+              Количество
+              <input type="number" min="1" value="1" name="quantity_{{ item.id }}">
+            </label>
+          </div>
+        </article>
+      {% empty %}
+        <article class="empty-state">
+          <h2>Меню пока пустое</h2>
+          <p>Добавьте блюда через /system-admin/ или REST API.</p>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</form>
+
+<section class="guest-actions">
+  <div>
+    <p class="eyebrow">Быстрая связь</p>
+    <h2>Сигнал персоналу</h2>
+    <p class="subtle">Для проверки realtime: выберите стол и отправьте событие официанту.</p>
+  </div>
+  <form class="signal-grid" method="post" action="{% url 'guest_web:create-attention' %}">
+    {% csrf_token %}
+    <select name="table" required>
+      <option value="">Стол</option>
+      {% for table in tables %}
+        <option value="{{ table.id }}">{{ table }}</option>
+      {% endfor %}
+    </select>
+    <input name="reason" placeholder="Комментарий, если нужен">
+    <button class="signal-button signal-blue" name="signal_type" value="arrived" type="submit">Я пришел</button>
+    <button class="signal-button signal-amber" name="signal_type" value="call_waiter" type="submit">Позвать официанта</button>
+    <button class="signal-button signal-purple" name="signal_type" value="bill_request" type="submit">Попросить счет</button>
+  </form>
+</section>
+{% endblock %}

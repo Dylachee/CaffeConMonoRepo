@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CafeConnect Menu</title>
+    <link rel="preconnect" href="https://images.unsplash.com" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell" aria-live="polite">
+      <section id="menuView" class="screen screen-active">
+        <header class="top-bar">
+          <div>
+            <p class="time-label">9:41</p>
+            <h1>CafeConnect</h1>
+          </div>
+          <button class="table-pill" type="button" id="statusShortcut">Table <span data-table-number>04</span></button>
+        </header>
+
+        <label class="search-wrap" for="menuSearch">
+          <span class="search-icon" aria-hidden="true"></span>
+          <input id="menuSearch" type="search" placeholder="Search menu" autocomplete="off" />
+        </label>
+
+        <section class="hero-card" id="heroCard">
+          <img id="heroImage" alt="" />
+          <div class="hero-copy">
+            <div>
+              <h2 id="heroTitle">Cold brew</h2>
+              <p id="heroDescription">Refreshing coffee with a smooth finish.</p>
+            </div>
+            <button class="secondary-button" type="button" id="heroDetails">Details</button>
+          </div>
+          <div class="hero-dots" id="heroDots" aria-label="Featured items"></div>
+        </section>
+
+        <section class="suggestions" aria-labelledby="suggestionsTitle">
+          <div class="section-heading">
+            <h2 id="suggestionsTitle">Top choices</h2>
+          </div>
+          <div class="suggestion-row" id="suggestionRow"></div>
+        </section>
+
+        <nav class="category-row" aria-label="Menu categories" id="categoryRow"></nav>
+
+        <section class="menu-grid" id="menuGrid" aria-label="Menu items"></section>
+
+        <button class="floating-cart" type="button" id="floatingCart" aria-label="Open cart">
+          <span class="cart-icon" aria-hidden="true"></span>
+          <strong id="cartCount">0</strong>
+        </button>
+      </section>
+
+      <section id="cartView" class="screen">
+        <header class="page-header">
+          <button class="icon-button" type="button" data-go="menu" aria-label="Back to menu">&lsaquo;</button>
+          <h1>Cart</h1>
+        </header>
+
+        <section class="cart-list" id="cartList" aria-label="Cart items"></section>
+        <p class="empty-state" id="emptyCart">Your cart is empty.</p>
+
+        <footer class="bottom-panel">
+          <strong>Total: <span id="cartTotal">$0.00</span></strong>
+          <button class="primary-button" type="button" id="placeOrder">
+            Order <span aria-hidden="true">&rarr;</span>
+          </button>
+        </footer>
+      </section>
+
+      <section id="statusView" class="screen">
+        <header class="order-header">
+          <div>
+            <button class="plain-back" type="button" data-go="menu">&lsaquo; Menu</button>
+            <h1 id="orderTitle">Order #1284</h1>
+            <p id="orderMeta">Table 04 - 9:41</p>
+          </div>
+          <span class="status-chip" id="statusChip">Preparing</span>
+        </header>
+
+        <section class="steps" aria-label="Order progress">
+          <div class="step done">
+            <span>&check;</span>
+            <p>Accepted</p>
+          </div>
+          <div class="step-line active"></div>
+          <div class="step active">
+            <span>&#9749;</span>
+            <p>Preparing</p>
+          </div>
+          <div class="step-line"></div>
+          <div class="step">
+            <span>&check;</span>
+            <p>Ready</p>
+          </div>
+        </section>
+
+        <article class="message-card">
+          <span aria-hidden="true">&#9749;</span>
+          <p>The kitchen is preparing your order.</p>
+        </article>
+
+        <section class="order-items" id="orderItems" aria-label="Ordered items"></section>
+
+        <footer class="bottom-panel order-actions">
+          <button class="dark-button" type="button" id="callWaiter">Call waiter</button>
+          <button class="primary-button" type="button" id="requestBill">Ask for bill</button>
+        </footer>
+      </section>
+    </main>
+
+    <section class="detail-sheet" id="detailSheet" aria-hidden="true">
+      <div class="sheet-backdrop" data-close-sheet></div>
+      <article class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <button class="close-button" type="button" data-close-sheet aria-label="Close details">&times;</button>
+        <img id="sheetImage" alt="" />
+        <div class="sheet-content">
+          <div class="sheet-heading">
+            <h2 id="sheetTitle"></h2>
+            <strong id="sheetPrice"></strong>
+          </div>
+          <p id="sheetDescription"></p>
+          <div class="tag-row" id="sheetTags"></div>
+
+          <div class="quantity-row">
+            <strong>Quantity</strong>
+            <div class="stepper">
+              <button type="button" id="sheetMinus" aria-label="Decrease quantity">&minus;</button>
+              <span id="sheetQuantity">1</span>
+              <button type="button" id="sheetPlus" aria-label="Increase quantity">+</button>
+            </div>
+          </div>
+
+          <button class="like-button" type="button" id="sheetLike" aria-pressed="false">
+            <span aria-hidden="true">&hearts;</span>
+            <span id="sheetLikes">0 likes</span>
+          </button>
+
+          <textarea id="sheetNotes" rows="2" placeholder="Special requests, for example no onion"></textarea>
+          <button class="primary-button full-width" type="button" id="addToCart">
+            <span class="cart-icon small" aria-hidden="true"></span>
+            Add to order - <span id="sheetTotal">$0.00</span>
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

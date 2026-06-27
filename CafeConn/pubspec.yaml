@@ -1,0 +1,42 @@
+name: cafeconnect
+description: CafeConnect staff-only POS for restaurants and cafés.
+publish_to: "none"
+version: 0.1.0-alpha+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cached_network_image: ^3.3.1
+  collection: ^1.18.0
+  cupertino_icons: ^1.0.8
+  flutter_animate: ^4.5.0
+  go_router: ^14.2.0
+  hive_flutter: ^1.1.0
+  provider: ^6.1.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.0
+  hive_generator: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter_18pt-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter_18pt-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter_18pt-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter_18pt-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter_18pt-ExtraBold.ttf
+          weight: 800
