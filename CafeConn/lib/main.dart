@@ -13,6 +13,8 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
+import 'core/theme/app_colors.dart';
+import 'core/theme/app_typography.dart';
 import 'data/api_config.dart';
 import 'data/cafe_api_client.dart';
 import 'data/dtos.dart';
@@ -1861,11 +1863,13 @@ class CategoryChip extends StatelessWidget {
       required this.label,
       required this.active,
       required this.onTap,
-      this.icon});
+      this.icon,
+      this.dotColor});
   final String label;
   final bool active;
   final VoidCallback onTap;
   final IconData? icon;
+  final Color? dotColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1896,7 +1900,15 @@ class CategoryChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
+            if (dotColor != null) ...[
+              Container(
+                width: 6,
+                height: 6,
+                decoration:
+                    BoxDecoration(color: dotColor, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 7),
+            ] else if (icon != null) ...[
               Icon(icon,
                   color: active ? Colors.white : AppTheme.ink2, size: 16),
               const SizedBox(width: 6)
@@ -2407,7 +2419,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
             child: TextField(
               onChanged: (v) => setState(() => search = v),
               decoration: const InputDecoration(
-                hintText: 'Поиск стола...',
+                hintText: 'Поиск стола или официанта',
                 prefixIcon: Icon(Icons.search, color: AppTheme.ink3),
                 border: InputBorder.none,
                 contentPadding:
@@ -2429,7 +2441,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                       label: statusLabel(s),
                       active: filter == s,
                       onTap: () => setState(() => filter = s),
-                      icon: Icons.circle,
+                      dotColor: statusColor(s),
                     )),
               ],
             ),
@@ -2640,8 +2652,19 @@ class _TableCardState extends State<TableCard> {
   @override
   Widget build(BuildContext context) {
     final state = context.read<CafeState>();
-    final color = statusColor(widget.table.status);
-    final isLate = widget.table.status == TableStatus.late;
+    final table = widget.table;
+    final color = statusColor(table.status);
+    final isLate = table.status == TableStatus.late;
+    final hasAttention = table.attention != null;
+    final accent = hasAttention ? attentionColor(table.attention!) : color;
+    final pillText =
+        hasAttention ? attentionLabel(table.attention!) : statusLabel(table.status);
+    final pulse = table.status == TableStatus.newOrder ||
+        table.status == TableStatus.ready ||
+        hasAttention;
+    // colorTag bar only shows for a non-default (custom) tag color.
+    final hasTag =
+        table.color != AppColors.espresso && table.color != AppColors.ink;
 
     return GestureDetector(
       onTapDown: (_) {
@@ -2666,107 +2689,160 @@ class _TableCardState extends State<TableCard> {
       child: AppCard(
         index: widget.index,
         padding: const EdgeInsets.all(12),
-        borderColor: isLate
-            ? AppTheme.danger
-            : (widget.table.attention != null
-                ? attentionColor(widget.table.attention!)
-                : null),
+        borderColor: isLate ? AppColors.late : (hasAttention ? accent : null),
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Positioned(
-                top: 0,
-                left: 0,
-                child: Text('#${widget.table.number}',
-                    style: T.label.copyWith(color: AppTheme.ink3, fontSize: 10))),
-            Positioned(top: 0, right: 0, child: StatusBadge(widget.table.status)),
-            if (widget.table.attention != null)
+            // Guest-attention tint wash over the card surface.
+            if (hasAttention)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+            // 4px color-tag bar on the top edge.
+            if (hasTag)
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: Center(child: _AttentionPill(widget.table.attention!)),
+                child: Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: table.color,
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                ),
               ),
+            // Status dot + 4px halo, top-right.
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _HaloDot(accent, pulse: pulse, blink: isLate),
+            ),
+            // Big mono table number + status/attention pill.
             Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('${widget.table.number}',
-                      style: T.h1.copyWith(fontSize: 32)),
-                  const SizedBox(height: 4),
+                  Text(
+                    table.number.toString().padLeft(2, '0'),
+                    style: AppTypography.mono(
+                        size: 30, weight: FontWeight.w800, color: AppColors.ink),
+                  ),
+                  const SizedBox(height: 6),
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(statusLabel(widget.table.status),
-                        style: T.label.copyWith(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      pillText,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                        color: accent,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
+            // Order total (mono) or "свободен" at the bottom.
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
               child: Center(
                 child: Text(
-                  widget.table.status == TableStatus.free
+                  table.status == TableStatus.free
                       ? 'свободен'
                       : state
-                          .tableCart(widget.table.id)
+                          .tableCart(table.id)
                           .fold(0.0, (s, l) => s + l.total)
                           .rub,
-                  style: T.label.copyWith(color: AppTheme.ink2),
+                  style: table.status == TableStatus.free
+                      ? AppTypography.label(color: AppColors.ink40)
+                      : AppTypography.mono(
+                          size: 13,
+                          weight: FontWeight.w700,
+                          color: AppColors.ink55),
                 ),
               ),
             ),
+            // Blinking red border for a late table.
+            if (isLate)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.late, width: 2),
+                    ),
+                  )
+                      .animate(onPlay: (c) => c.repeat(reverse: true))
+                      .fade(begin: 0.2, end: 1, duration: 600.ms),
+                ),
+              ),
           ],
         ),
-      )
-          .animate(onPlay: isLate ? (c) => c.repeat(reverse: true) : null)
-          .shimmer(duration: 2.seconds, color: Colors.white24),
+      ),
     );
   }
 }
 
-class _AttentionPill extends StatelessWidget {
-  const _AttentionPill(this.attention);
-  final String attention;
+String attentionLabel(String attention) => switch (attention) {
+      'call' => 'ЗОВУТ',
+      'bill' => 'СЧЁТ',
+      'arrived' => 'ГОСТЬ',
+      _ => 'СИГНАЛ',
+    };
+
+/// A status dot with a crisp 4px halo ring, matching the design's
+/// `box-shadow: 0 0 0 4px <halo>`. Pulses (newOrder/ready/attention) or blinks (late).
+class _HaloDot extends StatelessWidget {
+  const _HaloDot(this.color, {this.pulse = false, this.blink = false});
+  final Color color;
+  final bool pulse;
+  final bool blink;
 
   @override
   Widget build(BuildContext context) {
-    final color = attentionColor(attention);
-    final (label, icon) = switch (attention) {
-      'call' => ('Зовут', Icons.pan_tool_rounded),
-      'bill' => ('Счёт', Icons.receipt_long_rounded),
-      'arrived' => ('Гость', Icons.chair_rounded),
-      _ => ('Сигнал', Icons.notifications_active_rounded),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    Widget dot = Container(
+      width: 9,
+      height: 9,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(9),
-        boxShadow: const [AppTheme.shadowCard],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(label,
-              style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white)),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+              color: color.withValues(alpha: 0.25),
+              blurRadius: 0,
+              spreadRadius: 4),
         ],
       ),
-    )
-        .animate(onPlay: (c) => c.repeat(reverse: true))
-        .fadeIn(duration: 600.ms)
-        .scaleXY(begin: 0.94, end: 1.0, duration: 700.ms);
+    );
+    if (pulse) {
+      dot = dot
+          .animate(onPlay: (c) => c.repeat(reverse: true))
+          .scaleXY(begin: 1.0, end: 1.18, duration: 800.ms);
+    } else if (blink) {
+      dot = dot
+          .animate(onPlay: (c) => c.repeat(reverse: true))
+          .fade(begin: 0.45, end: 1.0, duration: 500.ms);
+    }
+    // Reserve room so the 4px halo isn't clipped against the card edge.
+    return Padding(padding: const EdgeInsets.all(4), child: dot);
   }
 }
 
