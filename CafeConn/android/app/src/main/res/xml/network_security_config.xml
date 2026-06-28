@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEVELOPMENT ONLY.
+
+  This file is referenced solely from src/debug/AndroidManifest.xml, so it
+  applies to DEBUG builds only. Release builds keep Android's secure default:
+  cleartext HTTP is blocked and HTTPS is required.
+
+  It permits cleartext (http://) traffic so the staff app can reach the local
+  CafeConnect hub over Wi-Fi during development, regardless of your LAN IP:
+
+    flutter run -dart-define=API_BASE_URL=http://YOUR-LAN-IP:8000
+-->
+<network-security-config>
+    <!-- LAN IPs change per network, so permit cleartext for any host in debug. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

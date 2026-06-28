@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Network access for the CafeConnect hub (REST + WebSocket). Applies to
+         all build types. Cleartext HTTP is enabled for DEBUG builds only via
+         src/debug/AndroidManifest.xml + res/xml/network_security_config.xml. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="cafeconnect"
         android:name="${applicationName}"

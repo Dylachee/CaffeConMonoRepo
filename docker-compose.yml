@@ -1,0 +1,76 @@
+# CafeConnect — root orchestration for the whole monorepo.
+#
+# This is the canonical "one command from the repo root" entrypoint.
+# It builds and runs the Django hub (REST + WebSocket), PostgreSQL and Redis.
+# The Flutter staff app (CafeConn/) and the guest/management web (served by the
+# same Django hub) all talk to the `web` service below.
+#
+#   Quick start:
+#     cp .env.example .env          # then edit DJANGO_LAN_HOST with your Wi-Fi IP
+#     docker compose up --build
+#     docker compose exec web python manage.py seed_demo
+#     docker compose exec web python manage.py createsuperuser
+#
+# The backend lives in ./CafeConnWeb. We point the build context there so the
+# repo root stays the single place you run things from.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cafeconnect}
+      POSTGRES_USER: ${POSTGRES_USER:-cafeconnect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cafeconnect}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cafeconnect} -d ${POSTGRES_DB:-cafeconnect}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ./CafeConnWeb
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             daphne -b 0.0.0.0 -p 8000 backend_core.asgi:application"
+    env_file:
+      - .env
+    environment:
+      # Container-internal service wiring. These override .env so the app always
+      # finds Postgres/Redis on the compose network regardless of host values.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      # ALLOWED_HOSTS is assembled from localhost + your LAN IP so the physical
+      # Android device can reach the hub over Wi-Fi. Set DJANGO_LAN_HOST in .env.
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0,${DJANGO_LAN_HOST:-}}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
+    ports:
+      # Bind on 0.0.0.0 so the host's LAN IP:8000 is reachable from the phone.
+      - "${WEB_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

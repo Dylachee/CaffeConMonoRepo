@@ -13,6 +13,11 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
+import 'data/api_config.dart';
+import 'data/cafe_api_client.dart';
+import 'data/dtos.dart';
+import 'data/realtime_client.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -206,9 +211,11 @@ class T {
 
   static const label = TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: AppTheme.ink2);
 
-  static const price = TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.ink);
-  static const priceSmall = TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.ink);
-  static const timer = TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5);
+  // Numerals use JetBrains Mono per the design; falls back to Inter until the
+  // JetBrainsMono ttf is bundled (see the commented fonts block in pubspec.yaml).
+  static const price = TextStyle(fontFamily: 'JetBrainsMono', fontFamilyFallback: ['Inter'], fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.ink);
+  static const priceSmall = TextStyle(fontFamily: 'JetBrainsMono', fontFamilyFallback: ['Inter'], fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.ink);
+  static const timer = TextStyle(fontFamily: 'JetBrainsMono', fontFamilyFallback: ['Inter'], fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5);
 }
 
 enum UserRole { waiter, cook, bartender, manager, admin }
@@ -264,6 +271,8 @@ class CafeTable {
   List<String> notes;
   DateTime? openedAt;
   String waiterName = '—';
+  // Guest attention signal: 'call' (вызов), 'bill' (счёт), 'arrived' (гость сел), or null.
+  String? attention;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -274,6 +283,7 @@ class CafeTable {
         'notes': notes,
         'openedAt': openedAt?.millisecondsSinceEpoch,
         'waiterName': waiterName,
+        'attention': attention,
       };
   static CafeTable fromJson(Map<String, dynamic> j) {
     final t = CafeTable(
@@ -286,6 +296,7 @@ class CafeTable {
     if (j['openedAt'] != null)
       t.openedAt = DateTime.fromMillisecondsSinceEpoch(j['openedAt'] as int);
     t.waiterName = j['waiterName'] as String? ?? '—';
+    t.attention = j['attention'] as String?;
     return t;
   }
 }
@@ -456,6 +467,15 @@ class ChatMessage {
 
 class CafeState extends ChangeNotifier {
   final _api = MockCafeApi();
+  // --- Backend integration (CafeConnect Django hub) ---
+  final CafeApiClient _remoteApi = CafeApiClient();
+  StaffRealtimeClient? _realtime;
+  StreamSubscription<RealtimeEvent>? _realtimeSub;
+  bool backendConnected = false;
+  bool backendConnecting = false;
+  String? backendError;
+  String? _lastUser;
+  String? _lastPass;
   Box get _box => Hive.box('cafeconnect');
   final List<AppUser> users = [];
   final List<CafeTable> tables = [];
@@ -596,6 +616,15 @@ class CafeState extends ChangeNotifier {
         Timer.periodic(12.seconds, (_) => simulateRealtimeOrder());
     currentUser = users.firstOrNull;
     notifyListeners();
+
+    // Optional auto-connect to the hub when credentials are supplied at build
+    // time:  flutter run --dart-define=API_USERNAME=.. --dart-define=API_PASSWORD=..
+    // Without them the app stays in local demo mode (no behaviour change).
+    const autoUser = String.fromEnvironment('API_USERNAME');
+    const autoPass = String.fromEnvironment('API_PASSWORD');
+    if (autoUser.isNotEmpty && autoPass.isNotEmpty) {
+      connectBackend(username: autoUser, password: autoPass);
+    }
   }
 
   void _saveTables() {
@@ -629,6 +658,9 @@ class CafeState extends ChangeNotifier {
   void dispose() {
     _retryTimer?.cancel();
     _fakeRealtimeTimer?.cancel();
+    _realtimeSub?.cancel();
+    _realtime?.dispose();
+    _remoteApi.close();
     super.dispose();
   }
 
@@ -683,6 +715,8 @@ class CafeState extends ChangeNotifier {
   Future<CafeOrder> submitOrder({String? tableId, FeedType? onlyFor}) async {
     final table = tables.firstWhere(
         (t) => t.id == (tableId ?? currentTable?.id ?? tables.first.id));
+    // When connected, send to the hub; realtime echoes it back to all devices.
+    if (backendConnected) return _submitOrderRemote(table, onlyFor);
     final source = tableCart(table.id);
 
     final toSend = source.where((l) => !l.sent).where((l) {
@@ -749,6 +783,45 @@ class CafeState extends ChangeNotifier {
     _saveTables();
     notifyListeners();
     return newOrders.isNotEmpty ? newOrders.last : orders.last;
+  }
+
+  /// Online order path: create on the hub, then reflect the server order
+  /// locally (idempotent by id, so the WebSocket echo won't duplicate it).
+  Future<CafeOrder> _submitOrderRemote(CafeTable table, FeedType? onlyFor) async {
+    final source = tableCart(table.id);
+    final toSend = source.where((l) => !l.sent).where((l) {
+      if (onlyFor != null) {
+        final isDrink =
+            l.item.category == 'Напитки' || l.item.category == 'Кофе';
+        return onlyFor == FeedType.bar ? isDrink : !isDrink;
+      }
+      return true;
+    }).toList();
+
+    CafeOrder fallback() => orders.isNotEmpty
+        ? orders.last
+        : _makeOrder(table, const <CartLine>[], onlyFor ?? FeedType.kitchen);
+
+    if (toSend.isEmpty) return fallback();
+
+    final dto = await createRemoteOrder(tableId: table.id, lines: toSend);
+    if (dto == null) {
+      // Backend rejected/unreachable; leave the cart unsent and surface the error.
+      notifyListeners();
+      return fallback();
+    }
+
+    for (final l in toSend) {
+      l.sent = true;
+    }
+    final order = _orderFromDto(dto);
+    _upsertLocalOrder(order);
+    table.status = TableStatus.newOrder;
+    table.currentOrderId = order.id;
+    _saveTables();
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    return order;
   }
 
   CafeOrder _makeOrder(CafeTable table, List<CartLine> lines, FeedType feed) {
@@ -829,6 +902,8 @@ class CafeState extends ChangeNotifier {
   }
 
   void simulateRealtimeOrder() {
+    // Don't inject demo orders once we're on the real backend feed.
+    if (backendConnected) return;
     if (!online || orders.length > 10) return;
     final table = tables[Random().nextInt(tables.length)];
     if (table.status != TableStatus.free) return;
@@ -844,12 +919,27 @@ class CafeState extends ChangeNotifier {
   }
 
   void closeTable(CafeTable table) {
+    final previous = table.status;
     table.status = TableStatus.free;
     table.currentOrderId = null;
     table.guestCount = 0;
+    table.attention = null;
     tableChecks[table.id]?.clear();
     _saveTables();
     notifyListeners();
+    if (backendConnected) _pushTableStatus(table, 'free', previous);
+  }
+
+  Future<void> _pushTableStatus(
+      CafeTable table, String wire, TableStatus rollback) async {
+    try {
+      await _remoteApi.updateTableStatus(table.id, wire);
+    } on ApiException catch (e) {
+      table.status = rollback; // optimistic rollback
+      backendError = e.message;
+      debugPrint('closeTable push failed: $e');
+      notifyListeners();
+    }
   }
 
   void toggleAvailability(MenuItem item) {
@@ -857,6 +947,19 @@ class CafeState extends ChangeNotifier {
     HapticFeedback.selectionClick();
     _saveMenu();
     notifyListeners();
+    if (backendConnected) _pushAvailability(item);
+  }
+
+  Future<void> _pushAvailability(MenuItem item) async {
+    try {
+      await _remoteApi.updateMenuAvailability(item.id, item.available);
+    } on ApiException catch (e) {
+      item.available = !item.available; // rollback
+      backendError = e.message;
+      debugPrint('toggleAvailability push failed: $e');
+      _saveMenu();
+      notifyListeners();
+    }
   }
 
   void addTable(int number, Color color) {
@@ -915,17 +1018,325 @@ class CafeState extends ChangeNotifier {
   }
 
   void markReady(CafeOrder order) {
+    final previous = order.status;
     order.status = order.status == OrderStatus.ready
         ? OrderStatus.completed
         : OrderStatus.ready;
     HapticFeedback.mediumImpact();
     notifyListeners();
+    if (backendConnected) _pushOrderStatus(order, previous);
+  }
+
+  Future<void> _pushOrderStatus(CafeOrder order, OrderStatus rollback) async {
+    final wire = switch (order.status) {
+      OrderStatus.ready => 'ready',
+      OrderStatus.completed => 'completed',
+      OrderStatus.cooking => 'cooking',
+      OrderStatus.accepted => 'pending',
+    };
+    try {
+      await _remoteApi.updateOrderStatus(order.id, wire);
+    } on ApiException catch (e) {
+      order.status = rollback; // optimistic rollback
+      backendError = e.message;
+      debugPrint('markReady push failed: $e');
+      notifyListeners();
+    }
   }
 
   Future<void> resetToDemo() async {
     await _box.clear();
     tableChecks.clear();
     await boot();
+  }
+
+  // ===================== Backend integration (Django hub) =====================
+  //
+  // The app boots fully local (Hive demo) so it always works offline. Calling
+  // [connectBackend] swaps in live data from the CafeConnect hub and subscribes
+  // to realtime order/attention events. Failures fall back to local mode and
+  // never throw to the UI (Vision: optimistic, never blocks on a spinner).
+
+  /// Authenticate, hydrate live data, and open the realtime feed.
+  /// Returns true on success; on failure keeps the local demo and returns false.
+  Future<bool> connectBackend({
+    required String username,
+    required String password,
+  }) async {
+    _lastUser = username;
+    _lastPass = password;
+    backendConnecting = true;
+    notifyListeners();
+    try {
+      final token = await _remoteApi.login(username, password);
+      final data = await _remoteApi.bootstrap();
+      _applyBootstrap(data);
+
+      online = true;
+      backendConnected = true;
+      backendConnecting = false;
+      backendError = null;
+
+      await _openRealtime(token);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      backendConnected = false;
+      backendConnecting = false;
+      backendError = e.message;
+      online = false;
+      debugPrint('connectBackend failed: $e');
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      backendConnected = false;
+      backendConnecting = false;
+      backendError = 'Unexpected error: $e';
+      online = false;
+      debugPrint('connectBackend unexpected: $e\n$st');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Re-run the connection using stored or build-time credentials.
+  /// Used by Settings → "Переподключить".
+  Future<bool> reconnect() async {
+    final user = _lastUser ?? const String.fromEnvironment('API_USERNAME');
+    final pass = _lastPass ?? const String.fromEnvironment('API_PASSWORD');
+    if (user.isEmpty || pass.isEmpty) {
+      backendError =
+          'Нет данных входа. Запустите с --dart-define=API_USERNAME/API_PASSWORD.';
+      notifyListeners();
+      return false;
+    }
+    return connectBackend(username: user, password: pass);
+  }
+
+  void _applyBootstrap(BootstrapDto data) {
+    if (data.menu.isNotEmpty) {
+      menu
+        ..clear()
+        ..addAll(data.menu.map(_menuFromDto));
+      _saveMenu();
+    }
+    if (data.tables.isNotEmpty) {
+      tables
+        ..clear()
+        ..addAll(data.tables.map(_tableFromDto));
+      _saveTables();
+    }
+    orders
+      ..clear()
+      ..addAll(data.orders.map(_orderFromDto));
+  }
+
+  Future<void> _openRealtime(String token) async {
+    await _realtimeSub?.cancel();
+    await _realtime?.dispose();
+    final client = StaffRealtimeClient();
+    _realtime = client;
+    _realtimeSub = client.events.listen(_onRealtimeEvent);
+    await client.connect(token);
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    switch (event.type) {
+      case RealtimeEventType.orderCreated:
+      case RealtimeEventType.orderUpdated:
+        final dto = event.order;
+        if (dto != null) _upsertOrderFromDto(dto);
+        break;
+      case RealtimeEventType.attentionCreated:
+        _applyAttention(event.attention, acked: false);
+        break;
+      case RealtimeEventType.attentionAcked:
+        _applyAttention(event.attention, acked: true);
+        break;
+      case RealtimeEventType.connectionReady:
+      case RealtimeEventType.unknown:
+        break;
+    }
+  }
+
+  void _upsertOrderFromDto(OrderDto dto) => _upsertLocalOrder(_orderFromDto(dto));
+
+  void _upsertLocalOrder(CafeOrder order) {
+    final index = orders.indexWhere((o) => o.id == order.id);
+    if (index >= 0) {
+      orders[index] = order;
+    } else {
+      orders.add(order);
+    }
+    final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
+    if (table != null && table.status == TableStatus.free) {
+      table.status = TableStatus.newOrder;
+    }
+    notifyListeners();
+  }
+
+  /// Apply a guest attention signal to the matching table tile.
+  void _applyAttention(AttentionDto? signal, {required bool acked}) {
+    if (signal == null) return;
+    final table = tables.firstWhereOrNull((t) => t.id == signal.tableId);
+    if (table == null) return;
+    if (acked) {
+      table.attention = null;
+    } else {
+      table.attention = switch (signal.signalType) {
+        'call_waiter' => 'call',
+        'bill_request' => 'bill',
+        'arrived' => 'arrived',
+        _ => null,
+      };
+      HapticFeedback.mediumImpact();
+    }
+    _saveTables();
+    notifyListeners();
+  }
+
+  /// Push a new order to the hub. On success the hub broadcasts `order.created`,
+  /// which [_onRealtimeEvent] upserts — so we do not also add it locally here,
+  /// to avoid duplicates. Wire this into the precheck "send" button when
+  /// [backendConnected] is true (the local [submitOrder] remains the offline path).
+  Future<OrderDto?> createRemoteOrder({
+    required String tableId,
+    required List<CartLine> lines,
+    String notes = '',
+  }) async {
+    if (!backendConnected) return null;
+    final tableIdInt = int.tryParse(tableId);
+    if (tableIdInt == null) {
+      debugPrint('createRemoteOrder: non-numeric tableId "$tableId"');
+      return null;
+    }
+    try {
+      return await _remoteApi.createOrder(
+        tableId: tableIdInt,
+        notes: notes,
+        items: lines
+            .map((l) => {
+                  'menu_item_id': int.tryParse(l.item.id) ?? l.item.id,
+                  'quantity': l.quantity,
+                  'notes': l.modifiers.isEmpty ? <String>[] : [l.modifiers],
+                })
+            .toList(),
+      );
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('createRemoteOrder failed: $e');
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Stop realtime + clear the token (return to local-only mode).
+  Future<void> disconnectBackend() async {
+    await _realtimeSub?.cancel();
+    _realtimeSub = null;
+    await _realtime?.dispose();
+    _realtime = null;
+    backendConnected = false;
+    _remoteApi.setToken(null);
+    notifyListeners();
+  }
+
+  // --- DTO -> domain mappers -------------------------------------------------
+
+  MenuItem _menuFromDto(MenuItemDto d) => MenuItem(
+        id: d.id,
+        name: d.name,
+        description: d.description,
+        price: d.price,
+        category: d.category,
+        imageUrl: d.imageUrl,
+        tags: d.tags,
+        prepTime: d.prepTime,
+        available: d.available,
+        promo: d.promo,
+        composition: d.composition,
+        allergens: d.allergens,
+      );
+
+  CafeTable _tableFromDto(TableDto d) {
+    final table = CafeTable(
+      d.id,
+      d.number,
+      AppTheme.cta,
+      _tableStatusFromName(d.status),
+      d.guestCount,
+      currentOrderId: d.currentOrderId,
+      notes: const [],
+    );
+    table.waiterName = d.waiter.isEmpty ? '—' : d.waiter;
+    if (d.openedAt != null) table.openedAt = DateTime.tryParse(d.openedAt!);
+    return table;
+  }
+
+  CafeOrder _orderFromDto(OrderDto d) {
+    final lines = d.items.map((it) {
+      final item = menu.firstWhere(
+        (m) => m.id == it.dishId,
+        orElse: () => _placeholderMenuItem(it),
+      );
+      return CartLine(
+        item: item,
+        quantity: it.qty,
+        modifiers: it.notes.join(', '),
+        sent: true,
+      );
+    }).toList();
+    return CafeOrder(
+      id: d.id,
+      tableId: d.tableId,
+      items: lines,
+      status: _orderStatusFromName(d.status),
+      createdAt: DateTime.now(),
+      splitTo: d.station == 'bar' ? FeedType.bar : FeedType.kitchen,
+    );
+  }
+
+  MenuItem _placeholderMenuItem(OrderItemDto it) => MenuItem(
+        id: it.dishId,
+        name: it.name.isEmpty ? 'Позиция' : it.name,
+        description: '',
+        price: it.price,
+        category: it.station == 'bar' ? 'Напитки' : 'Кухня',
+        imageUrl: '',
+        tags: const [],
+        prepTime: 5,
+      );
+
+  TableStatus _tableStatusFromName(String name) {
+    switch (name) {
+      case 'occupied':
+        return TableStatus.occupied;
+      case 'awaitingPayment':
+        return TableStatus.awaitingPayment;
+      case 'ready':
+        return TableStatus.ready;
+      case 'late':
+        return TableStatus.late;
+      case 'newOrder':
+        return TableStatus.newOrder;
+      case 'free':
+      default:
+        return TableStatus.free;
+    }
+  }
+
+  OrderStatus _orderStatusFromName(String name) {
+    switch (name) {
+      case 'cooking':
+        return OrderStatus.cooking;
+      case 'ready':
+        return OrderStatus.ready;
+      case 'completed':
+        return OrderStatus.completed;
+      case 'accepted':
+      default:
+        return OrderStatus.accepted;
+    }
   }
 }
 
@@ -2255,7 +2666,11 @@ class _TableCardState extends State<TableCard> {
       child: AppCard(
         index: widget.index,
         padding: const EdgeInsets.all(12),
-        borderColor: isLate ? AppTheme.danger : null,
+        borderColor: isLate
+            ? AppTheme.danger
+            : (widget.table.attention != null
+                ? attentionColor(widget.table.attention!)
+                : null),
         child: Stack(
           children: [
             Positioned(
@@ -2264,6 +2679,13 @@ class _TableCardState extends State<TableCard> {
                 child: Text('#${widget.table.number}',
                     style: T.label.copyWith(color: AppTheme.ink3, fontSize: 10))),
             Positioned(top: 0, right: 0, child: StatusBadge(widget.table.status)),
+            if (widget.table.attention != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Center(child: _AttentionPill(widget.table.attention!)),
+              ),
             Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2305,6 +2727,46 @@ class _TableCardState extends State<TableCard> {
           .animate(onPlay: isLate ? (c) => c.repeat(reverse: true) : null)
           .shimmer(duration: 2.seconds, color: Colors.white24),
     );
+  }
+}
+
+class _AttentionPill extends StatelessWidget {
+  const _AttentionPill(this.attention);
+  final String attention;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = attentionColor(attention);
+    final (label, icon) = switch (attention) {
+      'call' => ('Зовут', Icons.pan_tool_rounded),
+      'bill' => ('Счёт', Icons.receipt_long_rounded),
+      'arrived' => ('Гость', Icons.chair_rounded),
+      _ => ('Сигнал', Icons.notifications_active_rounded),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(9),
+        boxShadow: const [AppTheme.shadowCard],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(label,
+              style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white)),
+        ],
+      ),
+    )
+        .animate(onPlay: (c) => c.repeat(reverse: true))
+        .fadeIn(duration: 600.ms)
+        .scaleXY(begin: 0.94, end: 1.0, duration: 700.ms);
   }
 }
 
@@ -4940,6 +5402,13 @@ String roleLabel(UserRole role) => switch (role) {
       UserRole.bartender => 'Бармен',
     };
 
+Color attentionColor(String attention) => switch (attention) {
+      'call' => AppTheme.warning,
+      'bill' => AppTheme.gold,
+      'arrived' => AppTheme.bar,
+      _ => AppTheme.ink2,
+    };
+
 Color statusColor(TableStatus status) => switch (status) {
       TableStatus.free => AppTheme.tFree,
       TableStatus.occupied => AppTheme.tOccupied,
@@ -5050,6 +5519,29 @@ class SettingsScreen extends StatelessWidget {
                 value: state.soundEnabled,
                 onChanged: (v) => state.setSetting(
                     'soundEnabled', v, (x) => state.soundEnabled = x)),
+          ]),
+          _SettingsSection('Соединение', [
+            _SettingsRow(
+                label: 'Статус',
+                value: state.backendConnecting
+                    ? 'Подключение…'
+                    : state.backendConnected
+                        ? 'Подключено'
+                        : 'Локальный режим'),
+            _SettingsRow(label: 'Сервер', value: ApiConfig.baseUrl),
+            if (state.backendError != null)
+              _SettingsRow(label: 'Последняя ошибка', value: state.backendError),
+            _SettingsRow(
+                label: 'Переподключить',
+                trailing: state.backendConnecting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppTheme.cta))
+                    : const Icon(Icons.sync, color: AppTheme.cta),
+                onTap:
+                    state.backendConnecting ? null : () => state.reconnect()),
           ]),
           _SettingsSection('Данные и синхронизация', [
             _SettingsToggle(
