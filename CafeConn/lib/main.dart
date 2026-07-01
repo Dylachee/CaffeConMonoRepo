@@ -366,13 +366,17 @@ class CartLine {
       {required this.item,
       this.quantity = 1,
       this.modifiers = '',
-      this.sent = false})
+      this.sent = false,
+      this.ready = false,
+      this.done = false})
       : lockedPrice = item.price;
   final MenuItem item;
   int quantity;
   final double lockedPrice;
   String modifiers;
   bool sent;
+  bool ready; // station (kitchen/bar) marked it ready
+  bool done; // waiter delivered it to the guest
   double get total => lockedPrice * quantity;
 
   Map<String, dynamic> toJson() => {
@@ -380,6 +384,8 @@ class CartLine {
         'quantity': quantity,
         'modifiers': modifiers,
         'sent': sent,
+        'ready': ready,
+        'done': done,
         'lockedPrice': lockedPrice,
       };
 }
@@ -578,7 +584,9 @@ class CafeState extends ChangeNotifier {
                 item: item,
                 quantity: m['quantity'] as int,
                 modifiers: m['modifiers'] as String,
-                sent: m['sent'] as bool);
+                sent: m['sent'] as bool,
+                ready: m['ready'] as bool? ?? false,
+                done: m['done'] as bool? ?? false);
           }).toList();
         }
       }
@@ -642,6 +650,52 @@ class CafeState extends ChangeNotifier {
 
   void _saveMenu() =>
       _box.put('menu', jsonEncode(menu.map((m) => m.toJson()).toList()));
+
+  void setGuestCount(String tableId, int count) {
+    final table = tables.firstWhereOrNull((t) => t.id == tableId);
+    if (table == null) return;
+    table.guestCount = count < 1 ? 1 : count;
+    HapticFeedback.selectionClick();
+    _saveTables();
+    notifyListeners();
+  }
+
+  void toggleItemDone(CafeTable table, CartLine line) {
+    line.done = !line.done;
+    HapticFeedback.selectionClick();
+    _saveTables();
+    notifyListeners();
+  }
+
+  void addItemNote(CartLine line, String note) {
+    final notes = line.modifiers
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (!notes.contains(note)) notes.add(note);
+    line.modifiers = notes.join(', ');
+    _saveTables();
+    notifyListeners();
+  }
+
+  void removeItemNote(CartLine line, String note) {
+    final notes = line.modifiers
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty && s != note)
+        .toList();
+    line.modifiers = notes.join(', ');
+    _saveTables();
+    notifyListeners();
+  }
+
+  void ackAttention(CafeTable table) {
+    table.attention = null;
+    HapticFeedback.selectionClick();
+    _saveTables();
+    notifyListeners();
+  }
 
   void addNote(CafeTable table, String note) {
     table.notes = [...table.notes, note];
@@ -2846,6 +2900,51 @@ class _HaloDot extends StatelessWidget {
   }
 }
 
+class _AttentionBanner extends StatelessWidget {
+  const _AttentionBanner({required this.attention, required this.onAck});
+  final String attention;
+  final VoidCallback onAck;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = attentionColor(attention);
+    final (label, icon) = switch (attention) {
+      'call' => ('Гость зовёт официанта', Icons.pan_tool_rounded),
+      'bill' => ('Гость просит счёт', Icons.receipt_long_rounded),
+      'arrived' => ('Гость сел за стол', Icons.chair_rounded),
+      _ => ('Сигнал от гостя', Icons.notifications_active_rounded),
+    };
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: AppTypography.bodySemi())),
+          GestureDetector(
+            onTap: onAck,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.hairline),
+              ),
+              child: Text('Принял',
+                  style: AppTypography.bodySemi().copyWith(fontSize: 13)),
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 250.ms).slideY(begin: -0.1, end: 0);
+  }
+}
+
 void _showQuickCheck(BuildContext context, CafeTable table) {
   showGeneralDialog(
     context: context,
@@ -3024,11 +3123,43 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
               StatusBadge(table.status, showLabel: true),
             ],
           ),
+          if (table.attention != null) ...[
+            const SizedBox(height: 14),
+            _AttentionBanner(
+              attention: table.attention!,
+              onAck: () => state.ackAttention(table),
+            ),
+          ],
           const SizedBox(height: 24),
           Expanded(
             child: ListView(
               children: [
-                const SectionTitle('Заказ'),
+                Row(
+                  children: [
+                    Text('Заказ', style: T.sectionTitle),
+                    const SizedBox(width: 10),
+                    if (lines.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.ok.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Text(
+                          '${lines.where((l) => l.done).length}/${lines.length} отдано',
+                          style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ok),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _guestStepper(context, state, table),
+                const SizedBox(height: 16),
                 if (lines.isEmpty)
                   AppCard(
                     padding: const EdgeInsets.all(32),
@@ -3038,8 +3169,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           const Icon(Icons.receipt_long,
                               size: 48, color: AppTheme.separator),
                           const SizedBox(height: 16),
-                          const Text('Чек пуст',
-                              style: T.bodySemi),
+                          const Text('Чек пуст', style: T.bodySemi),
                           const SizedBox(height: 16),
                           AppButton(
                               label: 'Добавить блюдо',
@@ -3055,40 +3185,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         key: ValueKey(l.hashCode),
                         onDismissed: (_) =>
                             state.deleteLine(l, tableId: table.id),
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Row(
-                            children: [
-                              Text('${l.quantity}×',
-                                  style: T.timer.copyWith(color: AppTheme.ink2)),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(l.item.name,
-                                        style: T.bodySemi),
-                                    if (l.sent)
-                                      Text(
-                                          l.item.category == 'Напитки' ||
-                                                  l.item.category == 'Кофе'
-                                              ? 'В баре ✓'
-                                              : 'На кухне ✓',
-                                          style: T.label.copyWith(
-                                              color: l.item.category ==
-                                                          'Напитки' ||
-                                                      l.item.category == 'Кофе'
-                                                  ? AppTheme.bar
-                                                  : AppTheme.warning,
-                                              fontWeight: FontWeight.w800)),
-                                  ],
-                                ),
-                              ),
-                              Text(l.total.rub,
-                                  style: T.timer),
-                            ],
-                          ),
-                        ),
+                        child: _orderItemRow(context, state, table, l),
                       )),
                 if (lines.isNotEmpty) ...[
                   const Divider(height: 32),
@@ -3249,6 +3346,286 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _guestStepper(BuildContext context, CafeState state, CafeTable table) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F4ED),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.people_outline, size: 19, color: AppColors.occupied),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Гостей за столом',
+                style: AppTypography.bodySemi().copyWith(fontSize: 13.5)),
+          ),
+          _stepperBtn(Icons.remove, false,
+              () => state.setGuestCount(table.id, table.guestCount - 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text('${table.guestCount}',
+                style: AppTypography.mono(size: 18, weight: FontWeight.w700)),
+          ),
+          _stepperBtn(Icons.add, true,
+              () => state.setGuestCount(table.id, table.guestCount + 1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepperBtn(IconData icon, bool primary, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: primary ? AppColors.espresso : Colors.white,
+          borderRadius: BorderRadius.circular(11),
+          boxShadow: primary
+              ? null
+              : [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1))
+                ],
+        ),
+        child: Icon(icon, size: 15, color: primary ? Colors.white : AppColors.ink),
+      ),
+    );
+  }
+
+  Widget _orderItemRow(
+      BuildContext context, CafeState state, CafeTable table, CartLine line) {
+    final notes = line.modifiers
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final isBar =
+        line.item.category == 'Напитки' || line.item.category == 'Кофе';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: GestureDetector(
+        onLongPress: () => state.toggleItemDone(table, line),
+        onTap: () => _showNotePresets(context, state, line),
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () => state.toggleItemDone(table, line),
+              child: Container(
+                width: 23,
+                height: 23,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: line.done ? AppColors.ok : Colors.white,
+                  border: Border.all(
+                      color: line.done ? AppColors.ok : const Color(0xFFD8D3C7),
+                      width: 2),
+                ),
+                child: line.done
+                    ? const Icon(Icons.check, size: 12, color: Colors.white)
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Text('${line.quantity}×',
+                style: AppTypography.mono(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: line.done ? AppColors.ink40 : AppColors.ink)
+                    .copyWith(
+                        decoration: line.done
+                            ? TextDecoration.lineThrough
+                            : null)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(line.item.name,
+                      style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: line.done ? AppColors.ink40 : AppColors.ink,
+                          decoration: line.done
+                              ? TextDecoration.lineThrough
+                              : null)),
+                  if (line.ready && !line.done)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.ok.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check, size: 10, color: AppColors.ok),
+                            const SizedBox(width: 4),
+                            Text('готово на ${isBar ? "баре" : "кухне"}',
+                                style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.ok)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ...notes.map(
+                            (n) => _noteChip(n, () => state.removeItemNote(line, n))),
+                        _addNoteChip(
+                            () => _showNotePresets(context, state, line)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(line.lockedPrice.rub,
+                style: AppTypography.mono(
+                        size: 13.5,
+                        weight: FontWeight.w600,
+                        color: AppColors.ink55)
+                    .copyWith(
+                        decoration:
+                            line.done ? TextDecoration.lineThrough : null)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _noteChip(String label, VoidCallback onRemove) {
+    return GestureDetector(
+      onTap: onRemove,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.amberBg,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.amber)),
+            const SizedBox(width: 4),
+            const Icon(Icons.close, size: 11, color: AppColors.amber),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addNoteChip(VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFD8C9A8)),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 11, color: AppColors.amber),
+            SizedBox(width: 3),
+            Text('примечание',
+                style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.amber)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNotePresets(BuildContext context, CafeState state, CartLine line) {
+    const presets = [
+      'Без лука',
+      'Без льда',
+      'На соевом',
+      'Остро',
+      'Не остро',
+      'Навынос',
+      'Без сахара',
+      'Хорошо прожарить'
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                    color: AppColors.hairline,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Text('${line.quantity}× ${line.item.name}', style: AppTypography.h3()),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: presets
+                  .map((p) => GestureDetector(
+                        onTap: () {
+                          state.addItemNote(line, p);
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                              color: AppColors.sunken,
+                              borderRadius: BorderRadius.circular(10)),
+                          child: Text(p, style: AppTypography.body()),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
