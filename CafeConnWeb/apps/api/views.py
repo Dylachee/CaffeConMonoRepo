@@ -1,10 +1,12 @@
 from django.db import transaction
+from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.api.events import broadcast_attention_event, broadcast_order_event
+from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table, reset_free_table
 from apps.api.serializers import (
     AttentionSignalSerializer,
     EmployeeSerializer,
@@ -33,23 +35,12 @@ def employee_for_user(user):
         return None
 
 
-def table_attention_from_signal(signal_type: str) -> str:
-    return {
-        AttentionSignal.Type.ARRIVED: Table.Attention.ARRIVED,
-        AttentionSignal.Type.CALL_WAITER: Table.Attention.CALL,
-        AttentionSignal.Type.BILL_REQUEST: Table.Attention.BILL,
-    }.get(signal_type, Table.Attention.NONE)
-
-
 def flutter_table_status(status_value: str) -> str:
+    # Django values and Flutter TableStatus names now match 1:1 (3 statuses).
     return {
         Table.Status.FREE: "free",
         Table.Status.OCCUPIED: "occupied",
-        Table.Status.AWAITING_PAYMENT: "awaitingPayment",
-        Table.Status.READY: "ready",
-        Table.Status.LATE: "late",
-        Table.Status.NEW_ORDER: "newOrder",
-        Table.Status.NEEDS_SERVICE: "newOrder",
+        Table.Status.WAITING: "waiting",
     }.get(status_value, "free")
 
 
@@ -86,6 +77,9 @@ def serialize_for_flutter_menu(item: MenuItem) -> dict:
 
 def serialize_for_flutter_table(table: Table) -> dict:
     current_order = table.orders.exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED]).first()
+    # Set by the bootstrap prefetch (to_attr); lets the app ack a signal that
+    # was created before this device (re)connected.
+    unacked = getattr(table, "unacked_signals", None) or []
     return {
         "id": str(table.id),
         "number": table.number,
@@ -100,6 +94,7 @@ def serialize_for_flutter_table(table: Table) -> dict:
         "currentOrderId": str(current_order.id) if current_order else None,
         "attention": table.attention or None,
         "attentionReason": table.attention_reason,
+        "attentionSignalId": str(unacked[0].id) if unacked else None,
         "ack": table.attention_acknowledged,
     }
 
@@ -140,6 +135,13 @@ class StaffBootstrapView(APIView):
             .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
             .order_by("-created_at")[:100]
         )
+        tables_qs = Table.objects.select_related("waiter").prefetch_related(
+            Prefetch(
+                "attention_signals",
+                queryset=AttentionSignal.objects.filter(ack=False).order_by("-created_at"),
+                to_attr="unacked_signals",
+            )
+        )
         return Response(
             {
                 "currentUser": {
@@ -147,7 +149,7 @@ class StaffBootstrapView(APIView):
                     "username": request.user.username,
                     "name": employee_for_user(request.user).name if employee_for_user(request.user) else request.user.get_full_name(),
                 },
-                "tables": [serialize_for_flutter_table(table) for table in Table.objects.select_related("waiter").all()],
+                "tables": [serialize_for_flutter_table(table) for table in tables_qs],
                 "menu": [serialize_for_flutter_menu(item) for item in MenuItem.objects.all()],
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "preferences": StaffPreferenceSerializer(preferences).data,
@@ -173,6 +175,15 @@ class TableViewSet(viewsets.ModelViewSet):
     search_fields = ["number", "label"]
     ordering_fields = ["number", "updated_at"]
 
+    def perform_update(self, serializer):
+        table = serializer.save()
+        if table.status == Table.Status.FREE:
+            table = reset_free_table(table)
+        elif table.opened_at is None:
+            table.opened_at = timezone.now()
+            table.save(update_fields=["opened_at", "updated_at"])
+        broadcast_table_event(table)
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = (
@@ -188,10 +199,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         order = serializer.save(employee=employee_for_user(self.request.user), source=Order.Source.STAFF_APP)
-        order.table.status = Table.Status.NEW_ORDER
+        # A waiter placed the order himself — the table is simply occupied
+        # (WAITING is reserved for "guests are waiting for a waiter").
+        order.table.status = Table.Status.OCCUPIED
         order.table.opened_at = order.table.opened_at or timezone.now()
         order.table.save(update_fields=["status", "opened_at", "updated_at"])
         broadcast_order_event("created", order)
+        broadcast_table_event(order.table)
 
     def perform_update(self, serializer):
         order = serializer.save()
@@ -259,25 +273,18 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def perform_create(self, serializer):
         signal = serializer.save()
-        table = signal.table
-        table.attention = table_attention_from_signal(signal.signal_type)
-        table.attention_reason = signal.reason
-        table.attention_acknowledged = False
-        if signal.signal_type == AttentionSignal.Type.ARRIVED and table.status == Table.Status.FREE:
-            table.status = Table.Status.OCCUPIED
-            table.opened_at = timezone.now()
-        table.save(update_fields=["attention", "attention_reason", "attention_acknowledged", "status", "opened_at", "updated_at"])
+        table = apply_signal_to_table(signal, signal.table)
         broadcast_attention_event("created", signal)
+        broadcast_table_event(table)
 
     @decorators.action(detail=True, methods=["post"], url_path="ack")
     def ack(self, request, pk=None):
         signal = self.get_object()
         employee = employee_for_user(request.user)
         signal.acknowledge(employee)
-        table = signal.table
-        table.attention_acknowledged = True
-        table.save(update_fields=["attention_acknowledged", "updated_at"])
+        table = acknowledge_signal_on_table(signal.table)
         broadcast_attention_event("acked", signal)
+        broadcast_table_event(table)
         return Response(AttentionSignalSerializer(signal).data)
 
 

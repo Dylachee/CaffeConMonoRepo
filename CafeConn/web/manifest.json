@@ -1,11 +1,12 @@
 {
-    "name": "cafeconnect",
-    "short_name": "cafeconnect",
-    "start_url": ".",
+    "name": "CafeConnect Staff",
+    "short_name": "CafeConnect",
+    "start_url": "/staff/",
+    "scope": "/staff/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F2EFE8",
+    "theme_color": "#221F1A",
+    "description": "CafeConnect staff operations — floor, kitchen, bar.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

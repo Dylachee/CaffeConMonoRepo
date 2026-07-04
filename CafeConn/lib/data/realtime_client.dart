@@ -10,6 +10,7 @@ enum RealtimeEventType {
   connectionReady,
   orderCreated,
   orderUpdated,
+  tableUpdated,
   attentionCreated,
   attentionAcked,
   unknown,
@@ -19,10 +20,11 @@ enum RealtimeEventType {
 class RealtimeEvent {
   final RealtimeEventType type;
   final OrderDto? order;
+  final TableDto? table;
   final AttentionDto? attention;
   final Map<String, dynamic> raw;
   const RealtimeEvent(this.type,
-      {this.order, this.attention, this.raw = const {}});
+      {this.order, this.table, this.attention, this.raw = const {}});
 }
 
 /// Subscribes to the staff realtime feed (`ws://host/ws/staff/?token=...`).
@@ -104,6 +106,15 @@ class StaffRealtimeClient {
               : RealtimeEventType.orderUpdated,
           order: order is Map
               ? OrderDto.fromDrf(order.cast<String, dynamic>())
+              : null,
+          raw: map,
+        );
+      case 'table.updated':
+        final table = map['table'];
+        return RealtimeEvent(
+          RealtimeEventType.tableUpdated,
+          table: table is Map
+              ? TableDto.fromDrf(table.cast<String, dynamic>())
               : null,
           raw: map,
         );

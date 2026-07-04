@@ -22,3 +22,6 @@ class StaffConsumer(AsyncJsonWebsocketConsumer):
 
     async def attention_event(self, event):
         await self.send_json(event["payload"])
+
+    async def table_event(self, event):
+        await self.send_json(event["payload"])

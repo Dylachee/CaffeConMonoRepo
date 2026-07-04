@@ -1,0 +1,19 @@
+# CafeConnect — root-level ignores.
+# Sub-projects (CafeConn/, CafeConnWeb/) keep their own .gitignore for
+# Flutter/Python-specific artifacts. This file exists mainly because there
+# was no root .gitignore at all, so the root .env (created per README step 2
+# via `cp .env.example .env`, and containing DJANGO_SECRET_KEY / DB password /
+# your LAN IP) had nothing preventing it from being committed by accident.
+
+# Secrets — never commit the real root .env, only .env.example.
+.env
+.env.local
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# IDE (already tracked as of this writing — this only stops *new* noise;
+# see the Docker audit notes for the one-time `git rm --cached` step if you
+# want it untracked going forward).
+.idea/

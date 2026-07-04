@@ -12,6 +12,8 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
     list_display = ("name", "category", "station", "price", "is_available", "updated_at")
+    list_display_links = ("name",)
+    list_editable = ("price", "is_available")
     list_filter = ("category", "station", "is_available")
     search_fields = ("name", "description", "category")
 

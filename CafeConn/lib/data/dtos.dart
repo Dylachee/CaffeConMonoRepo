@@ -55,19 +55,19 @@ String flutterOrderStatusFromDjango(String s) {
 }
 
 /// Maps a Django Table.status to the Flutter TableStatus name the app uses.
+/// Only three statuses exist since 2026-07-02 (free/occupied/waiting); the
+/// legacy Django values are kept here so an old backend can't crash the app.
 String flutterTableStatusFromDjango(String s) {
   switch (s) {
     case 'occupied':
+    case 'ready': // legacy
       return 'occupied';
-    case 'awaiting_payment':
-      return 'awaitingPayment';
-    case 'ready':
-      return 'ready';
-    case 'late':
-      return 'late';
-    case 'new_order':
-    case 'needs_service':
-      return 'newOrder';
+    case 'waiting':
+    case 'new_order': // legacy
+    case 'needs_service': // legacy
+    case 'awaiting_payment': // legacy
+    case 'late': // legacy
+      return 'waiting';
     case 'free':
     default:
       return 'free';
@@ -183,6 +183,10 @@ class OrderDto {
 
   /// station_scope: kitchen | bar | mixed.
   final String station;
+
+  /// ISO-8601 server timestamp. Nullable: old backends may omit it; the app
+  /// then falls back to "now" (and the kitchen timer starts from zero).
+  final String? createdAt;
   final List<OrderItemDto> items;
 
   const OrderDto({
@@ -191,6 +195,7 @@ class OrderDto {
     required this.status,
     required this.station,
     required this.items,
+    this.createdAt,
   });
 
   factory OrderDto.fromBootstrap(Map<String, dynamic> j) => OrderDto(
@@ -198,6 +203,7 @@ class OrderDto {
         tableId: _asString(j['tableId']),
         status: _asString(j['status'], 'accepted'),
         station: _asString(j['station'], 'kitchen'),
+        createdAt: j['createdAt'] == null ? null : _asString(j['createdAt']),
         items: ((j['items'] as List?) ?? const [])
             .map((e) =>
                 OrderItemDto.fromBootstrap((e as Map).cast<String, dynamic>()))
@@ -212,6 +218,7 @@ class OrderDto {
       tableId: _asString(table?['id'] ?? j['table_id']),
       status: flutterOrderStatusFromDjango(_asString(j['status'], 'new')),
       station: _asString(j['station_scope'], 'kitchen'),
+      createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
       items: ((j['items'] as List?) ?? const [])
           .map((e) => OrderItemDto.fromDrf((e as Map).cast<String, dynamic>()))
           .toList(),
@@ -234,6 +241,10 @@ class TableDto {
   final String? currentOrderId;
   final String? attention;
   final String attentionReason;
+
+  /// Latest unacked attention-signal id (bootstrap only) — lets the staff app
+  /// ack a signal that fired before this device connected.
+  final String? attentionSignalId;
   final bool ack;
 
   const TableDto({
@@ -249,6 +260,7 @@ class TableDto {
     required this.currentOrderId,
     required this.attention,
     required this.attentionReason,
+    this.attentionSignalId,
     required this.ack,
   });
 
@@ -266,6 +278,9 @@ class TableDto {
             j['currentOrderId'] == null ? null : _asString(j['currentOrderId']),
         attention: j['attention'] == null ? null : _asString(j['attention']),
         attentionReason: _asString(j['attentionReason']),
+        attentionSignalId: j['attentionSignalId'] == null
+            ? null
+            : _asString(j['attentionSignalId']),
         ack: _asBool(j['ack']),
       );
 

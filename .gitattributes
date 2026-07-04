@@ -1,0 +1,60 @@
+# CafeConnect — cross-platform team (Windows + macOS).
+# The repo history already stores LF for all text files; this file makes that
+# explicit so CRLF working trees (Git for Windows default) never show phantom
+# "every line changed" diffs and never commit CRLF into the repo.
+#
+# No renormalization commit is needed: with `text=auto` git normalizes on
+# staging, so `git status` compares content, not raw bytes.
+
+# Default: auto-detect text, store LF in the repo, checkout per platform.
+* text=auto
+
+# Source code and configs — keep LF in the working tree on both platforms
+# so formatters (dart format, black) and diffs behave identically.
+*.py      text eol=lf
+*.dart    text eol=lf
+*.html    text eol=lf
+*.css     text eol=lf
+*.js      text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.toml    text eol=lf
+*.xml     text eol=lf
+*.gradle  text eol=lf
+*.kts     text eol=lf
+*.properties text eol=lf
+*.arb     text eol=lf
+*.md      text
+*.txt     text
+
+# Shell scripts require LF (bash/zsh fail on CRLF); Windows scripts stay CRLF.
+*.sh      text eol=lf
+gradlew   text eol=lf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+# Binary — never convert line endings.
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.pdf     binary
+*.ttf     binary
+*.otf     binary
+*.woff    binary
+*.woff2   binary
+*.wasm    binary
+*.zip     binary
+*.jar     binary
+*.keystore binary
+*.jks     binary
+*.so      binary
+*.dylib   binary
+*.dll     binary
+*.heic    binary
+*.mp3     binary
+*.wav     binary
