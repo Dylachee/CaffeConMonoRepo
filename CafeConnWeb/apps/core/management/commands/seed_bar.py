@@ -20,13 +20,22 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Sissi Bistro Bar — ready."))
 
     def _create_staff(self):
+        # (username, display name, role, is_staff, is_superuser, default password)
+        # Passwords are set ONLY at first creation. Change them before go-live:
+        #   docker compose exec web python manage.py changepassword <username>
         staff = [
-            ("tony",  "Tony",  Employee.Role.ADMIN, True, False),
-            ("ibi",   "Ibi",   Employee.Role.ADMIN, True, False),
-            ("alina", "Alina", Employee.Role.ADMIN, True, False),
-            ("uluk",  "Uluk",  Employee.Role.ADMIN, True, False),
+            ("tony",  "Tony",  Employee.Role.ADMIN, True, False, "cafeconnect"),
+            ("ibi",   "Ibi",   Employee.Role.ADMIN, True, False, "cafeconnect"),
+            ("alina", "Alina", Employee.Role.ADMIN, True, False, "cafeconnect"),
+            ("uluk",  "Uluk",  Employee.Role.ADMIN, True, False, "cafeconnect"),
+            # One account per position so the floor can work (and the app can
+            # later gate features) per role. Manager gets dashboard access.
+            ("manager",   "Менеджер", Employee.Role.MANAGER, True,  False, "Manager2026!"),
+            ("waiter",    "Официант", Employee.Role.WAITER,  False, False, "Waiter2026!"),
+            ("cook",      "Повар",    Employee.Role.KITCHEN, False, False, "Cook2026!"),
+            ("bartender", "Бармен",   Employee.Role.BAR,     False, False, "Bartender2026!"),
         ]
-        for username, name, role, is_staff, is_superuser in staff:
+        for username, name, role, is_staff, is_superuser, password in staff:
             user, created = User.objects.get_or_create(
                 username=username,
                 defaults={
@@ -36,7 +45,7 @@ class Command(BaseCommand):
                 },
             )
             if created:
-                user.set_password("cafeconnect")
+                user.set_password(password)
                 user.save()
             Employee.objects.update_or_create(
                 user=user,

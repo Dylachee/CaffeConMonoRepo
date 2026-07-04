@@ -2,8 +2,9 @@ import mimetypes
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.cache import cache
 from django.db import transaction
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -93,9 +94,17 @@ _NO_CACHE_STAFF_FILES = {"index.html", "flutter_service_worker.js", "flutter_boo
 def staff_app(request, path=""):
     """Serve the compiled Flutter staff PWA. Unknown paths fall back to index.html
     so Flutter's own router handles in-app navigation."""
-    target = _STAFF_BUILD / path if path else _STAFF_BUILD / "index.html"
+    base = _STAFF_BUILD.resolve()
+    # Resolve before serving: `<path:path>` accepts `..` and absolute paths, so
+    # without this guard `/staff/../backend_core/settings.py` (or `/staff//etc/
+    # passwd`) would be read straight off the container filesystem.
+    target = (base / path).resolve() if path else base / "index.html"
+    if not target.is_relative_to(base) or not target.is_file():
+        target = base / "index.html"
     if not target.is_file():
-        target = _STAFF_BUILD / "index.html"
+        # No compiled staff build deployed yet (static/staff/ is gitignored).
+        # A missing build must be a clear 404, not a FileNotFoundError 500.
+        raise Http404("Staff PWA build is not deployed. See RUNBOOK.md.")
     content_type, _ = mimetypes.guess_type(str(target))
     response = FileResponse(open(target, "rb"), content_type=content_type or "application/octet-stream")
     if target.name in _NO_CACHE_STAFF_FILES:
@@ -110,29 +119,42 @@ def staff_app(request, path=""):
 @require_POST
 def create_guest_order(request):
     table_id = request.POST.get("table")
-    selected_ids = request.POST.getlist("items")
+    # Only numeric ids can match rows; anything else in pk__in raises a 500.
+    selected_ids = [s for s in request.POST.getlist("items") if s.isdigit()]
 
     if not table_id or not selected_ids:
         messages.error(request, "Выберите стол и хотя бы одно блюдо.")
         return _redirect_menu(table_id)
 
     with transaction.atomic():
-        table = Table.objects.select_for_update().get(pk=table_id)
+        # table_id and quantities come straight from the guest's browser: a
+        # non-numeric id or quantity must produce a friendly error, not a 500.
+        try:
+            table = Table.objects.select_for_update().get(pk=table_id)
+        except (Table.DoesNotExist, ValueError):
+            messages.error(request, "Стол не найден. Отсканируйте QR-код ещё раз.")
+            return _redirect_menu(None)
         order = Order.objects.create(
             table=table,
-            guest_name=request.POST.get("guest_name", "").strip(),
-            notes=request.POST.get("notes", "").strip(),
+            guest_name=request.POST.get("guest_name", "").strip()[:120],
+            notes=request.POST.get("notes", "").strip()[:2000],
         )
 
         menu_items = MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
         order_items = []
         for item in menu_items:
-            quantity = int(request.POST.get(f"quantity_{item.pk}", "1") or 1)
+            try:
+                quantity = int(request.POST.get(f"quantity_{item.pk}", "1") or 1)
+            except ValueError:
+                quantity = 1
+            # Clamp: nobody orders 500 espressos; huge numbers are either a
+            # typo or abuse, and both would flood the kitchen feed.
+            quantity = min(max(quantity, 1), 50)
             order_items.append(
                 OrderItem(
                     order=order,
                     menu_item=item,
-                    quantity=max(quantity, 1),
+                    quantity=quantity,
                     unit_price=item.price,
                     station=item.station,  # was missing — all items defaulted to KITCHEN
                 )
@@ -170,6 +192,16 @@ def create_attention_signal(request):
     table = get_object_or_404(Table, pk=table_id)
     signal_type = request.POST.get("signal_type")
     is_fetch = request.headers.get("X-Requested-With") == "fetch"
+
+    # Per-IP rate limit: every signal pings every staff device, so a stuck
+    # button (or someone poking the endpoint) must not flood the floor.
+    rate_key = f"attn-rate:{request.META.get('REMOTE_ADDR', '?')}"
+    cache.add(rate_key, 0, 60)
+    if cache.incr(rate_key) > 6:
+        if is_fetch:
+            return JsonResponse({"ok": False, "error": "rate limited"}, status=429)
+        messages.error(request, "Слишком много сигналов подряд. Подождите минуту.")
+        return _redirect_menu(table_id)
     if signal_type not in AttentionSignal.Type.values:
         if is_fetch:
             return JsonResponse({"ok": False, "error": "unknown signal"}, status=400)

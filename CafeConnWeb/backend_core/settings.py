@@ -118,6 +118,12 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # Brakes on the anonymous surface. Uses the default LocMem cache — per
+    # process, which is exactly the daphne single-process setup we run.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/min",            # brute-force brake on /api/auth/token/
+        "attention-create": "6/min",  # guest "call waiter" via API
+    },
 }
 
 AUTH_PASSWORD_VALIDATORS = [

@@ -2,7 +2,9 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
@@ -24,6 +26,14 @@ class HealthCheckView(APIView):
 
     def get(self, request):
         return Response({"status": "ok", "service": "CafeConnect API"})
+
+
+class ThrottledObtainAuthToken(ObtainAuthToken):
+    """Login endpoint with a brute-force brake: DRF ships obtain_auth_token
+    without any throttle, so passwords could be guessed at wire speed."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
 
 def employee_for_user(user):
@@ -76,7 +86,14 @@ def serialize_for_flutter_menu(item: MenuItem) -> dict:
 
 
 def serialize_for_flutter_table(table: Table) -> dict:
-    current_order = table.orders.exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED]).first()
+    # Bootstrap prefetches active orders (to_attr) — one query for all tables
+    # instead of one per table. Fall back to a direct query for callers that
+    # didn't prefetch.
+    active = getattr(table, "active_orders", None)
+    if active is not None:
+        current_order = active[0] if active else None
+    else:
+        current_order = table.orders.exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED]).first()
     # Set by the bootstrap prefetch (to_attr); lets the app ack a signal that
     # was created before this device (re)connected.
     unacked = getattr(table, "unacked_signals", None) or []
@@ -140,7 +157,14 @@ class StaffBootstrapView(APIView):
                 "attention_signals",
                 queryset=AttentionSignal.objects.filter(ack=False).order_by("-created_at"),
                 to_attr="unacked_signals",
-            )
+            ),
+            Prefetch(
+                "orders",
+                queryset=Order.objects.exclude(
+                    status__in=[Order.Status.PAID, Order.Status.CANCELLED]
+                ).order_by("-created_at"),
+                to_attr="active_orders",
+            ),
         )
         return Response(
             {
@@ -170,7 +194,10 @@ class MenuItemViewSet(viewsets.ModelViewSet):
 class TableViewSet(viewsets.ModelViewSet):
     queryset = Table.objects.all()
     serializer_class = TableSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    # Staff-only, reads included: the guest page is fully server-rendered and
+    # never calls this API, so there is no reason to expose the live floor
+    # state (statuses, waiter names) to anyone unauthenticated.
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["status"]
     search_fields = ["number", "label"]
     ordering_fields = ["number", "updated_at"]
@@ -269,6 +296,14 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
         if self.action == "create":
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
+
+    def get_throttles(self):
+        # Anonymous guests may create signals, but each one pings every staff
+        # device — keep the anonymous path on a short leash.
+        if self.action == "create":
+            self.throttle_scope = "attention-create"
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
 
     @transaction.atomic
     def perform_create(self, serializer):

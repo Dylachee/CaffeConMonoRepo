@@ -11,21 +11,31 @@ Staff-only café/restaurant operations app. NOT a POS/cash register. A digital r
 - Animation: flutter_animate
 - Fonts: Inter (UI) + JetBrains Mono (numbers/timers) — **must be bundled assets, NOT google_fonts**
 
-## File structure
+## File structure (modularized 2026-07-04)
 ```
 lib/
-  main.dart              ← SINGLE SOURCE OF TRUTH for all classes (4502 lines, go_router points here)
-  state/cafe_state.dart  ← duplicate, NOT used by go_router
-  screens/               ← duplicate files, NOT used by go_router — ignore or delete
-  features/              ← duplicate files, NOT used by go_router — ignore or delete
-  core/                  ← duplicate files, NOT used by go_router — ignore or delete
-  theme/app_colors.dart  ← partially used
-  theme/app_typography.dart ← partially used
-  widgets/app_widgets.dart  ← partially used
-assets/fonts/            ← DOES NOT EXIST YET — must be created
+  main.dart                        ← main() + CafeConnectApp + GoRouter only
+  core/theme/app_theme.dart        ← AppTheme + T (typography scale)
+  core/theme/app_colors.dart       ← AppColors design tokens
+  core/theme/app_typography.dart   ← AppTypography helpers
+  core/utils.dart                  ← DurationNum / Money extensions
+  models/models.dart               ← enums, AppUser, CafeTable, MenuItem, CartLine, CafeOrder, chat models + status/role label helpers
+  state/cafe_state.dart            ← CafeState (ChangeNotifier) + MockCafeApi (offline seed)
+  data/                            ← ApiConfig, CafeApiClient, DTOs, realtime client
+  widgets/app_widgets.dart         ← shared widgets (buttons, cards, AppScaffold, EmptyState, LiveTimer, AttentionBanner, showForwardSheet...)
+  screens/shell/main_shell.dart    ← bottom-nav PageView shell
+  screens/tables/table_grid.dart   ← WaiterTableGridScreen + TableCard + QuickCheckOverlay
+  screens/tables/table_details.dart
+  screens/orders/order_composer.dart ← WaiterOrderScreen + precheck sheet
+  screens/orders/order_feed.dart   ← kitchen/bar feed + OrderCard
+  screens/menu/staff_menu.dart     ← menu showcase + table picker
+  screens/menu/dish_details.dart   ← showStaffDishDetails sheet
+  screens/chat/chat.dart           ← chat list + chat screen + receipt cards
+  screens/panel/staff_panel.dart   ← panel tabs (overview/team/menu/access)
+  screens/settings/settings.dart
 ```
 
-**IMPORTANT:** All working classes are defined inside `lib/main.dart`. The files in `lib/screens/`, `lib/features/`, `lib/core/` are dead duplicates not connected to go_router. Do NOT edit them — they are noise.
+Every class lives in exactly one file; there are no duplicate copies. Put new screens under `lib/screens/<area>/`, shared widgets in `lib/widgets/app_widgets.dart`, domain types in `lib/models/models.dart`.
 
 ## Commands
 ```bash

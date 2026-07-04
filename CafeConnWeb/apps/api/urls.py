@@ -1,5 +1,4 @@
 from django.urls import include, path
-from rest_framework.authtoken.views import obtain_auth_token
 from rest_framework.routers import DefaultRouter
 
 from apps.api import views
@@ -16,7 +15,7 @@ router.register("employees", views.EmployeeViewSet, basename="employee")
 
 urlpatterns = [
     path("", include(router.urls)),
-    path("auth/token/", obtain_auth_token, name="auth-token"),
+    path("auth/token/", views.ThrottledObtainAuthToken.as_view(), name="auth-token"),
     path("staff/bootstrap/", views.StaffBootstrapView.as_view(), name="staff-bootstrap"),
     path("staff/preferences/", views.StaffPreferenceView.as_view(), name="staff-preferences"),
     path("health/", views.HealthCheckView.as_view(), name="health"),
