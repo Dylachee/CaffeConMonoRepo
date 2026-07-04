@@ -36,15 +36,13 @@ class MenuItem(models.Model):
 
 class Table(models.Model):
     class Status(models.TextChoices):
-        FREE = "free", "Free"
-        OCCUPIED = "occupied", "Occupied"
-        RESERVED = "reserved", "Reserved"
-        NEW_ORDER = "new_order", "New order"
-        READY = "ready", "Ready"
-        AWAITING_PAYMENT = "awaiting_payment", "Awaiting payment"
-        NEEDS_SERVICE = "needs_service", "Needs service"
-        LATE = "late", "Late"
-        CLOSED = "closed", "Closed"
+        # Deliberately just three states (product decision, 2026-07-02):
+        # a table is either free, taken, or the guests want a waiter.
+        # Everything finer-grained (new order / bill / late / reserved)
+        # proved to be noise for a small bar floor.
+        FREE = "free", "Свободен"
+        OCCUPIED = "occupied", "Занят"
+        WAITING = "waiting", "Ждёт официанта"
 
     class Attention(models.TextChoices):
         NONE = "", "None"

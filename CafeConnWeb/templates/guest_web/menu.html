@@ -1,100 +1,364 @@
-{% extends "base.html" %}
+{% comment %}
+   ==========================================================================
+   Guest menu — v3 «Меню и точка» (2026-07-02, third rewrite, owner's brief:
+   "минимальный порог входа, мизерное меню, максимум удобства").
 
-{% block title %}CafeConnect Menu{% endblock %}
+   Design contract — read before "improving":
+   • ZERO external requests. No Google Fonts, no CSS/JS files, no images.
+     Everything inline: the page renders in one round-trip over bar Wi-Fi
+     on a 5-year-old phone. This is the entire point of v3 — do not add
+     a <link> or <script src> here, ever.
+   • Zero UI to learn. No tabs, no moods, no overlays, no theme toggles.
+     Scan → menu. Light/dark follows the phone (prefers-color-scheme).
+   • Works without JavaScript: category chips are plain anchors, the two
+     buttons are plain <form method="post"> (the backend answers a redirect
+     for non-fetch posts and the waiting state is server-rendered).
+     JS only makes the same actions smoother.
+   • Endpoints and semantics are owned by apps/core/services.py and
+     apps/guest_web/views.py — this file may not invent states.
+   ==========================================================================
+{% endcomment %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16110b">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f2e9">
+<title>{% if table %}Стол {{ table.number }} · {% endif %}{{ venue.name }}</title>
+<style>
+  /* ---- Palette: warm paper by day, warm espresso by night ---- */
+  :root{
+    --bg:#f7f2e9; --card:#fffdf9; --ink:#2e241a; --mut:#82735f; --faint:#a99a84;
+    --acc:#a96f24; --ok:#4c7c3f; --okbg:#eaf0e2;
+    --line:rgba(46,36,26,.12); --dots:rgba(46,36,26,.3);
+    --btn1:#e9b269; --btn2:#d8963e; --btntx:#241a0e;
+    --navbg:rgba(247,242,233,.88); --barbg:rgba(252,249,243,.92);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#16110b; --card:#211a11; --ink:#f4ecdd; --mut:#a2937d; --faint:#7c6e5b;
+      --acc:#e0a35c; --ok:#a3c48f; --okbg:#25301e;
+      --line:rgba(244,236,221,.1); --dots:rgba(244,236,221,.28);
+      --btn1:#e8b06a; --btn2:#d3913c; --btntx:#241a0e;
+      --navbg:rgba(22,17,11,.86); --barbg:rgba(28,22,14,.92);
+    }
+  }
 
-{% block content %}
-<section class="toolbar">
-  <div>
-    <p class="eyebrow">CafeConnect</p>
-    <h1>Меню</h1>
-    <p class="subtle">Выберите стол и блюда. Заказ сразу уйдет персоналу.</p>
-  </div>
-  <a class="button" href="/api/menu-items/">API</a>
-</section>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 16px}
+  .serif{font-family:Georgia,"Times New Roman",serif}
 
-<form class="order-layout" method="post" action="{% url 'guest_web:create-order' %}">
-  {% csrf_token %}
-  <aside class="order-panel">
-    <h2>Стол и заказ</h2>
-    <label>
-      Стол
-      <select name="table" required>
-        <option value="">Выберите стол</option>
-        {% for table in tables %}
-          <option value="{{ table.id }}">{{ table }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      Имя гостя
-      <input name="guest_name" placeholder="Например, Алекс">
-    </label>
-    <label>
-      Комментарий
-      <textarea name="notes" rows="4" placeholder="Без сахара, аллергии, пожелания"></textarea>
-    </label>
-    <button class="button full" type="submit">Отправить заказ</button>
-  </aside>
+  /* ---- Header: who we are + where you sit. One line, no hero. ---- */
+  .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:18px 0 14px}
+  .hd-name{font-family:Georgia,serif;font-size:19px;font-weight:700;letter-spacing:.2px}
+  .hd-tag{display:block;font-size:11.5px;color:var(--mut);margin-top:2px;
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}
+  .hd-table{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;
+            padding:7px 14px;font-size:12.5px;color:var(--mut);background:var(--card)}
+  .hd-table b{font-family:Georgia,serif;font-size:16px;color:var(--ink);margin-left:4px}
 
-  <section>
-    <div class="chips" aria-label="Категории">
-      <span class="chip active">Все</span>
-      {% for category in categories %}
-        <span class="chip">{{ category }}</span>
-      {% endfor %}
+  /* ---- Category chips: sticky, horizontal, plain anchors ---- */
+  .cats{position:sticky;top:0;z-index:10;display:flex;gap:7px;overflow-x:auto;
+        padding:10px 16px;margin:0 -16px;scrollbar-width:none;
+        background:var(--navbg);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+        border-bottom:1px solid var(--line)}
+  .cats::-webkit-scrollbar{display:none}
+  .cat{flex:0 0 auto;text-decoration:none;color:var(--mut);font-size:13px;
+       border:1px solid var(--line);border-radius:999px;padding:7px 13px;
+       background:transparent;transition:color .15s,border-color .15s;touch-action:manipulation}
+  .cat.on{color:var(--ink);border-color:var(--acc);
+          background:color-mix(in srgb, var(--acc) 14%, transparent)}
+
+  /* ---- Sections & cards ---- */
+  .sec{margin-top:24px;scroll-margin-top:74px}
+  .sec-h{font-family:Georgia,serif;font-size:21px;font-weight:700;margin-bottom:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:13px 15px;margin-bottom:10px}
+  .card.off{opacity:.5}
+  .star{display:block;font-size:10.5px;font-weight:700;letter-spacing:.12em;
+        text-transform:uppercase;color:var(--acc);margin-bottom:4px}
+  .row{display:flex;align-items:baseline}
+  .nm{font-family:Georgia,serif;font-size:16.5px;font-weight:600;line-height:1.3}
+  .dots{flex:1 1 14px;min-width:14px;margin:0 7px;position:relative;top:-3px;
+        border-bottom:1px dotted var(--dots)}
+  .pr{font-size:15.5px;font-weight:600;color:var(--acc);white-space:nowrap;
+      font-variant-numeric:tabular-nums}
+  .card.off .pr{color:var(--faint);font-weight:500;font-size:12.5px}
+  .ds{font-size:13.5px;color:var(--mut);margin-top:5px}
+  .cp{font-size:12.5px;color:var(--faint);font-style:italic;margin-top:4px}
+  .al{font-size:11.5px;color:var(--faint);margin-top:5px}
+
+  .empty{color:var(--mut);text-align:center;padding:48px 0}
+
+  /* ---- Footer ---- */
+  .ft{margin-top:34px;text-align:center;font-size:12px;color:var(--faint)}
+  .ft span{display:block;margin-top:3px}
+
+  /* ---- Bottom action bar ---- */
+  .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;
+       padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+       background:var(--barbg);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+       border-top:1px solid var(--line)}
+  .bar-in{max-width:640px;margin:0 auto}
+  .bar-idle{display:flex;gap:10px}
+  .f-call{flex:1 1 auto}
+  .f-bill{flex:0 0 auto}
+  .b-call,.b-bill{height:52px;border-radius:15px;font-size:15.5px;font-weight:700;
+       border:0;cursor:pointer;touch-action:manipulation;
+       font-family:inherit;transition:transform .1s}
+  .b-call{width:100%;color:var(--btntx);
+       background:linear-gradient(180deg,var(--btn1),var(--btn2))}
+  .b-bill{padding:0 20px;background:transparent;color:var(--ink);
+       border:1px solid var(--line)}
+  .b-call:active,.b-bill:active{transform:scale(.97)}
+  .b-call[disabled],.b-bill[disabled]{opacity:.6}
+
+  .bar-done{display:flex;align-items:center;justify-content:space-between;gap:12px;
+       min-height:52px;border-radius:15px;padding:8px 16px;
+       background:var(--okbg);border:1px solid color-mix(in srgb, var(--ok) 36%, transparent)}
+  .done-txt{color:var(--ok);font-weight:700;font-size:15px}
+  @keyframes pop{0%{transform:scale(.92);opacity:0}100%{transform:scale(1);opacity:1}}
+  .bar-done{animation:pop .22s ease-out}
+  .b-cancel{background:none;border:0;color:var(--mut);font-size:13px;font-family:inherit;
+       text-decoration:underline;cursor:pointer;padding:8px 0 8px 8px;touch-action:manipulation}
+
+  .hint{max-width:640px;margin:0 auto;font-size:12.5px;color:var(--mut);text-align:center}
+
+  /* ---- Error toast ---- */
+  .toast{position:fixed;left:50%;transform:translateX(-50%);
+       bottom:calc(96px + env(safe-area-inset-bottom));z-index:30;
+       background:var(--ink);color:var(--bg);font-size:13px;padding:9px 16px;
+       border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:.94}
+</style>
+</head>
+<body{% if table %} data-table="{{ table.pk }}" data-status="{{ table.status }}" data-attention="{{ table.attention }}" data-cancel-url="{% url 'guest_web:cancel-attention' %}"{% endif %}>
+
+<div class="wrap">
+  <header class="hd">
+    <div>
+      <span class="hd-name">{{ venue.name }}</span>
+      <span class="hd-tag">{{ venue.tagline }}</span>
     </div>
+    {% if table %}<span class="hd-table">стол<b>{{ table.number }}</b></span>{% endif %}
+  </header>
 
-    <div class="grid">
-      {% for item in menu_items %}
-        <article class="card menu-card">
-          {% if item.image_url %}
-            <img class="card-image" src="{{ item.image_url }}" alt="{{ item.name }}">
-          {% endif %}
-          <div class="card-body">
-            <p class="eyebrow">{{ item.category }}</p>
-            <h2>{{ item.name }}</h2>
-            <p>{{ item.description|default:"Свежая позиция из меню." }}</p>
-            <div class="menu-card-footer">
-              <strong>{{ item.price }} EUR</strong>
-              <label class="check-pill">
-                <input type="checkbox" name="items" value="{{ item.id }}">
-                <span>В заказ</span>
-              </label>
-            </div>
-            <label class="quantity-label">
-              Количество
-              <input type="number" min="1" value="1" name="quantity_{{ item.id }}">
-            </label>
-          </div>
-        </article>
-      {% empty %}
-        <article class="empty-state">
-          <h2>Меню пока пустое</h2>
-          <p>Добавьте блюда через /system-admin/ или REST API.</p>
-        </article>
+  {% if menu_sections %}
+  <nav class="cats" id="cats" aria-label="Разделы меню">
+    {% for section in menu_sections %}
+    <a class="cat{% if forloop.first %} on{% endif %}" href="#s{{ forloop.counter }}">{{ section.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <main>
+    {% for section in menu_sections %}
+    <section class="sec" id="s{{ forloop.counter }}">
+      <h2 class="sec-h">{{ section.name }}</h2>
+      {% for item in section.items %}
+      <article class="card{% if not item.is_available %} off{% endif %}">
+        {% if item.is_promoted and item.is_available %}<span class="star">★ шеф советует</span>{% endif %}
+        <div class="row">
+          <h3 class="nm">{{ item.name }}</h3>
+          <span class="dots" aria-hidden="true"></span>
+          <span class="pr">{% if item.is_available %}{{ item.price_str }}{% else %}закончилось{% endif %}</span>
+        </div>
+        {% if item.description %}<p class="ds">{{ item.description }}</p>{% endif %}
+        {% if item.composition %}<p class="cp">{{ item.composition }}</p>{% endif %}
+        {% if item.allergens %}<p class="al">аллергены: {{ item.allergens|join:" · " }}</p>{% endif %}
+      </article>
       {% endfor %}
+    </section>
+    {% empty %}
+    <p class="empty">Меню наполняется — попросите бумажное у официанта.</p>
+    {% endfor %}
+  </main>
+
+  <footer class="ft">
+    <span>{{ venue.hours }}</span>
+    <span>{{ venue.address }}</span>
+  </footer>
+</div>
+
+{% if table %}
+<div class="bar">
+  <div class="bar-in">
+    <div class="bar-idle" id="bar-idle" {% if table.status == 'waiting' %}hidden{% endif %}>
+      <form class="f-call" method="post" action="{% url 'guest_web:create-attention' %}">
+        {% csrf_token %}
+        <input type="hidden" name="table" value="{{ table.pk }}">
+        <input type="hidden" name="signal_type" value="call_waiter">
+        <button class="b-call" type="submit">Позвать официанта</button>
+      </form>
+      <form class="f-bill" method="post" action="{% url 'guest_web:create-attention' %}">
+        {% csrf_token %}
+        <input type="hidden" name="table" value="{{ table.pk }}">
+        <input type="hidden" name="signal_type" value="bill_request">
+        <button class="b-bill" type="submit">Счёт</button>
+      </form>
     </div>
-  </section>
-</form>
-
-<section class="guest-actions">
-  <div>
-    <p class="eyebrow">Быстрая связь</p>
-    <h2>Сигнал персоналу</h2>
-    <p class="subtle">Для проверки realtime: выберите стол и отправьте событие официанту.</p>
+    <div class="bar-done" id="bar-done" {% if table.status != 'waiting' %}hidden{% endif %} aria-live="polite">
+      <span class="done-txt" id="done-txt">{% if table.attention == 'bill' %}✓ Сейчас принесут счёт{% else %}✓ Официант уже идёт{% endif %}</span>
+      <button class="b-cancel" id="b-cancel" type="button" hidden>Отменить</button>
+    </div>
   </div>
-  <form class="signal-grid" method="post" action="{% url 'guest_web:create-attention' %}">
-    {% csrf_token %}
-    <select name="table" required>
-      <option value="">Стол</option>
-      {% for table in tables %}
-        <option value="{{ table.id }}">{{ table }}</option>
-      {% endfor %}
-    </select>
-    <input name="reason" placeholder="Комментарий, если нужен">
-    <button class="signal-button signal-blue" name="signal_type" value="arrived" type="submit">Я пришел</button>
-    <button class="signal-button signal-amber" name="signal_type" value="call_waiter" type="submit">Позвать официанта</button>
-    <button class="signal-button signal-purple" name="signal_type" value="bill_request" type="submit">Попросить счет</button>
-  </form>
-</section>
-{% endblock %}
+</div>
+{% else %}
+<div class="bar"><p class="hint">Отсканируйте QR-код на вашем столе, чтобы позвать официанта отсюда.</p></div>
+{% endif %}
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Category chips follow the scroll ---------- */
+  var cats = document.getElementById("cats");
+  if (cats) {
+    var chips = [].slice.call(cats.querySelectorAll(".cat"));
+    var secs = chips.map(function (c) {
+      return document.getElementById(c.getAttribute("href").slice(1));
+    });
+    var ticking = false;
+    function syncChips() {
+      ticking = false;
+      var i, active = 0;
+      for (i = 0; i < secs.length; i++) {
+        if (secs[i] && secs[i].getBoundingClientRect().top <= 120) active = i;
+      }
+      for (i = 0; i < chips.length; i++) chips[i].classList.toggle("on", i === active);
+      var chip = chips[active];
+      if (chip) {
+        var want = chip.offsetLeft - 24;
+        if (Math.abs(cats.scrollLeft - want) > 8) cats.scrollTo({ left: want, behavior: "smooth" });
+      }
+    }
+    window.addEventListener("scroll", function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(syncChips); }
+    }, { passive: true });
+  }
+
+  /* ---------- Waiter call / bill request ---------- */
+  var body = document.body;
+  var tablePk = body.getAttribute("data-table");
+  if (!tablePk) return;
+
+  var idle = document.getElementById("bar-idle");
+  var done = document.getElementById("bar-done");
+  var doneTxt = document.getElementById("done-txt");
+  var cancelBtn = document.getElementById("b-cancel");
+  var toast = document.getElementById("toast");
+  var KEY = "cc-signal-" + tablePk;
+  var TTL = 15 * 60 * 1000; /* your own call is cancellable for 15 min */
+  var TEXTS = { call_waiter: "✓ Официант уже идёт", bill_request: "✓ Сейчас принесут счёт" };
+
+  function readOwn() {
+    try {
+      var raw = sessionStorage.getItem(KEY);
+      if (!raw) return null;
+      var v = JSON.parse(raw);
+      if (!v.id || Date.now() - v.ts > TTL) { sessionStorage.removeItem(KEY); return null; }
+      return v;
+    } catch (e) { return null; }
+  }
+  function storeOwn(id, type) {
+    try { sessionStorage.setItem(KEY, JSON.stringify({ id: id, type: type, ts: Date.now() })); } catch (e) {}
+  }
+  function clearOwn() { try { sessionStorage.removeItem(KEY); } catch (e) {} }
+
+  function csrf() {
+    var inp = document.querySelector("[name=csrfmiddlewaretoken]");
+    return inp ? inp.value : "";
+  }
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(function () { toast.classList.remove("show"); }, 2600);
+  }
+  function showDone(type, cancellable) {
+    doneTxt.textContent = TEXTS[type] || TEXTS.call_waiter;
+    cancelBtn.hidden = !cancellable;
+    idle.hidden = true;
+    done.hidden = false;
+  }
+  function showIdle() {
+    done.hidden = true;
+    idle.hidden = false;
+    [].forEach.call(idle.querySelectorAll("button"), function (b) { b.disabled = false; });
+  }
+
+  /* Restore state on load: the server already rendered waiting/idle;
+     we only add the cancel button when the pending call is our own. */
+  var own = readOwn();
+  if (!done.hidden) {
+    if (own) showDone(own.type, true);
+  } else {
+    clearOwn();
+  }
+
+  [].forEach.call(document.querySelectorAll(".bar-idle form"), function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var type = form.querySelector("[name=signal_type]").value;
+      [].forEach.call(idle.querySelectorAll("button"), function (b) { b.disabled = true; });
+      fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        headers: { "X-Requested-With": "fetch" }
+      }).then(function (res) {
+        if (!res.ok) throw new Error("http " + res.status);
+        return res.json();
+      }).then(function (data) {
+        if (!data.ok) throw new Error("rejected");
+        storeOwn(data.signal, type);
+        showDone(type, true);
+      }).catch(function () {
+        /* Wi-Fi hiccup: let the plain form do it the old way (full reload). */
+        showIdle();
+        showToast("Не получилось — пробуем ещё раз…");
+        setTimeout(function () { form.submit(); }, 400);
+      });
+    });
+  });
+
+  cancelBtn.addEventListener("click", function () {
+    var own = readOwn();
+    if (!own) { cancelBtn.hidden = true; return; }
+    cancelBtn.disabled = true;
+    var fd = new FormData();
+    fd.append("signal", own.id);
+    fd.append("csrfmiddlewaretoken", csrf());
+    fetch(body.getAttribute("data-cancel-url"), {
+      method: "POST",
+      body: fd,
+      headers: { "X-Requested-With": "fetch" }
+    }).then(function (res) {
+      if (!res.ok) throw new Error("http " + res.status);
+      return res.json();
+    }).then(function () {
+      clearOwn();
+      cancelBtn.disabled = false;
+      showIdle();
+    }).catch(function () {
+      cancelBtn.disabled = false;
+      showToast("Не удалось отменить — официант уже в пути");
+    });
+  });
+})();
+</script>
+</body>
+</html>

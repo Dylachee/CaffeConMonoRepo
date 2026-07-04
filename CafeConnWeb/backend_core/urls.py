@@ -3,6 +3,8 @@ from django.shortcuts import redirect
 from django.urls import include, path
 from django.views.generic import TemplateView
 
+from apps.guest_web.views import staff_app
+
 
 def home_redirect(request):
     return redirect("guest_web:menu")
@@ -11,6 +13,8 @@ def home_redirect(request):
 urlpatterns = [
     path("", home_redirect, name="home"),
     path("menu/", include("apps.guest_web.urls")),
+    path("staff/", staff_app),
+    path("staff/<path:path>", staff_app),
     path("dashboard/", include("apps.admin_web.urls")),
     path("system-admin/", admin.site.urls),
     path("api/", include("apps.api.urls")),

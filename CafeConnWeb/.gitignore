@@ -13,3 +13,9 @@ staticfiles/
 media/
 .DS_Store
 Thumbs.db
+
+# Compiled Flutter staff PWA — build artifact, regenerated per RUNBOOK.md
+# («After rebuilding the Flutter staff web bundle»). Never been tracked;
+# ~30 MB of canvaskit/fonts per build would bloat history. Use `git add -f`
+# only if you deliberately want a build snapshot in the repo.
+static/staff/

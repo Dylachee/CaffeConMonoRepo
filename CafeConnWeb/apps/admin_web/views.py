@@ -6,8 +6,9 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from apps.api.events import broadcast_attention_event, broadcast_order_event
+from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
 from apps.core.models import AttentionSignal, MenuItem, Order, Table
+from apps.core.services import acknowledge_signal_on_table
 
 
 @staff_member_required(login_url="/system-admin/login/")
@@ -92,8 +93,8 @@ def ack_attention_signal(request, signal_id):
     except Exception:
         employee = None
     signal.acknowledge(employee)
-    signal.table.attention_acknowledged = True
-    signal.table.save(update_fields=["attention_acknowledged", "updated_at"])
+    table = acknowledge_signal_on_table(signal.table)
     broadcast_attention_event("acked", signal)
+    broadcast_table_event(table)
     messages.success(request, f"Сигнал по {signal.table} принят.")
     return redirect("admin_web:dashboard")

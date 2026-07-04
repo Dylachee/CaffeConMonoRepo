@@ -7,14 +7,30 @@
 ///
 /// Defaults to the Android emulator host alias (10.0.2.2), which maps to the
 /// developer machine's localhost.
+/// Web detection without importing Flutter (keeps this file pure Dart and
+/// unit-testable). On the web 0 and 0.0 are the same JS number — this is
+/// exactly how flutter/foundation defines kIsWeb.
+const bool _isWeb = identical(0, 0.0);
+
 class ApiConfig {
   const ApiConfig._();
 
+  static const String _defined = String.fromEnvironment('API_BASE_URL');
+
   /// Backend origin, e.g. http://192.168.1.42:8000 (no trailing slash).
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  ///
+  /// Resolution order:
+  ///   1. --dart-define=API_BASE_URL (explicit override always wins);
+  ///   2. on web: the page's own origin — the staff PWA is served by the
+  ///      Django hub itself at /staff/, so "where the page came from" IS the
+  ///      backend. This makes the web build immune to the bar's Wi-Fi
+  ///      handing out a new IP: no rebuild needed when the address changes;
+  ///   3. Android-emulator host alias as the dev fallback.
+  static String get baseUrl {
+    if (_defined.isNotEmpty) return _defined;
+    if (_isWeb) return Uri.base.origin;
+    return 'http://10.0.2.2:8000';
+  }
 
   static String get _base =>
       baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;

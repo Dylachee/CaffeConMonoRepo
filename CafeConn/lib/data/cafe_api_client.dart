@@ -106,6 +106,11 @@ class CafeApiClient {
   Future<void> toggleItemDone(String itemId) =>
       _send(() => _http.post(ApiConfig.toggleItemDone(itemId), headers: _headers()));
 
+  /// Acknowledge a guest attention signal ("Принял"). Server-side this also
+  /// flips a waiting table to occupied and broadcasts `table.updated`.
+  Future<void> ackAttention(String signalId) =>
+      _send(() => _http.post(ApiConfig.ackAttention(signalId), headers: _headers()));
+
   /// Set a menu item's availability (stop-list on/off).
   Future<void> updateMenuAvailability(String id, bool available) async {
     await _send(() => _http.patch(

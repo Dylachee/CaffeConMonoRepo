@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -222,7 +221,10 @@ class T {
 
 enum UserRole { waiter, cook, bartender, manager, admin }
 
-enum TableStatus { free, occupied, awaitingPayment, ready, late, newOrder }
+/// Deliberately just three states (product decision, 2026-07-02): a table is
+/// either free, taken, or the guests are waiting for a waiter. Must stay in
+/// sync with Table.Status on the Django side (free / occupied / waiting).
+enum TableStatus { free, occupied, waiting }
 
 enum OrderStatus { accepted, cooking, ready, completed }
 
@@ -275,24 +277,56 @@ class CafeTable {
   String waiterName = '—';
   // Guest attention signal: 'call' (вызов), 'bill' (счёт), 'arrived' (гость сел), or null.
   String? attention;
+  // Server id of the newest unacked attention signal — needed to POST the ack
+  // back to the hub. Transient (not persisted): after a restart the bootstrap
+  // brings fresh state anyway.
+  String? lastSignalId;
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'number': number,
         'colorValue': color.value,
-        'status': status.index,
+        'status': status.name,
         'guestCount': guestCount,
         'notes': notes,
         'openedAt': openedAt?.millisecondsSinceEpoch,
         'waiterName': waiterName,
         'attention': attention,
       };
+
+  /// Accepts both the current string format and the legacy Hive format that
+  /// stored the index of the old 6-value enum (0 free, 1 occupied,
+  /// 2 awaitingPayment, 3 ready, 4 late, 5 newOrder). Without this, devices
+  /// with old cached data would crash on `TableStatus.values[index]`.
+  static TableStatus _statusFromRaw(dynamic raw) {
+    if (raw is String) {
+      for (final s in TableStatus.values) {
+        if (s.name == raw) return s;
+      }
+      return TableStatus.free;
+    }
+    if (raw is int) {
+      switch (raw) {
+        case 1: // occupied
+        case 3: // ready -> guests seated, order in progress
+          return TableStatus.occupied;
+        case 2: // awaitingPayment
+        case 4: // late
+        case 5: // newOrder
+          return TableStatus.waiting;
+        default:
+          return TableStatus.free;
+      }
+    }
+    return TableStatus.free;
+  }
+
   static CafeTable fromJson(Map<String, dynamic> j) {
     final t = CafeTable(
         j['id'],
         j['number'] as int,
         Color(j['colorValue'] as int),
-        TableStatus.values[j['status'] as int],
+        _statusFromRaw(j['status']),
         j['guestCount'] as int,
         notes: List<String>.from(j['notes'] as List));
     if (j['openedAt'] != null)
@@ -317,6 +351,7 @@ class MenuItem {
     this.promo = false,
     this.composition = '',
     this.allergens = const [],
+    this.station = '',
   });
   final String id;
   String name;
@@ -331,6 +366,20 @@ class MenuItem {
   String composition;
   List<String> allergens;
 
+  /// Station routing: 'kitchen' | 'bar'. The hub is the source of truth
+  /// (MenuItem.station in Django); category is only a fallback for legacy
+  /// Hive data and the offline seed. Guessing by category alone was the bug
+  /// that sent beer to the kitchen: only 'Напитки'/'Кофе' counted as bar.
+  String station;
+
+  static const _barCategories = {
+    'Напитки', 'Кофе', 'Чай', 'Бар', 'Пиво', 'Вино',
+    'Коктейли', 'Алкоголь', 'Лимонады', 'Смузи',
+  };
+
+  bool get isBar =>
+      station.isNotEmpty ? station == 'bar' : _barCategories.contains(category);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -344,6 +393,7 @@ class MenuItem {
         'promo': promo,
         'composition': composition,
         'allergens': allergens,
+        'station': station,
       };
   static MenuItem fromJson(Map<String, dynamic> j) => MenuItem(
         id: j['id'],
@@ -358,6 +408,7 @@ class MenuItem {
         promo: j['promo'] as bool,
         composition: j['composition'],
         allergens: List<String>.from(j['allergens']),
+        station: j['station'] as String? ?? '',
       );
 }
 
@@ -368,8 +419,11 @@ class CartLine {
       this.modifiers = '',
       this.sent = false,
       this.ready = false,
-      this.done = false})
-      : lockedPrice = item.price;
+      this.done = false,
+      double? lockedPrice})
+      // lockedPrice survives persistence: a menu price change must not
+      // silently reprice an already-open check.
+      : lockedPrice = lockedPrice ?? item.price;
   final MenuItem item;
   int quantity;
   final double lockedPrice;
@@ -377,6 +431,7 @@ class CartLine {
   bool sent;
   bool ready; // station (kitchen/bar) marked it ready
   bool done; // waiter delivered it to the guest
+  bool get isBar => item.isBar;
   double get total => lockedPrice * quantity;
 
   Map<String, dynamic> toJson() => {
@@ -407,6 +462,13 @@ class CafeOrder {
   final FeedType splitTo;
   double get total => items.fold(0.0, (sum, line) => sum + line.total);
 
+  /// Zone helpers: an order may contain both kitchen and bar items (e.g. a
+  /// guest-web order). Feeds must look at the items, not just [splitTo] —
+  /// otherwise the bar half of a mixed order is never shown to the bartender.
+  List<CartLine> itemsFor(FeedType zone) =>
+      items.where((l) => (zone == FeedType.bar) == l.isBar).toList();
+  bool hasZone(FeedType zone) => items.any((l) => (zone == FeedType.bar) == l.isBar);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'tableId': tableId,
@@ -421,13 +483,23 @@ class CafeOrder {
         tableId: j['tableId'],
         items: (j['items'] as List).map((e) {
           final m = e as Map<String, dynamic>;
-          final item = menu.firstWhere((mi) => mi.id == m['itemId'],
-              orElse: () => menu.first);
+          final item = menu.firstWhereOrNull((mi) => mi.id == m['itemId']) ??
+              MenuItem(
+                id: m['itemId'] as String? ?? '?',
+                name: 'Позиция из меню',
+                description: '',
+                price: (m['lockedPrice'] as num?)?.toDouble() ?? 0,
+                category: 'Кухня',
+                imageUrl: '',
+                tags: const [],
+                prepTime: 5,
+              );
           return CartLine(
               item: item,
               quantity: m['quantity'] as int,
               modifiers: m['modifiers'] as String,
-              sent: m['sent'] as bool);
+              sent: m['sent'] as bool,
+              lockedPrice: (m['lockedPrice'] as num?)?.toDouble());
         }).toList(),
         status: OrderStatus.values[j['status'] as int],
         createdAt: DateTime.fromMillisecondsSinceEpoch(j['createdAt'] as int),
@@ -471,6 +543,35 @@ class ChatMessage {
   List<String> reactions;
   final MessageKind kind;
   final String? refId;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'groupId': groupId,
+        'senderId': senderId,
+        'text': text,
+        'tags': tags,
+        'timestamp': timestamp.millisecondsSinceEpoch,
+        'own': own,
+        'voice': voice,
+        'reactions': reactions,
+        'kind': kind.index,
+        'refId': refId,
+      };
+
+  static ChatMessage fromJson(Map<String, dynamic> j) => ChatMessage(
+        id: j['id'] as String,
+        groupId: j['groupId'] as String,
+        senderId: j['senderId'] as String,
+        text: j['text'] as String,
+        tags: List<String>.from(j['tags'] as List? ?? const []),
+        timestamp:
+            DateTime.fromMillisecondsSinceEpoch(j['timestamp'] as int),
+        own: j['own'] as bool? ?? false,
+        voice: j['voice'] as bool? ?? false,
+        reactions: List<String>.from(j['reactions'] as List? ?? const []),
+        kind: MessageKind.values[(j['kind'] as int?) ?? 0],
+        refId: j['refId'] as String?,
+      );
 }
 
 class CafeState extends ChangeNotifier {
@@ -500,8 +601,6 @@ class CafeState extends ChangeNotifier {
   AppUser? currentUser;
   CafeTable? currentTable;
   ChatGroup? currentGroup;
-  String selectedCategory = 'Все';
-  String menuSearch = '';
   bool online = true;
   bool noConnectionDismissed = false;
   bool soundEnabled = true;
@@ -515,13 +614,10 @@ class CafeState extends ChangeNotifier {
   double textScale = 1.0;
   bool hapticsEnabled = true;
   double soundVolume = 0.6;
-  int lateThresholdMinutes = 20;
   bool showNewOrderBanner = true;
   bool showSyncToast = true;
   bool offlineModeSimulated = false;
   String activeUserName = 'Елена Соколова';
-  bool shellHideNav = false;
-  void setShellNav(bool visible) { shellHideNav = !visible; notifyListeners(); }
 
   void setSetting<T>(String key, T value, Function(T) apply) {
     apply(value);
@@ -530,7 +626,6 @@ class CafeState extends ChangeNotifier {
   }
 
   Timer? _retryTimer;
-  Timer? _fakeRealtimeTimer;
 
   void refresh() => notifyListeners();
 
@@ -597,13 +692,34 @@ class CafeState extends ChangeNotifier {
       _saveTables();
     }
 
-    // --- Chats: always re-seed (ephemeral for now) ---
+    // --- Chats: groups are static config (re-seed), messages are real user
+    // data — restore them from Hive. Seeding fake "demo" messages here was
+    // the bug that wiped the kitchen chat on every app start.
     groups
       ..clear()
       ..addAll(_api.seedGroups(staff));
-    messages
-      ..clear()
-      ..addAll(_api.seedMessages(groups));
+    messages.clear();
+    final rawMessages = _box.get('chatMessages') as String?;
+    if (rawMessages != null) {
+      try {
+        final list = jsonDecode(rawMessages) as List;
+        messages.addAll(
+            list.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)));
+      } catch (e) {
+        debugPrint('boot: failed to restore chat messages: $e');
+      }
+    }
+
+    // --- Offline order queue: restore orders typed while offline ---
+    final rawQueue = _box.get('pendingQueue') as String?;
+    if (rawQueue != null) {
+      try {
+        final list = jsonDecode(rawQueue) as List;
+        _pendingQueue.addAll(list.cast<Map<String, dynamic>>());
+      } catch (e) {
+        debugPrint('boot: failed to restore pending queue: $e');
+      }
+    }
 
     // --- Settings ---
     final cachedTheme = _box.get('theme') as int?;
@@ -617,22 +733,25 @@ class CafeState extends ChangeNotifier {
     textScale = (_box.get('textScale') as num?)?.toDouble() ?? 1.0;
     hapticsEnabled = _box.get('hapticsEnabled') as bool? ?? true;
     soundVolume = (_box.get('soundVolume') as num?)?.toDouble() ?? 0.6;
-    lateThresholdMinutes = _box.get('lateThreshold') as int? ?? 20;
     activeUserName = _box.get('activeUserName') as String? ?? 'Елена Соколова';
     soundEnabled = _box.get('soundEnabled') as bool? ?? true;
 
     _retryTimer = Timer.periodic(5.seconds, (_) => retryQueuedOrders());
-    _fakeRealtimeTimer =
-        Timer.periodic(12.seconds, (_) => simulateRealtimeOrder());
     currentUser = users.firstOrNull;
     notifyListeners();
 
-    // Optional auto-connect to the hub when credentials are supplied at build
-    // time:  flutter run --dart-define=API_USERNAME=.. --dart-define=API_PASSWORD=..
-    // Without them the app stays in local demo mode (no behaviour change).
+    // Auto-connect, in priority order:
+    //   1. a token saved from a previous successful login on this device
+    //      (survives PWA restarts — this is what keeps the app "живым"
+    //      after the browser is closed);
+    //   2. build-time credentials (--dart-define, dev builds only — never
+    //      bake real staff passwords into a public web build).
+    final savedToken = _box.get('apiToken') as String?;
     const autoUser = String.fromEnvironment('API_USERNAME');
     const autoPass = String.fromEnvironment('API_PASSWORD');
-    if (autoUser.isNotEmpty && autoPass.isNotEmpty) {
+    if (savedToken != null && savedToken.isNotEmpty) {
+      connectWithToken(savedToken);
+    } else if (autoUser.isNotEmpty && autoPass.isNotEmpty) {
       connectBackend(username: autoUser, password: autoPass);
     }
   }
@@ -650,6 +769,19 @@ class CafeState extends ChangeNotifier {
 
   void _saveMenu() =>
       _box.put('menu', jsonEncode(menu.map((m) => m.toJson()).toList()));
+
+  /// Persist chat history (bounded so Hive doesn't grow without limit).
+  static const _maxStoredMessages = 500;
+  void _saveMessages() {
+    final recent = messages.length > _maxStoredMessages
+        ? messages.sublist(messages.length - _maxStoredMessages)
+        : messages;
+    _box.put(
+        'chatMessages', jsonEncode(recent.map((m) => m.toJson()).toList()));
+  }
+
+  String _nextMessageId() =>
+      'm${DateTime.now().microsecondsSinceEpoch}';
 
   void setGuestCount(String tableId, int count) {
     final table = tables.firstWhereOrNull((t) => t.id == tableId);
@@ -691,10 +823,33 @@ class CafeState extends ChangeNotifier {
   }
 
   void ackAttention(CafeTable table) {
+    final signalId = table.lastSignalId;
     table.attention = null;
+    table.lastSignalId = null;
+    // Waiter accepted the call: the guests are no longer "waiting".
+    if (table.status == TableStatus.waiting) {
+      table.status = TableStatus.occupied;
+    }
     HapticFeedback.selectionClick();
     _saveTables();
     notifyListeners();
+    // Push the ack to the hub (it clears the badge on every other device and
+    // flips waiting -> occupied server-side). Previously this was local-only —
+    // the badge kept blinking everywhere else. Fire-and-forget with error
+    // surfacing, never blocks the UI.
+    if (backendConnected && signalId != null) {
+      _pushAttentionAck(signalId);
+    }
+  }
+
+  Future<void> _pushAttentionAck(String signalId) async {
+    try {
+      await _remoteApi.ackAttention(signalId);
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('ackAttention push failed: $e');
+      notifyListeners();
+    }
   }
 
   void addNote(CafeTable table, String note) {
@@ -713,7 +868,6 @@ class CafeState extends ChangeNotifier {
   @override
   void dispose() {
     _retryTimer?.cancel();
-    _fakeRealtimeTimer?.cancel();
     _realtimeSub?.cancel();
     _realtime?.dispose();
     _remoteApi.close();
@@ -723,16 +877,6 @@ class CafeState extends ChangeNotifier {
   List<String> get categories =>
       ['Все', ...menu.map((m) => m.category).toSet()];
 
-  List<MenuItem> filteredMenu({String? category}) {
-    final cat = category ?? selectedCategory;
-    return menu.where((item) {
-      final okCategory = cat == 'Все' || item.category == cat;
-      final okSearch = menuSearch.isEmpty ||
-          item.name.toLowerCase().contains(menuSearch.toLowerCase());
-      return okCategory && okSearch;
-    }).toList();
-  }
-
   List<CartLine> tableCart(String tableId) =>
       tableChecks.putIfAbsent(tableId, () => []);
 
@@ -740,13 +884,14 @@ class CafeState extends ChangeNotifier {
       {String? tableId}) {
     if (tableId == null) return;
     final lines = tableCart(tableId);
-    final existing = lines.firstWhereOrNull(
-        (line) => line.item.id == item.id && line.modifiers == modifiers);
+    // Merge only with a not-yet-sent line: a sent line already lives on the
+    // kitchen/bar screen and must not be silently mutated.
+    final existing = lines.firstWhereOrNull((line) =>
+        !line.sent && line.item.id == item.id && line.modifiers == modifiers);
     if (existing == null) {
       lines.add(CartLine(item: item, quantity: quantity, modifiers: modifiers));
     } else {
-      existing.quantity = quantity;
-      existing.modifiers = modifiers;
+      existing.quantity += quantity;
     }
     HapticFeedback.selectionClick();
     _saveTables();
@@ -754,6 +899,7 @@ class CafeState extends ChangeNotifier {
   }
 
   void changeQuantity(CartLine line, int delta, {String? tableId}) {
+    if (line.sent) return; // already on the station screen — don't mutate
     line.quantity = max(1, line.quantity + delta);
     HapticFeedback.selectionClick();
     _saveTables();
@@ -768,121 +914,122 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<CafeOrder> submitOrder({String? tableId, FeedType? onlyFor}) async {
-    final table = tables.firstWhere(
-        (t) => t.id == (tableId ?? currentTable?.id ?? tables.first.id));
+  /// Send the table's unsent check lines to the stations.
+  ///
+  /// Splitting is by MenuItem.station (kitchen/bar), NOT by category name —
+  /// the category guess ("Напитки"/"Кофе") was why beer never reached the
+  /// bar feed. With [onlyFor] set, only that station's lines are sent.
+  ///
+  /// Returns the last created order, or null when there was nothing to send
+  /// (callers must tell the waiter instead of failing silently).
+  Future<CafeOrder?> submitOrder({String? tableId, FeedType? onlyFor}) async {
+    final table = tables.firstWhereOrNull(
+        (t) => t.id == (tableId ?? currentTable?.id ?? ''));
+    if (table == null) return null;
     // When connected, send to the hub; realtime echoes it back to all devices.
     if (backendConnected) return _submitOrderRemote(table, onlyFor);
+
     final source = tableCart(table.id);
-
     final toSend = source.where((l) => !l.sent).where((l) {
-      if (onlyFor != null) {
-        final isDrink =
-            l.item.category == 'Напитки' || l.item.category == 'Кофе';
-        return onlyFor == FeedType.bar ? isDrink : !isDrink;
-      }
-      return true;
+      if (onlyFor == null) return true;
+      return (onlyFor == FeedType.bar) == l.isBar;
     }).toList();
+    if (toSend.isEmpty) return null;
 
-    if (toSend.isEmpty) return orders.last;
-
-    final food = toSend
-        .where((l) => l.item.category != 'Напитки' && l.item.category != 'Кофе')
-        .toList();
-    final drinks = toSend
-        .where((l) => l.item.category == 'Напитки' || l.item.category == 'Кофе')
-        .toList();
+    final food = toSend.where((l) => !l.isBar).toList();
+    final drinks = toSend.where((l) => l.isBar).toList();
 
     final List<CafeOrder> newOrders = [];
-    if (food.isNotEmpty) {
+    for (final (lines, feed) in [
+      (food, FeedType.kitchen),
+      (drinks, FeedType.bar)
+    ]) {
+      if (lines.isEmpty) continue;
       newOrders.add(_makeOrder(
           table,
-          food
+          lines
               .map((l) => CartLine(
                   item: l.item,
                   quantity: l.quantity,
                   modifiers: l.modifiers,
-                  sent: true))
+                  sent: true,
+                  lockedPrice: l.lockedPrice))
               .toList(),
-          FeedType.kitchen));
-      for (var l in food) l.sent = true;
-    }
-    if (drinks.isNotEmpty) {
-      newOrders.add(_makeOrder(
-          table,
-          drinks
-              .map((l) => CartLine(
-                  item: l.item,
-                  quantity: l.quantity,
-                  modifiers: l.modifiers,
-                  sent: true))
-              .toList(),
-          FeedType.bar));
-      for (var l in drinks) l.sent = true;
+          feed));
+      for (final l in lines) {
+        l.sent = true;
+      }
     }
 
     if (!online) {
       _pendingQueue
           .addAll(newOrders.map((o) => {'type': 'order', 'data': o.toJson()}));
-      _box.put('pendingQueue', _pendingQueue.length);
+      _savePendingQueue();
     } else {
       orders.addAll(newOrders);
     }
 
     table.status = TableStatus.occupied;
-    if (newOrders.isNotEmpty) {
-      table.currentOrderId = newOrders.last.id;
-      addSystemMessage(newOrders.last);
+    table.currentOrderId = newOrders.last.id;
+    for (final o in newOrders) {
+      addSystemMessage(o);
     }
 
     HapticFeedback.mediumImpact();
     _saveTables();
     notifyListeners();
-    return newOrders.isNotEmpty ? newOrders.last : orders.last;
+    return newOrders.last;
   }
 
-  /// Online order path: create on the hub, then reflect the server order
-  /// locally (idempotent by id, so the WebSocket echo won't duplicate it).
-  Future<CafeOrder> _submitOrderRemote(CafeTable table, FeedType? onlyFor) async {
+  /// Online order path: create on the hub, then reflect the server orders
+  /// locally (idempotent by id, so the WebSocket echo won't duplicate them).
+  /// Kitchen and bar lines go as two separate orders so each order has a
+  /// single station_scope — a "mixed" order used to disappear from the bar.
+  Future<CafeOrder?> _submitOrderRemote(
+      CafeTable table, FeedType? onlyFor) async {
     final source = tableCart(table.id);
     final toSend = source.where((l) => !l.sent).where((l) {
-      if (onlyFor != null) {
-        final isDrink =
-            l.item.category == 'Напитки' || l.item.category == 'Кофе';
-        return onlyFor == FeedType.bar ? isDrink : !isDrink;
-      }
-      return true;
+      if (onlyFor == null) return true;
+      return (onlyFor == FeedType.bar) == l.isBar;
     }).toList();
+    if (toSend.isEmpty) return null;
 
-    CafeOrder fallback() => orders.isNotEmpty
-        ? orders.last
-        : _makeOrder(table, const <CartLine>[], onlyFor ?? FeedType.kitchen);
-
-    if (toSend.isEmpty) return fallback();
-
-    final dto = await createRemoteOrder(tableId: table.id, lines: toSend);
-    if (dto == null) {
-      // Backend rejected/unreachable; leave the cart unsent and surface the error.
-      notifyListeners();
-      return fallback();
+    CafeOrder? last;
+    for (final lines in [
+      toSend.where((l) => !l.isBar).toList(),
+      toSend.where((l) => l.isBar).toList(),
+    ]) {
+      if (lines.isEmpty) continue;
+      final dto = await createRemoteOrder(tableId: table.id, lines: lines);
+      if (dto == null) {
+        // Backend rejected/unreachable; these lines stay unsent and the
+        // error is surfaced via backendError. Already-sent lines keep sent.
+        notifyListeners();
+        continue;
+      }
+      for (final l in lines) {
+        l.sent = true;
+      }
+      final order = _orderFromDto(dto);
+      _upsertLocalOrder(order);
+      last = order;
     }
+    if (last == null) return null;
 
-    for (final l in toSend) {
-      l.sent = true;
-    }
-    final order = _orderFromDto(dto);
-    _upsertLocalOrder(order);
-    table.status = TableStatus.newOrder;
-    table.currentOrderId = order.id;
+    // The waiter sent this order himself — the table is occupied, not waiting.
+    table.status = TableStatus.occupied;
+    table.currentOrderId = last.id;
     _saveTables();
     HapticFeedback.mediumImpact();
     notifyListeners();
-    return order;
+    return last;
   }
 
   CafeOrder _makeOrder(CafeTable table, List<CartLine> lines, FeedType feed) {
     return CafeOrder(
-      id: (1200 + orders.length + 1).toString(),
+      // Time-based id: length-based ids collided with server ids and with
+      // each other after orders were removed/re-synced.
+      id: 'L${DateTime.now().millisecondsSinceEpoch}${feed.index}',
       tableId: table.id,
       items: lines,
       status: OrderStatus.cooking,
@@ -891,18 +1038,23 @@ class CafeState extends ChangeNotifier {
     );
   }
 
+  void _savePendingQueue() =>
+      _box.put('pendingQueue', jsonEncode(_pendingQueue));
+
   void discussInChat(CafeOrder order, ChatGroup group, String comment) {
     final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
     final text =
         '#discuss Заказ Стол${table?.number.toString().padLeft(2, '0') ?? '??'}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}\n\n$comment';
     messages.add(ChatMessage(
-      id: 'm${messages.length + 1}',
+      id: _nextMessageId(),
       groupId: group.id,
       senderId: currentUser?.id ?? 'system',
       text: text,
       tags: const ['#discuss'],
       timestamp: DateTime.now(),
+      own: true,
     ));
+    _saveMessages();
     notifyListeners();
   }
 
@@ -910,7 +1062,7 @@ class CafeState extends ChangeNotifier {
     final text =
         '#forward Стол${table.number.toString().padLeft(2, '0')} ·${statusLabel(table.status)}\n\n$comment';
     messages.add(ChatMessage(
-      id: 'm${messages.length + 1}',
+      id: _nextMessageId(),
       groupId: group.id,
       senderId: currentUser?.id ?? 'system',
       text: text,
@@ -919,6 +1071,7 @@ class CafeState extends ChangeNotifier {
       kind: MessageKind.tableCard,
       refId: table.id,
     ));
+    _saveMessages();
     notifyListeners();
   }
 
@@ -926,7 +1079,7 @@ class CafeState extends ChangeNotifier {
     final group = groups.firstWhereOrNull((g) => g.type == order.splitTo);
     if (group == null) return;
     messages.add(ChatMessage(
-      id: 'm${messages.length + 1}',
+      id: _nextMessageId(),
       groupId: group.id,
       senderId: 'system',
       text:
@@ -936,6 +1089,7 @@ class CafeState extends ChangeNotifier {
       kind: MessageKind.orderCard,
       refId: order.id,
     ));
+    _saveMessages();
   }
 
   void toggleOnline() {
@@ -948,7 +1102,13 @@ class CafeState extends ChangeNotifier {
     if (!online || _pendingQueue.isEmpty) return;
     for (final item in _pendingQueue) {
       if (item['type'] == 'order') {
-        orders.add(CafeOrder.fromJson(item['data'], menu));
+        try {
+          final order =
+              CafeOrder.fromJson(item['data'] as Map<String, dynamic>, menu);
+          _upsertLocalOrder(order);
+        } catch (e) {
+          debugPrint('retryQueuedOrders: dropped malformed entry: $e');
+        }
       }
     }
     _pendingQueue.clear();
@@ -957,33 +1117,27 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void simulateRealtimeOrder() {
-    // Don't inject demo orders once we're on the real backend feed.
-    if (backendConnected) return;
-    if (!online || orders.length > 10) return;
-    final table = tables[Random().nextInt(tables.length)];
-    if (table.status != TableStatus.free) return;
-    final item = menu[Random().nextInt(menu.length)];
-    final order = _makeOrder(
-        table,
-        [CartLine(item: item, quantity: Random().nextInt(2) + 1)],
-        item.category == 'Кофе' ? FeedType.bar : FeedType.kitchen);
-    orders.add(order);
-    table.status = TableStatus.newOrder;
-    addSystemMessage(order);
-    notifyListeners();
-  }
+  void closeTable(CafeTable table) => setTableStatus(table, TableStatus.free);
 
-  void closeTable(CafeTable table) {
+  /// Single entry point for changing a table's status from the staff UI.
+  /// Applies locally right away (optimistic) and pushes to the hub; the hub
+  /// broadcasts `table.updated` so every other device follows in ~1s.
+  void setTableStatus(CafeTable table, TableStatus status) {
     final previous = table.status;
-    table.status = TableStatus.free;
-    table.currentOrderId = null;
-    table.guestCount = 0;
-    table.attention = null;
-    tableChecks[table.id]?.clear();
+    table.status = status;
+    if (status == TableStatus.free) {
+      table.currentOrderId = null;
+      table.guestCount = 0;
+      table.attention = null;
+      table.lastSignalId = null;
+      tableChecks[table.id]?.clear();
+    }
+    HapticFeedback.selectionClick();
     _saveTables();
     notifyListeners();
-    if (backendConnected) _pushTableStatus(table, 'free', previous);
+    if (backendConnected && status != previous) {
+      _pushTableStatus(table, status.name, previous);
+    }
   }
 
   Future<void> _pushTableStatus(
@@ -1019,7 +1173,9 @@ class CafeState extends ChangeNotifier {
   }
 
   void addTable(int number, Color color) {
-    final id = 't${tables.length + 1}';
+    // Unique id even after deletions ("t${length+1}" collided with an
+    // existing id as soon as any table had been removed).
+    final id = 't${DateTime.now().millisecondsSinceEpoch}';
     tables.add(CafeTable(id, number, color, TableStatus.free, 0));
     _saveTables();
     notifyListeners();
@@ -1038,7 +1194,22 @@ class CafeState extends ChangeNotifier {
 
   void deleteTable(CafeTable table) {
     tables.remove(table);
+    tableChecks.remove(table.id);
+    _box.delete('check_${table.id}'); // don't leak the orphaned check in Hive
     _saveTables();
+    notifyListeners();
+  }
+
+  /// Create or update a menu item from the management form and persist it.
+  /// (The form used to mutate `state.menu` directly and never saved.)
+  void upsertMenuItem(MenuItem item) {
+    final index = menu.indexWhere((m) => m.id == item.id);
+    if (index >= 0) {
+      menu[index] = item;
+    } else {
+      menu.add(item);
+    }
+    _saveMenu();
     notifyListeners();
   }
 
@@ -1055,7 +1226,7 @@ class CafeState extends ChangeNotifier {
         .map((m) => m.group(0)!)
         .toList();
     messages.add(ChatMessage(
-      id: 'm${messages.length + 1}',
+      id: _nextMessageId(),
       groupId: currentGroup!.id,
       senderId: currentUser?.id ?? 'me',
       text: text,
@@ -1064,12 +1235,14 @@ class CafeState extends ChangeNotifier {
       own: true,
       voice: voice,
     ));
+    _saveMessages();
     HapticFeedback.lightImpact();
     notifyListeners();
   }
 
   void react(ChatMessage message, String reaction) {
     message.reactions = [...message.reactions, reaction];
+    _saveMessages();
     notifyListeners();
   }
 
@@ -1132,6 +1305,10 @@ class CafeState extends ChangeNotifier {
       backendConnected = true;
       backendConnecting = false;
       backendError = null;
+      // Persist the DRF token (not the password) so the app reconnects by
+      // itself after a PWA restart instead of silently falling back to demo.
+      _box.put('apiToken', token);
+      _box.put('apiUser', username);
 
       await _openRealtime(token);
       notifyListeners();
@@ -1155,18 +1332,62 @@ class CafeState extends ChangeNotifier {
     }
   }
 
-  /// Re-run the connection using stored or build-time credentials.
-  /// Used by Settings → "Переподключить".
-  Future<bool> reconnect() async {
-    final user = _lastUser ?? const String.fromEnvironment('API_USERNAME');
-    final pass = _lastPass ?? const String.fromEnvironment('API_PASSWORD');
-    if (user.isEmpty || pass.isEmpty) {
-      backendError =
-          'Нет данных входа. Запустите с --dart-define=API_USERNAME/API_PASSWORD.';
+  /// Connect using a previously issued DRF token (saved in Hive after a
+  /// successful login). On an auth error the stale token is dropped so the
+  /// Settings login form reappears.
+  Future<bool> connectWithToken(String token) async {
+    backendConnecting = true;
+    notifyListeners();
+    try {
+      _remoteApi.setToken(token);
+      final data = await _remoteApi.bootstrap();
+      _applyBootstrap(data);
+
+      online = true;
+      backendConnected = true;
+      backendConnecting = false;
+      backendError = null;
+
+      await _openRealtime(token);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _remoteApi.setToken(null);
+      if (e.isAuth) {
+        _box.delete('apiToken'); // token revoked/expired — ask for login again
+      }
+      backendConnected = false;
+      backendConnecting = false;
+      backendError = e.message;
+      debugPrint('connectWithToken failed: $e');
+      notifyListeners();
+      return false;
+    } catch (e, st) {
+      _remoteApi.setToken(null);
+      backendConnected = false;
+      backendConnecting = false;
+      backendError = 'Unexpected error: $e';
+      debugPrint('connectWithToken unexpected: $e\n$st');
       notifyListeners();
       return false;
     }
-    return connectBackend(username: user, password: pass);
+  }
+
+  /// Re-run the connection using the saved token, in-memory credentials or
+  /// build-time credentials. Used by Settings → "Переподключить".
+  Future<bool> reconnect() async {
+    final user = _lastUser ?? const String.fromEnvironment('API_USERNAME');
+    final pass = _lastPass ?? const String.fromEnvironment('API_PASSWORD');
+    if (user.isNotEmpty && pass.isNotEmpty) {
+      return connectBackend(username: user, password: pass);
+    }
+    final savedToken = _box.get('apiToken') as String?;
+    if (savedToken != null && savedToken.isNotEmpty) {
+      return connectWithToken(savedToken);
+    }
+    backendError = 'Нет данных входа. Введите логин и пароль ниже.';
+    notifyListeners();
+    return false;
   }
 
   void _applyBootstrap(BootstrapDto data) {
@@ -1203,6 +1424,9 @@ class CafeState extends ChangeNotifier {
         final dto = event.order;
         if (dto != null) _upsertOrderFromDto(dto);
         break;
+      case RealtimeEventType.tableUpdated:
+        _applyTableUpdate(event.table);
+        break;
       case RealtimeEventType.attentionCreated:
         _applyAttention(event.attention, acked: false);
         break;
@@ -1215,6 +1439,28 @@ class CafeState extends ChangeNotifier {
     }
   }
 
+  /// Server is the source of truth for table state: apply `table.updated`
+  /// (status change, freed table, acked signal — from any device or the
+  /// guest page) to the matching tile.
+  void _applyTableUpdate(TableDto? dto) {
+    if (dto == null) return;
+    final table = tables.firstWhereOrNull((t) => t.id == dto.id);
+    if (table == null) return;
+    table.status = _tableStatusFromName(dto.status);
+    table.guestCount = dto.guestCount;
+    table.attention = dto.ack ? null : dto.attention;
+    if (table.attention == null) table.lastSignalId = null;
+    if (dto.waiter.isNotEmpty) table.waiterName = dto.waiter;
+    table.openedAt =
+        dto.openedAt == null ? null : DateTime.tryParse(dto.openedAt!);
+    if (table.status == TableStatus.free) {
+      table.currentOrderId = null;
+      tableChecks[table.id]?.clear();
+    }
+    _saveTables();
+    notifyListeners();
+  }
+
   void _upsertOrderFromDto(OrderDto dto) => _upsertLocalOrder(_orderFromDto(dto));
 
   void _upsertLocalOrder(CafeOrder order) {
@@ -1224,10 +1470,9 @@ class CafeState extends ChangeNotifier {
     } else {
       orders.add(order);
     }
-    final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
-    if (table != null && table.status == TableStatus.free) {
-      table.status = TableStatus.newOrder;
-    }
+    // Note: no local table-status inference here — the hub broadcasts
+    // `table.updated` alongside every order event, so guessing locally would
+    // only fight the server state.
     notifyListeners();
   }
 
@@ -1238,6 +1483,7 @@ class CafeState extends ChangeNotifier {
     if (table == null) return;
     if (acked) {
       table.attention = null;
+      table.lastSignalId = null;
     } else {
       table.attention = switch (signal.signalType) {
         'call_waiter' => 'call',
@@ -1245,6 +1491,7 @@ class CafeState extends ChangeNotifier {
         'arrived' => 'arrived',
         _ => null,
       };
+      table.lastSignalId = signal.id;
       HapticFeedback.mediumImpact();
     }
     _saveTables();
@@ -1294,6 +1541,8 @@ class CafeState extends ChangeNotifier {
     _realtime = null;
     backendConnected = false;
     _remoteApi.setToken(null);
+    _box.delete('apiToken');
+    _box.delete('apiUser');
     notifyListeners();
   }
 
@@ -1312,6 +1561,7 @@ class CafeState extends ChangeNotifier {
         promo: d.promo,
         composition: d.composition,
         allergens: d.allergens,
+        station: d.station,
       );
 
   CafeTable _tableFromDto(TableDto d) {
@@ -1326,6 +1576,10 @@ class CafeState extends ChangeNotifier {
     );
     table.waiterName = d.waiter.isEmpty ? '—' : d.waiter;
     if (d.openedAt != null) table.openedAt = DateTime.tryParse(d.openedAt!);
+    // Carry over an unacked guest signal so the badge (and the ability to
+    // "Принять" it) survives an app restart.
+    table.attention = d.ack ? null : d.attention;
+    table.lastSignalId = d.ack ? null : d.attentionSignalId;
     return table;
   }
 
@@ -1340,6 +1594,9 @@ class CafeState extends ChangeNotifier {
         quantity: it.qty,
         modifiers: it.notes.join(', '),
         sent: true,
+        ready: it.ready,
+        done: it.done,
+        lockedPrice: it.price > 0 ? it.price : null,
       );
     }).toList();
     return CafeOrder(
@@ -1347,7 +1604,11 @@ class CafeState extends ChangeNotifier {
       tableId: d.tableId,
       items: lines,
       status: _orderStatusFromName(d.status),
-      createdAt: DateTime.now(),
+      // Server timestamp, not "now": otherwise every bootstrap/WS echo reset
+      // the kitchen timer of an existing order back to 00:00.
+      createdAt: d.createdAt == null
+          ? DateTime.now()
+          : (DateTime.tryParse(d.createdAt!)?.toLocal() ?? DateTime.now()),
       splitTo: d.station == 'bar' ? FeedType.bar : FeedType.kitchen,
     );
   }
@@ -1361,20 +1622,19 @@ class CafeState extends ChangeNotifier {
         imageUrl: '',
         tags: const [],
         prepTime: 5,
+        station: it.station,
       );
 
   TableStatus _tableStatusFromName(String name) {
     switch (name) {
       case 'occupied':
+      case 'ready': // legacy wire value from pre-simplification builds
         return TableStatus.occupied;
-      case 'awaitingPayment':
-        return TableStatus.awaitingPayment;
-      case 'ready':
-        return TableStatus.ready;
-      case 'late':
-        return TableStatus.late;
-      case 'newOrder':
-        return TableStatus.newOrder;
+      case 'waiting':
+      case 'awaitingPayment': // legacy
+      case 'late': // legacy
+      case 'newOrder': // legacy
+        return TableStatus.waiting;
       case 'free':
       default:
         return TableStatus.free;
@@ -1405,19 +1665,13 @@ class MockCafeApi {
         AppUser('bar', 'Сара Дженкинс', UserRole.bartender, 'За баром'),
       ];
 
-  List<CafeTable> seedTables() => List.generate(12, (i) {
-        final statuses = [
-          TableStatus.free,
-          TableStatus.occupied,
-          TableStatus.awaitingPayment,
-          TableStatus.ready,
-          TableStatus.late
-        ];
-        final status = statuses[i % statuses.length];
-        return CafeTable('t${i + 1}', i + 1, AppTheme.cta, status,
-            status == TableStatus.free ? 0 : (i % 4) + 1,
-            notes: i % 3 == 0 ? ['Аллергия на орехи', 'VIP'] : []);
-      });
+  /// Offline demo floor: mirrors the real bar (30 tables), everything free.
+  /// The tables screen shows an explicit demo banner until the app is logged
+  /// in to the hub, so this can no longer be mistaken for live data.
+  List<CafeTable> seedTables() => List.generate(
+        30,
+        (i) => CafeTable('t${i + 1}', i + 1, AppTheme.cta, TableStatus.free, 0),
+      );
 
   List<MenuItem> seedMenu() => [
         MenuItem(
@@ -1432,7 +1686,8 @@ class MockCafeApi {
             prepTime: 4,
             promo: true,
             composition: 'Эспрессо, молоко 3.2%, микропена.',
-            allergens: ['Dairy']),
+            allergens: ['Dairy'],
+            station: 'bar'),
         MenuItem(
             id: 'm2',
             name: 'Круассан',
@@ -1480,7 +1735,8 @@ class MockCafeApi {
                 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=400',
             tags: ['Vegan'],
             prepTime: 2,
-            composition: 'Кофе холодной заварки 12 часов.'),
+            composition: 'Кофе холодной заварки 12 часов.',
+            station: 'bar'),
         MenuItem(
             id: 'm6',
             name: 'Лимонад',
@@ -1491,7 +1747,8 @@ class MockCafeApi {
                 'https://images.unsplash.com/photo-1621263764928-df1444c5e859?w=400',
             tags: ['Vegan'],
             prepTime: 3,
-            composition: 'Лимонный сок, сахарный сироп, базилик, газировка.'),
+            composition: 'Лимонный сок, сахарный сироп, базилик, газировка.',
+            station: 'bar'),
       ];
 
   List<ChatGroup> seedGroups(List<AppUser> staff) => [
@@ -1521,23 +1778,8 @@ class MockCafeApi {
                 .map((s) => s.id)
                 .toList()),
       ];
-
-  List<ChatMessage> seedMessages(List<ChatGroup> groups) => [
-        ChatMessage(
-            id: 'm1',
-            groupId: groups[0].id,
-            senderId: 'waiter',
-            text: '#orders Стол 04 сделал заказ, проверяю напитки.',
-            tags: ['#orders'],
-            timestamp: DateTime.now().subtract(Duration(minutes: 22))),
-        ChatMessage(
-            id: 'm2',
-            groupId: groups[1].id,
-            senderId: 'cook',
-            text: '#kitchen Бенедикт будет готов через минуту.',
-            tags: ['#kitchen'],
-            timestamp: DateTime.now().subtract(Duration(minutes: 11))),
-      ];
+  // Note: no seedMessages — fake "simulated" chat traffic used to overwrite
+  // the real (persisted) history on every app start.
 }
 
 // ================= COMPONENT WIDGETS =================
@@ -1873,7 +2115,7 @@ class StatusBadge extends StatelessWidget {
     );
 
     Widget animatedDot = dot;
-    if (status == TableStatus.newOrder || status == TableStatus.ready) {
+    if (status == TableStatus.waiting) {
       animatedDot = dot
           .animate(onPlay: (c) => c.repeat())
           .scale(
@@ -1882,10 +2124,6 @@ class StatusBadge extends StatelessWidget {
               duration: 800.ms)
           .then()
           .scale(end: const Offset(1, 1), duration: 800.ms);
-    } else if (status == TableStatus.late) {
-      animatedDot = dot
-          .animate(onPlay: (c) => c.repeat(reverse: true))
-          .fade(begin: .4, end: 1, duration: 500.ms);
     }
 
     if (!showLabel) return animatedDot;
@@ -2073,121 +2311,9 @@ class MetricCard extends StatelessWidget {
   }
 }
 
-class QuantityStepper extends StatelessWidget {
-  const QuantityStepper(
-      {super.key, required this.value, required this.onChanged});
-  final int value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _step(Icons.remove, () => onChanged(max(1, value - 1))),
-        SizedBox(
-            width: 42,
-            child: Center(
-                child: Text('$value',
-                    style: Theme.of(context).textTheme.titleMedium))),
-        _step(Icons.add, () => onChanged(value + 1)),
-      ],
-    );
-  }
-
-  Widget _step(IconData icon, VoidCallback action) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        action();
-      },
-      child: Container(
-          width: 32,
-          height: 32,
-          decoration: const BoxDecoration(
-              color: AppTheme.separator, shape: BoxShape.circle),
-          child: Icon(icon, size: 18)),
-    );
-  }
-}
-
-class MenuImage extends StatelessWidget {
-  const MenuImage(this.url,
-      {super.key, this.radius = 16, this.aspectRatio = 1});
-  final String url;
-  final double radius;
-  final double aspectRatio;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => const ShimmerBox(),
-          fadeInDuration: 300.ms,
-          errorWidget: (_, __, ___) => Container(
-              color: AppTheme.separator, child: const Icon(Icons.local_cafe)),
-        ),
-      ),
-    );
-  }
-}
-
-class ShimmerBox extends StatelessWidget {
-  const ShimmerBox({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Container(color: AppTheme.separator)
-        .animate(onPlay: (c) => c.repeat())
-        .shimmer(duration: 900.ms, color: Colors.white70);
-  }
-}
-
-class MenuGridItem extends StatelessWidget {
-  const MenuGridItem(
-      {super.key,
-      required this.item,
-      required this.onTap,
-      this.index = 0,
-      this.trailing});
-  final MenuItem item;
-  final VoidCallback onTap;
-  final int index;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      index: index,
-      padding: const EdgeInsets.all(10),
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          MenuImage(item.imageUrl),
-          const SizedBox(height: 10),
-          Text(item.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: T.bodySemi.copyWith(fontWeight: FontWeight.w600, fontSize: 15)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                  child: Text(item.price.rub,
-                      style: T.price.copyWith(color: AppTheme.cta))),
-              if (trailing != null) trailing!,
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+// Photo widgets (MenuImage/ShimmerBox/MenuGridItem) and the old
+// QuantityStepper were removed together with the photo-based ordering UI:
+// the staff app is text-first now (see _OrderComposerTile/_CompactStepper).
 
 // ================= NAVIGATION & SCAFFOLD =================
 
@@ -2252,53 +2378,6 @@ class AppScaffold extends StatelessWidget {
   }
 }
 
-class StaffBottomNav extends StatelessWidget {
-  const StaffBottomNav({super.key, required this.current});
-  final String current;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (label: 'Столы', icon: Icons.table_bar, path: '/tables'),
-      (label: 'Заказы', icon: Icons.assignment, path: '/orders'),
-      (label: 'Меню', icon: Icons.restaurant_menu, path: '/menu-staff'),
-      (label: 'Чаты', icon: Icons.chat_bubble, path: '/chats'),
-      (label: 'Панель', icon: Icons.analytics, path: '/panel'),
-    ];
-
-    int selected = items.indexWhere((e) => e.path == current);
-
-    return Container(
-      decoration: BoxDecoration(
-        color:
-            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.92),
-        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: NavigationBar(
-            backgroundColor: Colors.transparent,
-            indicatorColor: Colors.transparent,
-            selectedIndex: max(0, selected),
-            onDestinationSelected: (i) => context.go(items[i].path),
-            destinations: items.map((e) {
-              final active = items.indexOf(e) == selected;
-              return NavigationDestination(
-                icon: Icon(
-                  e.icon,
-                  color: active ? AppTheme.ink : const Color(0xFFA8A091),
-                ),
-                label: e.label,
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ================= SCREENS =================
 
 // ===== MAIN SHELL (PageView tabs + swipe navigation) =====
@@ -2336,7 +2415,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<CafeState>();
+    // The bottom nav is ALWAYS visible on the shell. The old multi-select
+    // flow hid it (state.shellHideNav) and never brought it back after the
+    // precheck was confirmed — waiters ended up on «Заказы» with no tabs at
+    // all. Ordering now happens on a dedicated pushed screen, so the shell
+    // never needs to hide its navigation.
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: PageView(
@@ -2350,19 +2433,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
           StaffPanelScreen(),
         ],
       ),
-      bottomNavigationBar: state.shellHideNav
-          ? null
-          : _ShellBottomNav(
-              selectedIndex: _currentIndex,
-              onTap: (i) {
-                setState(() => _currentIndex = i);
-                _pageController.animateToPage(i,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut);
-              },
-              labels: _labels,
-              icons: _icons,
-            ),
+      bottomNavigationBar: _ShellBottomNav(
+        selectedIndex: _currentIndex,
+        onTap: (i) {
+          setState(() => _currentIndex = i);
+          _pageController.animateToPage(i,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut);
+        },
+        labels: _labels,
+        icons: _icons,
+      ),
     );
   }
 }
@@ -2467,6 +2548,41 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
               ),
             ],
           ),
+          // Explicit demo/offline banner: without it the local seed data was
+          // routinely mistaken for the real floor ("почему 12 столов?").
+          if (!state.backendConnected) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => GoRouter.of(context).push('/settings'),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off_rounded,
+                        size: 18, color: AppTheme.warning),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        state.backendConnecting
+                            ? 'Подключение к серверу…'
+                            : 'Демо-режим: данные не с сервера. Нажмите, чтобы войти.',
+                        style: T.smallSemi.copyWith(color: AppTheme.ink),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        size: 18, color: AppTheme.ink2),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           AppCard(
             padding: EdgeInsets.zero,
@@ -2708,14 +2824,11 @@ class _TableCardState extends State<TableCard> {
     final state = context.read<CafeState>();
     final table = widget.table;
     final color = statusColor(table.status);
-    final isLate = table.status == TableStatus.late;
     final hasAttention = table.attention != null;
     final accent = hasAttention ? attentionColor(table.attention!) : color;
     final pillText =
         hasAttention ? attentionLabel(table.attention!) : statusLabel(table.status);
-    final pulse = table.status == TableStatus.newOrder ||
-        table.status == TableStatus.ready ||
-        hasAttention;
+    final pulse = table.status == TableStatus.waiting || hasAttention;
     // colorTag bar only shows for a non-default (custom) tag color.
     final hasTag =
         table.color != AppColors.espresso && table.color != AppColors.ink;
@@ -2743,7 +2856,7 @@ class _TableCardState extends State<TableCard> {
       child: AppCard(
         index: widget.index,
         padding: const EdgeInsets.all(12),
-        borderColor: isLate ? AppColors.late : (hasAttention ? accent : null),
+        borderColor: hasAttention ? accent : null,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -2778,7 +2891,7 @@ class _TableCardState extends State<TableCard> {
             Positioned(
               top: 0,
               right: 0,
-              child: _HaloDot(accent, pulse: pulse, blink: isLate),
+              child: _HaloDot(accent, pulse: pulse),
             ),
             // Big mono table number + status/attention pill.
             Center(
@@ -2834,20 +2947,6 @@ class _TableCardState extends State<TableCard> {
                 ),
               ),
             ),
-            // Blinking red border for a late table.
-            if (isLate)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.late, width: 2),
-                    ),
-                  )
-                      .animate(onPlay: (c) => c.repeat(reverse: true))
-                      .fade(begin: 0.2, end: 1, duration: 600.ms),
-                ),
-              ),
           ],
         ),
       ),
@@ -2863,12 +2962,12 @@ String attentionLabel(String attention) => switch (attention) {
     };
 
 /// A status dot with a crisp 4px halo ring, matching the design's
-/// `box-shadow: 0 0 0 4px <halo>`. Pulses (newOrder/ready/attention) or blinks (late).
+/// `box-shadow: 0 0 0 4px <halo>`. Pulses while the table waits for a waiter
+/// or has a guest-attention badge.
 class _HaloDot extends StatelessWidget {
-  const _HaloDot(this.color, {this.pulse = false, this.blink = false});
+  const _HaloDot(this.color, {this.pulse = false});
   final Color color;
   final bool pulse;
-  final bool blink;
 
   @override
   Widget build(BuildContext context) {
@@ -2890,10 +2989,6 @@ class _HaloDot extends StatelessWidget {
       dot = dot
           .animate(onPlay: (c) => c.repeat(reverse: true))
           .scaleXY(begin: 1.0, end: 1.18, duration: 800.ms);
-    } else if (blink) {
-      dot = dot
-          .animate(onPlay: (c) => c.repeat(reverse: true))
-          .fade(begin: 0.45, end: 1.0, duration: 500.ms);
     }
     // Reserve room so the 4px halo isn't clipped against the card edge.
     return Padding(padding: const EdgeInsets.all(4), child: dot);
@@ -3010,7 +3105,10 @@ class QuickCheckOverlay extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 4),
-                          const Text('Открыт 14:05 · Елена',
+                          Text(
+                              table.openedAt == null
+                                  ? statusLabel(table.status)
+                                  : 'Открыт ${table.openedAt!.hour.toString().padLeft(2, '0')}:${table.openedAt!.minute.toString().padLeft(2, '0')}${table.waiterName != '—' && table.waiterName.isNotEmpty ? ' · ${table.waiterName}' : ''}',
                               style: T.priceSmall),
                           const Divider(height: 32),
                           if (items.isEmpty)
@@ -3115,8 +3213,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   children: [
                     Text('Стол ${table.number}',
                         style: T.screenTitle),
-                    Text('Открыт 14:05 · Елена',
-                        style: T.subtitle),
+                    Text(_tableSubtitle(table), style: T.subtitle),
                   ],
                 ),
               ),
@@ -3181,12 +3278,28 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                     ),
                   )
                 else
-                  ...lines.map((l) => Dismissible(
-                        key: ValueKey(l.hashCode),
-                        onDismissed: (_) =>
-                            state.deleteLine(l, tableId: table.id),
-                        child: _orderItemRow(context, state, table, l),
-                      )),
+                  // Unsent (draft) lines can be swiped away or deleted with
+                  // the explicit button; sent lines are already on the
+                  // kitchen/bar screens and can only be marked as delivered.
+                  ...lines.map((l) => l.sent
+                      ? _orderItemRow(context, state, table, l)
+                      : Dismissible(
+                          key: ValueKey(l.hashCode),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            decoration: BoxDecoration(
+                              color: AppTheme.danger.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(Icons.delete_outline,
+                                color: AppTheme.danger),
+                          ),
+                          onDismissed: (_) =>
+                              state.deleteLine(l, tableId: table.id),
+                          child: _orderItemRow(context, state, table, l),
+                        )),
                 if (lines.isNotEmpty) ...[
                   const Divider(height: 32),
                   Row(
@@ -3249,13 +3362,6 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       icon: Icons.calculate,
                       kind: ButtonKind.ghost,
                       onPressed: () => _showChangeCalculator(context, total)),
-                  const SizedBox(height: 8),
-                  AppButton(
-                      label: 'Добавить в заказ',
-                      icon: Icons.add,
-                      kind: ButtonKind.secondary,
-                      onPressed: () =>
-                          GoRouter.of(context).push('/waiter-menu')),
                 ],
                 const SizedBox(height: 32),
                 const SectionTitle('Заметки'),
@@ -3296,10 +3402,10 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         .map((s) => CategoryChip(
                               label: statusLabel(s),
                               active: table.status == s,
-                              onTap: () {
-                                table.status = s;
-                                state.refresh();
-                              },
+                              // Push through CafeState so the change reaches
+                              // the hub (and every other device), not just
+                              // this screen.
+                              onTap: () => state.setTableStatus(table, s),
                             ))
                         .toList(),
                   ),
@@ -3313,33 +3419,21 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
               children: [
                 Expanded(
                     child: AppButton(
-                        label: 'На кухню',
-                        icon: Icons.restaurant,
-                        color: AppTheme.warning,
-                        onPressed: () {
-                          state.submitOrder(
-                              tableId: table.id, onlyFor: FeedType.kitchen);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Отправлено на кухню')));
-                        })),
+                        label: 'Добавить',
+                        icon: Icons.add,
+                        onPressed: () =>
+                            GoRouter.of(context).push('/waiter-menu'))),
                 const SizedBox(width: 12),
                 Expanded(
                     child: AppButton(
-                        label: 'В бар',
-                        icon: Icons.local_bar,
-                        color: AppTheme.bar,
-                        onPressed: () {
-                          state.submitOrder(
-                              tableId: table.id, onlyFor: FeedType.bar);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Отправлено в бар')));
-                        })),
+                        label: 'Отправить',
+                        icon: Icons.send,
+                        color: AppTheme.warning,
+                        onPressed: () => _sendUnsent(context, state, table))),
                 const SizedBox(width: 12),
                 AppButton(
                     label: '',
-                    icon: Icons.send,
+                    icon: Icons.forward,
                     kind: ButtonKind.secondary,
                     onPressed: () => _showForwardSheet(context, table)),
               ],
@@ -3348,6 +3442,50 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
         ],
       ),
     );
+  }
+
+  /// Send everything not yet sent; kitchen/bar routing happens by station.
+  /// Always answers with a snackbar — silence («нажал и ничего») is a bug.
+  Future<void> _sendUnsent(
+      BuildContext context, CafeState state, CafeTable table) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final pending = state.tableCart(table.id).where((l) => !l.sent).toList();
+    if (pending.isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Нет новых позиций — всё уже отправлено')));
+      return;
+    }
+    final kitchen = pending.where((l) => !l.isBar).fold(0, (s, l) => s + l.quantity);
+    final bar = pending.where((l) => l.isBar).fold(0, (s, l) => s + l.quantity);
+    final order = await state.submitOrder(tableId: table.id);
+    if (!context.mounted) return;
+    if (order != null) {
+      messenger.showSnackBar(SnackBar(
+          content: Text('Отправлено · Кухня $kitchen · Бар $bar'),
+          backgroundColor: AppTheme.success));
+    } else {
+      messenger.showSnackBar(SnackBar(
+          content: Text(state.backendError == null
+              ? 'Не удалось отправить'
+              : 'Не отправлено: ${state.backendError}'),
+          backgroundColor: AppTheme.danger));
+    }
+  }
+
+  /// Real header data instead of the hardcoded «Открыт 14:05 · Елена».
+  String _tableSubtitle(CafeTable table) {
+    final parts = <String>[];
+    if (table.openedAt != null) {
+      final t = table.openedAt!;
+      parts.add(
+          'Открыт ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
+    } else {
+      parts.add(statusLabel(table.status));
+    }
+    if (table.waiterName.isNotEmpty && table.waiterName != '—') {
+      parts.add(table.waiterName);
+    }
+    return parts.join(' · ');
   }
 
   Widget _guestStepper(BuildContext context, CafeState state, CafeTable table) {
@@ -3409,8 +3547,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .toList();
-    final isBar =
-        line.item.category == 'Напитки' || line.item.category == 'Кофе';
+    final isBar = line.isBar;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: GestureDetector(
@@ -3461,6 +3598,24 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           decoration: line.done
                               ? TextDecoration.lineThrough
                               : null)),
+                  if (!line.sent)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.warning.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('черновик — не отправлено',
+                            style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.warning)),
+                      ),
+                    ),
                   if (line.ready && !line.done)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
@@ -3511,6 +3666,18 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                     .copyWith(
                         decoration:
                             line.done ? TextDecoration.lineThrough : null)),
+            if (!line.sent) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => state.deleteLine(line, tableId: table.id),
+                behavior: HitTestBehavior.opaque,
+                child: const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(Icons.delete_outline,
+                      size: 18, color: AppTheme.danger),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -3751,23 +3918,60 @@ class WaiterOrderScreen extends StatefulWidget {
   State<WaiterOrderScreen> createState() => _WaiterOrderScreenState();
 }
 
+/// Unified order-taking screen ("приём заказа").
+///
+/// One and the same flow whether it's the FIRST order of a table or an
+/// addition to an open one: search + always-visible category chips + compact
+/// photo-less cards. Tap adds a dish (multi-category selection just works —
+/// the selection is independent of the current filter), the stepper adjusts
+/// quantity, long-press shows dish info. «Пречек» reviews and sends.
 class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
+  /// Selection lives here (not in the table cart) until the precheck is
+  /// confirmed — cancelling leaves no trace on the table's check.
   final Map<MenuItem, int> _selQty = {};
-  bool _selMode = false;
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  String _category = 'Все';
 
-  void _enterSel(MenuItem item) =>
-      setState(() { _selMode = true; _selQty[item] = 1; });
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
-  void _toggleItem(MenuItem item) => setState(() {
-        if (_selQty.containsKey(item)) {
-          _selQty.remove(item);
-          if (_selQty.isEmpty) _selMode = false;
-        } else {
-          _selQty[item] = 1;
-        }
-      });
+  List<MenuItem> _filtered(CafeState state) {
+    final q = _search.trim().toLowerCase();
+    return state.menu.where((m) {
+      final okCat = _category == 'Все' || m.category == _category;
+      final okSearch = q.isEmpty ||
+          m.name.toLowerCase().contains(q) ||
+          m.category.toLowerCase().contains(q);
+      return okCat && okSearch;
+    }).toList();
+  }
 
-  void _exitSel() => setState(() { _selMode = false; _selQty.clear(); });
+  void _add(BuildContext context, MenuItem item) {
+    if (!item.available) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('«${item.name}» в стоп-листе'),
+          backgroundColor: AppTheme.danger));
+      return;
+    }
+    HapticFeedback.selectionClick();
+    setState(() => _selQty[item] = (_selQty[item] ?? 0) + 1);
+  }
+
+  void _removeOne(MenuItem item) {
+    final current = _selQty[item] ?? 0;
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (current <= 1) {
+        _selQty.remove(item);
+      } else {
+        _selQty[item] = current - 1;
+      }
+    });
+  }
 
   void _openPrecheck(BuildContext context, String tableId) {
     showModalBottomSheet(
@@ -3777,7 +3981,12 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       builder: (_) => _PrecheckSheet(
         selectionQty: Map.from(_selQty),
         fixedTableId: tableId,
-        onConfirmed: () => setState(() { _selMode = false; _selQty.clear(); }),
+        onConfirmed: () {
+          if (!mounted) return;
+          setState(() => _selQty.clear());
+          // Back to the table: the sent lines are visible on its check.
+          if (context.canPop()) context.pop();
+        },
       ),
     );
   }
@@ -3785,62 +3994,114 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final table = state.currentTable ?? state.tables.first;
-    final items = state.filteredMenu();
-    final total = _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
+    final table = state.currentTable ?? state.tables.firstOrNull;
+    if (table == null) {
+      return const AppScaffold(
+          child: _EmptyState(
+              icon: Icons.table_restaurant_outlined,
+              title: 'Нет столов',
+              sub: 'Сначала добавьте стол'));
+    }
+    final items = _filtered(state);
+    final count = _selQty.values.fold(0, (s, v) => s + v);
+    final total =
+        _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
 
     return AppScaffold(
       child: Stack(children: [
         Column(children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
             child: Row(children: [
               IconButton(
-                onPressed: _selMode ? _exitSel : () => context.pop(),
-                icon: Icon(_selMode ? Icons.close : Icons.arrow_back,
-                    color: AppTheme.ink),
+                onPressed: () => context.pop(),
+                icon: const Icon(Icons.arrow_back, color: AppTheme.ink),
               ),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_selMode ? 'Выбрано: ${_selQty.length}' : 'Стол ${table.number}',
-                      style: T.screenTitle),
-                  Text(_selMode ? total.rub : 'Добавить в заказ',
-                      style: T.subtitle),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Стол ${table.number} · заказ',
+                          style: T.screenTitle.copyWith(fontSize: 24)),
+                      Text('Нажмите на блюдо, чтобы добавить',
+                          style: T.subtitle),
+                    ]),
               ),
             ]),
           ),
-          _StaffMenuChips(),
-          const SizedBox(height: 8),
-          Expanded(
-            child: GridView.builder(
-              padding: EdgeInsets.only(top: 8, bottom: _selMode ? 100 : 40),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62),
-              itemCount: items.length,
-              itemBuilder: (ctx, i) {
-                final item = items[i];
-                final qty = _selQty[item];
-                return _SelectableMenuCard(
-                  item: item,
-                  isSelected: qty != null,
-                  qty: qty ?? 1,
-                  selectionMode: _selMode,
-                  onTap: () => _selMode ? _toggleItem(item) : showDishDetails(ctx, item, tableId: table.id),
-                  onLongPress: () => _enterSel(item),
-                  onQtyChanged: (v) => setState(() => _selQty[item] = v),
-                );
-              },
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _search = v),
+              decoration: InputDecoration(
+                hintText: 'Поиск по меню...',
+                prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close,
+                            size: 18, color: AppTheme.ink3),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _search = '');
+                        },
+                      ),
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
             ),
           ),
+          const SizedBox(height: 10),
+          // Category chips stay visible at every moment of the selection —
+          // switching categories must never drop what's already picked.
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: state.categories
+                  .map((c) => CategoryChip(
+                        label: c,
+                        active: _category == c,
+                        onTap: () => setState(() => _category = c),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: items.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.search_off,
+                    title: 'Ничего не найдено',
+                    sub: 'Поменяйте запрос или категорию')
+                : ListView.builder(
+                    padding:
+                        EdgeInsets.only(top: 6, bottom: count > 0 ? 130 : 40),
+                    itemCount: items.length,
+                    itemBuilder: (ctx, i) {
+                      final item = items[i];
+                      return _OrderComposerTile(
+                        item: item,
+                        qty: _selQty[item] ?? 0,
+                        onAdd: () => _add(ctx, item),
+                        onRemove: () => _removeOne(item),
+                        onInfo: () => _showStaffDishDetails(ctx, item),
+                      );
+                    },
+                  ),
+          ),
         ]),
-        if (_selMode && _selQty.isNotEmpty)
+        if (count > 0)
           Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: _SelectionBar(
-              count: _selQty.length,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _ComposerBar(
+              count: count,
               total: total,
-              onCancel: _exitSel,
+              onClear: () => setState(() => _selQty.clear()),
               onNext: () => _openPrecheck(context, table.id),
             ),
           ),
@@ -3862,14 +4123,15 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final kitchenOrders = state.orders
-        .where((o) =>
-            o.splitTo == FeedType.kitchen && o.status != OrderStatus.completed)
-        .toList();
-    final barOrders = state.orders
-        .where((o) =>
-            o.splitTo == FeedType.bar && o.status != OrderStatus.completed)
-        .toList();
+    // Feeds are driven by the items' station, not by the order's splitTo:
+    // a mixed order (e.g. from the guest web) has to appear in BOTH feeds,
+    // each showing only its own positions. splitTo alone hid the bar half.
+    final active =
+        state.orders.where((o) => o.status != OrderStatus.completed).toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final kitchenOrders =
+        active.where((o) => o.hasZone(FeedType.kitchen)).toList();
+    final barOrders = active.where((o) => o.hasZone(FeedType.bar)).toList();
 
     return AppScaffold(
       bottomNav: null,
@@ -3915,8 +4177,10 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
                         sub: 'Нет активных заказов на кухне')
                     : ListView.builder(
                         itemCount: kitchenOrders.length,
-                        itemBuilder: (_, i) =>
-                            OrderCard(order: kitchenOrders[i], index: i)),
+                        itemBuilder: (_, i) => OrderCard(
+                            order: kitchenOrders[i],
+                            zone: FeedType.kitchen,
+                            index: i)),
                 barOrders.isEmpty
                     ? const _EmptyState(
                         icon: Icons.check_circle_outline,
@@ -3924,8 +4188,10 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
                         sub: 'Нет активных заказов в баре')
                     : ListView.builder(
                         itemCount: barOrders.length,
-                        itemBuilder: (_, i) =>
-                            OrderCard(order: barOrders[i], index: i)),
+                        itemBuilder: (_, i) => OrderCard(
+                            order: barOrders[i],
+                            zone: FeedType.bar,
+                            index: i)),
               ],
             ),
           ),
@@ -3979,8 +4245,13 @@ class _ZoneTab extends StatelessWidget {
 }
 
 class OrderCard extends StatelessWidget {
-  const OrderCard({super.key, required this.order, this.index = 0});
+  const OrderCard(
+      {super.key, required this.order, this.zone, this.index = 0});
   final CafeOrder order;
+
+  /// The feed this card is rendered in. A mixed order shows only this
+  /// zone's items here; null shows everything (e.g. in chat receipts).
+  final FeedType? zone;
   final int index;
 
   @override
@@ -3994,8 +4265,10 @@ class OrderCard extends StatelessWidget {
         : age.inMinutes > 15
             ? AppTheme.warning
             : AppTheme.success;
+    final effectiveZone = zone ?? order.splitTo;
     final zoneColor =
-        order.splitTo == FeedType.kitchen ? AppTheme.warning : AppTheme.bar;
+        effectiveZone == FeedType.kitchen ? AppTheme.warning : AppTheme.bar;
+    final visibleItems = zone == null ? order.items : order.itemsFor(zone!);
 
     return AppCard(
       index: index,
@@ -4029,13 +4302,13 @@ class OrderCard extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                         child: Text(
-                            '#${order.id} ·${order.splitTo == FeedType.kitchen ? 'Кухня' : 'Бар'}',
+                            '#${order.id} ·${effectiveZone == FeedType.kitchen ? 'Кухня' : 'Бар'}',
                             style: T.priceSmall.copyWith(color: AppTheme.ink2))),
                     _LiveTimer(createdAt: order.createdAt, color: color),
                   ],
                 ),
                 const Divider(height: 24),
-                ...order.items.map((line) => Padding(
+                ...visibleItems.map((line) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4044,8 +4317,17 @@ class OrderCard extends StatelessWidget {
                               style: T.price.copyWith(color: zoneColor, fontWeight: FontWeight.w900)),
                           const SizedBox(width: 8),
                           Expanded(
-                              child: Text(line.item.name,
-                                  style: T.h3)),
+                              child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                Text(line.item.name, style: T.h3),
+                                if (line.modifiers.isNotEmpty)
+                                  Text(line.modifiers,
+                                      style: T.small.copyWith(
+                                          color: AppTheme.warning,
+                                          fontWeight: FontWeight.w600)),
+                              ])),
                         ],
                       ),
                     )),
@@ -4085,38 +4367,44 @@ class StaffMenuScreen extends StatefulWidget {
   State<StaffMenuScreen> createState() => _StaffMenuScreenState();
 }
 
+/// Staff menu tab — a read-only showcase (composition, allergens, stop-list).
+/// Order taking moved to the dedicated composer screen: «Принять заказ» asks
+/// for the table and opens the exact same flow as inside a table. The old
+/// long-press multi-select is gone — it hid the category chips (locking the
+/// waiter into one category) and hid the bottom navigation without a way back.
 class _StaffMenuScreenState extends State<StaffMenuScreen> {
-  final Map<MenuItem, int> _selQty = {};
-  bool _selMode = false;
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  String _category = 'Все';
 
-  void _enterSel(MenuItem item) {
-    context.read<CafeState>().setShellNav(false);
-    setState(() { _selMode = true; _selQty[item] = 1; });
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
-  void _toggleItem(MenuItem item) => setState(() {
-        if (_selQty.containsKey(item)) {
-          _selQty.remove(item);
-          if (_selQty.isEmpty) _exitSel();
-        } else {
-          _selQty[item] = 1;
-        }
-      });
-
-  void _exitSel() {
-    context.read<CafeState>().setShellNav(true);
-    setState(() { _selMode = false; _selQty.clear(); });
+  List<MenuItem> _filtered(CafeState state) {
+    final q = _search.trim().toLowerCase();
+    return state.menu.where((m) {
+      final okCat = _category == 'Все' || m.category == _category;
+      final okSearch = q.isEmpty ||
+          m.name.toLowerCase().contains(q) ||
+          m.category.toLowerCase().contains(q);
+      return okCat && okSearch;
+    }).toList();
   }
 
-  void _openPrecheck(BuildContext context) {
+  void _pickTableAndOrder(BuildContext context) {
+    final state = context.read<CafeState>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PrecheckSheet(
-        selectionQty: Map.from(_selQty),
-        fixedTableId: null,
-        onConfirmed: () => setState(() { _selMode = false; _selQty.clear(); }),
+      builder: (_) => _TablePickerSheet(
+        onPicked: (table) {
+          state.currentTable = table;
+          GoRouter.of(context).push('/waiter-menu');
+        },
       ),
     );
   }
@@ -4124,203 +4412,366 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final items = state.filteredMenu();
-    final total = _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
+    final items = _filtered(state);
 
     return AppScaffold(
       bottomNav: null,
       child: Stack(children: [
         Column(children: [
-          Header(
-            title: _selMode ? 'Выбрано: ${_selQty.length}' : 'Меню',
-            subtitle: _selMode ? total.rub : 'Витрина для персонала',
-            actions: [
-              if (_selMode)
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppTheme.ink),
-                  onPressed: _exitSel,
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.select_all, color: AppTheme.ink2),
-                  tooltip: 'Зажмите карточку для выбора',
-                  onPressed: null,
-                ),
-            ],
-          ),
-          if (!_selMode) ...[
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: TextField(
-                onChanged: (v) { state.menuSearch = v; state.refresh(); },
-                decoration: const InputDecoration(
-                  hintText: 'Поиск блюда...',
-                  prefixIcon: Icon(Icons.search, color: AppTheme.ink3),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
+          const Header(title: 'Меню', subtitle: 'Витрина и стоп-лист'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _search = v),
+              decoration: InputDecoration(
+                hintText: 'Поиск блюда...',
+                prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
+                suffixIcon: _search.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close,
+                            size: 18, color: AppTheme.ink3),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _search = '');
+                        },
+                      ),
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
-            const SizedBox(height: 12),
-            _StaffMenuChips(),
-            const SizedBox(height: 4),
-          ],
-          Expanded(
-            child: GridView.builder(
-              padding: EdgeInsets.only(top: 12, bottom: _selMode ? 100 : 40),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62),
-              itemCount: items.length,
-              itemBuilder: (ctx, i) {
-                final item = items[i];
-                final qty = _selQty[item];
-                return _SelectableMenuCard(
-                  item: item,
-                  isSelected: qty != null,
-                  qty: qty ?? 1,
-                  selectionMode: _selMode,
-                  onTap: () => _selMode ? _toggleItem(item) : _showStaffDishDetails(ctx, item),
-                  onLongPress: () => _enterSel(item),
-                  onQtyChanged: (v) => setState(() => _selQty[item] = v),
-                );
-              },
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: state.categories
+                  .map((c) => CategoryChip(
+                        label: c,
+                        active: _category == c,
+                        onTap: () => setState(() => _category = c),
+                      ))
+                  .toList(),
             ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: items.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.search_off,
+                    title: 'Ничего не найдено',
+                    sub: 'Поменяйте запрос или категорию')
+                : GridView.builder(
+                    padding: const EdgeInsets.only(top: 12, bottom: 110),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.92),
+                    itemCount: items.length,
+                    itemBuilder: (ctx, i) => _MenuShowcaseCard(
+                      item: items[i],
+                      onTap: () => _showStaffDishDetails(ctx, items[i]),
+                    ),
+                  ),
           ),
         ]),
-        if (_selMode && _selQty.isNotEmpty)
-          Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: _SelectionBar(
-              count: _selQty.length,
-              total: total,
-              onCancel: _exitSel,
-              onNext: () => _openPrecheck(context),
-            ),
+        Positioned(
+          bottom: 12,
+          left: 0,
+          right: 0,
+          child: PrimaryButton(
+            label: 'Принять заказ',
+            icon: Icons.point_of_sale,
+            onTap: () => _pickTableAndOrder(context),
           ),
+        ),
       ]),
     );
   }
 }
 
-// ===== SHARED SELECTION-MODE WIDGETS =====
-
-class _SelectableMenuCard extends StatelessWidget {
-  const _SelectableMenuCard({
-    required this.item,
-    required this.isSelected,
-    required this.qty,
-    required this.selectionMode,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onQtyChanged,
-  });
+/// Compact photo-less showcase card: zone dot + category, name, price,
+/// prep time and availability at a glance.
+class _MenuShowcaseCard extends StatelessWidget {
+  const _MenuShowcaseCard({required this.item, required this.onTap});
   final MenuItem item;
-  final bool isSelected;
-  final int qty;
-  final bool selectionMode;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
-  final ValueChanged<int> onQtyChanged;
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = (item.category == 'Напитки' || item.category == 'Кофе')
-        ? AppTheme.bar
-        : AppTheme.warning;
+    final zoneColor = item.isBar ? AppTheme.bar : AppTheme.warning;
+    return Opacity(
+      opacity: item.available ? 1 : 0.55,
+      child: AppCard(
+        padding: const EdgeInsets.all(12),
+        onTap: onTap,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+                width: 8,
+                height: 8,
+                decoration:
+                    BoxDecoration(color: zoneColor, shape: BoxShape.circle)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(item.category.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: T.label.copyWith(color: AppTheme.ink3)),
+            ),
+            if (!item.available)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: AppTheme.danger,
+                    borderRadius: BorderRadius.circular(6)),
+                child: Text('СТОП',
+                    style: T.label
+                        .copyWith(color: Colors.white, fontSize: 9)),
+              ),
+          ]),
+          const SizedBox(height: 8),
+          Text(item.name,
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: T.bodySemi),
+          if (item.description.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(item.description,
+                maxLines: 2, overflow: TextOverflow.ellipsis, style: T.small),
+          ],
+          const Spacer(),
+          Row(children: [
+            Text(item.price.rub, style: T.price.copyWith(color: AppTheme.cta)),
+            const Spacer(),
+            const Icon(Icons.schedule, size: 12, color: AppTheme.ink3),
+            const SizedBox(width: 3),
+            Text('${item.prepTime} мин',
+                style: T.label.copyWith(color: AppTheme.ink3)),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+/// «На какой стол?» — the entry into the unified order flow from the menu tab.
+class _TablePickerSheet extends StatelessWidget {
+  const _TablePickerSheet({required this.onPicked});
+  final ValueChanged<CafeTable> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    return Container(
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 40,
+          height: 4,
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+              color: AppTheme.separator,
+              borderRadius: BorderRadius.circular(2)),
+        ),
+        Text('На какой стол?', style: T.h2.copyWith(fontSize: 20)),
+        const SizedBox(height: 16),
+        Flexible(
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.1),
+            itemCount: state.tables.length,
+            itemBuilder: (_, i) {
+              final t = state.tables[i];
+              final color = statusColor(t.status);
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.pop(context);
+                  onPicked(t);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.5)),
+                  ),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(t.number.toString().padLeft(2, '0'),
+                            style: AppTypography.mono(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.ink)),
+                        const SizedBox(height: 4),
+                        Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle)),
+                      ]),
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ===== ORDER COMPOSER WIDGETS (photo-less, built for speed) =====
+
+/// One menu position in the order composer. The whole row is a tap target
+/// («+1»); a stepper appears once the dish is selected; long-press (or the
+/// info icon) opens dish details. No photos — a colored zone bar tells
+/// kitchen from bar at a glance.
+class _OrderComposerTile extends StatelessWidget {
+  const _OrderComposerTile({
+    required this.item,
+    required this.qty,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onInfo,
+  });
+  final MenuItem item;
+  final int qty;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+  final VoidCallback onInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    final zoneColor = item.isBar ? AppTheme.bar : AppTheme.warning;
+    final selected = qty > 0;
 
     return GestureDetector(
-      onLongPress: onLongPress,
-      child: Stack(children: [
-        AppCard(
-          padding: const EdgeInsets.all(10),
-          borderColor: isSelected ? AppTheme.bar : null,
-          onTap: onTap,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Stack(children: [
-              MenuImage(item.imageUrl, radius: 13),
-              Positioned(
-                  top: 6,
-                  left: 6,
+      onTap: onAdd,
+      onLongPress: onInfo,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(0, 0, 10, 0),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.cta.withValues(alpha: 0.04)
+              : AppTheme.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: selected ? AppTheme.cta : const Color(0xFFF0EBE1),
+              width: selected ? 1.4 : 1),
+          boxShadow: const [AppTheme.shadowCard],
+        ),
+        child: Opacity(
+          opacity: item.available ? 1 : 0.5,
+          child: Row(children: [
+            // Zone bar: orange = kitchen, blue = bar.
+            Container(
+              width: 4,
+              height: 62,
+              decoration: BoxDecoration(
+                color: zoneColor,
+                borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(13)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: T.bodySemi.copyWith(fontSize: 15)),
+                      const SizedBox(height: 3),
+                      Row(children: [
+                        Text('${item.prepTime} мин · ${item.category}',
+                            style: T.label.copyWith(color: AppTheme.ink3)),
+                        if (!item.available) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                                color: AppTheme.danger,
+                                borderRadius: BorderRadius.circular(5)),
+                            child: Text('СТОП',
+                                style: T.label.copyWith(
+                                    color: Colors.white, fontSize: 8.5)),
+                          ),
+                        ],
+                      ]),
+                    ]),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(item.price.rub,
+                style: T.priceSmall.copyWith(
+                    fontSize: 14,
+                    color: selected ? AppTheme.cta : AppTheme.ink)),
+            const SizedBox(width: 10),
+            if (!selected)
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                    color: AppTheme.cta, shape: BoxShape.circle),
+                child:
+                    const Icon(Icons.add, color: Colors.white, size: 18),
+              )
+            else
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                GestureDetector(
+                  onTap: onRemove,
+                  behavior: HitTestBehavior.opaque,
                   child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                          color: zoneColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5)))),
-              Positioned(
-                  bottom: 6,
-                  right: 6,
-                  child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration:
-                          BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                      child: Row(children: [
-                        const Icon(Icons.schedule, size: 10, color: Colors.white),
-                        const SizedBox(width: 2),
-                        Text('${item.prepTime}м',
-                            style: T.label.copyWith(
-                                color: Colors.white, fontSize: 9)),
-                      ]))),
-              if (isSelected)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                        color: AppTheme.bar.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(13)),
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                        color: AppTheme.surfaceSunken,
+                        shape: BoxShape.circle),
+                    child: const Icon(Icons.remove, size: 18),
                   ),
                 ),
-            ]),
-            const SizedBox(height: 8),
-            Text(item.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: T.bodySemi),
-            if (item.description.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(item.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: T.small),
-            ],
-            const Spacer(),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text(item.price.rub,
-                  style: T.price.copyWith(color: AppTheme.cta)),
-              if (!selectionMode)
+                SizedBox(
+                  width: 30,
+                  child: Center(
+                      child: Text('$qty',
+                          style: AppTypography.mono(
+                              size: 16,
+                              weight: FontWeight.w800,
+                              color: AppColors.ink))),
+                ),
                 Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                        color: item.available ? AppTheme.success : AppTheme.danger,
-                        shape: BoxShape.circle)),
-            ]),
-            if (isSelected) ...[
-              const SizedBox(height: 8),
-              Center(child: _CompactStepper(value: qty, onChanged: onQtyChanged)),
-            ],
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(
+                      color: AppTheme.cta, shape: BoxShape.circle),
+                  child: const Icon(Icons.add,
+                      color: Colors.white, size: 18),
+                ),
+              ]),
           ]),
         ),
-        // Circle checkbox
-        if (selectionMode)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: isSelected ? AppTheme.bar : Colors.white.withValues(alpha: 0.9),
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: isSelected ? AppTheme.bar : AppTheme.ink2, width: 1.5),
-              ),
-              child: isSelected
-                  ? const Icon(Icons.check, color: Colors.white, size: 14)
-                  : null,
-            ),
-          ),
-      ]),
+      ),
     );
   }
 }
@@ -4355,16 +4806,17 @@ class _CompactStepper extends StatelessWidget {
       );
 }
 
-class _SelectionBar extends StatelessWidget {
-  const _SelectionBar({
+/// Sticky bottom bar of the composer: running total + jump to the precheck.
+class _ComposerBar extends StatelessWidget {
+  const _ComposerBar({
     required this.count,
     required this.total,
-    required this.onCancel,
+    required this.onClear,
     required this.onNext,
   });
   final int count;
   final double total;
-  final VoidCallback onCancel;
+  final VoidCallback onClear;
   final VoidCallback onNext;
 
   @override
@@ -4379,23 +4831,24 @@ class _SelectionBar extends StatelessWidget {
       ),
       child: Row(children: [
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text('Выбрано: $count',
-                style: T.smallSemi),
-            Text(total.rub,
-                style: T.h2),
-          ]),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$count поз.', style: T.smallSemi),
+                Text(total.rub, style: T.h2),
+              ]),
         ),
         GhostButton(
-          label: 'Отмена',
-          onTap: onCancel,
+          label: 'Очистить',
+          onTap: onClear,
           height: 44,
         ),
         const SizedBox(width: 10),
         SizedBox(
-          width: 120,
+          width: 132,
           child: PrimaryButton(
-            label: 'Далее →',
+            label: 'Пречек →',
             height: 44,
             onTap: onNext,
           ),
@@ -4448,12 +4901,13 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final total = _items.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
-    final kitchenItems = _items.entries
-        .where((e) => e.key.category != 'Напитки' && e.key.category != 'Кофе')
-        .toList();
-    final barItems = _items.entries
-        .where((e) => e.key.category == 'Напитки' || e.key.category == 'Кофе')
-        .toList();
+    // Split preview by the real station (kitchen/bar), not by category name.
+    final kitchenCount = _items.entries
+        .where((e) => !e.key.isBar)
+        .fold(0, (s, e) => s + e.value);
+    final barCount = _items.entries
+        .where((e) => e.key.isBar)
+        .fold(0, (s, e) => s + e.value);
     final selectedTable = _tableId != null
         ? state.tables.firstWhereOrNull((t) => t.id == _tableId)
         : null;
@@ -4542,6 +4996,13 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
               // Items
               const Text('ПОЗИЦИИ', style: T.label),
               const SizedBox(height: 12),
+              if (_items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                      child: Text('Все позиции удалены',
+                          style: T.body.copyWith(color: AppTheme.ink2))),
+                ),
               ..._items.entries.map((entry) => _PrecheckItemRow(
                     item: entry.key,
                     qty: entry.value,
@@ -4554,25 +5015,28 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                       final c = _noteCtrl[entry.key]!;
                       c.text = c.text.isEmpty ? p : '${c.text}, $p';
                     },
+                    // Position can be removed right up until the send —
+                    // after that it lives on the station screens.
+                    onDelete: () => setState(() => _items.remove(entry.key)),
                   )),
 
               // Split preview
               const Divider(height: 24),
-              if (kitchenItems.isNotEmpty)
+              if (kitchenCount > 0)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(children: [
                     const Icon(Icons.restaurant, size: 16, color: AppTheme.warning),
                     const SizedBox(width: 8),
-                    Text('Кухня: ${kitchenItems.length} блюд',
+                    Text('На кухню: $kitchenCount',
                         style: T.bodySemi.copyWith(color: AppTheme.warning)),
                   ]),
                 ),
-              if (barItems.isNotEmpty)
+              if (barCount > 0)
                 Row(children: [
                   const Icon(Icons.local_bar, size: 16, color: AppTheme.bar),
                   const SizedBox(width: 8),
-                  Text('Бар: ${barItems.length} напиток',
+                  Text('В бар: $barCount',
                       style: T.bodySemi.copyWith(color: AppTheme.bar)),
                 ]),
               const Divider(height: 32),
@@ -4601,30 +5065,41 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     );
   }
 
-  void _confirm(BuildContext context, CafeState state) {
+  Future<void> _confirm(BuildContext context, CafeState state) async {
     final tableId = _tableId!;
     final table = state.tables.firstWhere((t) => t.id == tableId);
     final kitchenCount = _items.entries
-        .where((e) => e.key.category != 'Напитки' && e.key.category != 'Кофе')
-        .length;
+        .where((e) => !e.key.isBar)
+        .fold(0, (s, e) => s + e.value);
     final barCount = _items.entries
-        .where((e) => e.key.category == 'Напитки' || e.key.category == 'Кофе')
-        .length;
+        .where((e) => e.key.isBar)
+        .fold(0, (s, e) => s + e.value);
+    final messenger = ScaffoldMessenger.of(context);
 
     for (final entry in _items.entries) {
       final note = _noteCtrl[entry.key]?.text.trim() ?? '';
       state.addToCart(entry.key, entry.value, note, tableId: tableId);
     }
-    state.submitOrder(tableId: tableId);
+    final order = await state.submitOrder(tableId: tableId);
 
+    if (!mounted) return;
     Navigator.pop(context);
     widget.onConfirmed?.call();
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    // Explicit feedback in BOTH outcomes — «отправил в бар и ничего не
+    // произошло» must never happen again.
+    if (order != null) {
+      messenger.showSnackBar(SnackBar(
         content: Text(
             'Заказ на Стол ${table.number} отправлен · Кухня $kitchenCount · Бар $barCount'),
         backgroundColor: AppTheme.success,
+      ));
+    } else {
+      messenger.showSnackBar(SnackBar(
+        content: Text(state.backendError == null
+            ? 'Нечего отправлять'
+            : 'Не отправлено: ${state.backendError}. Позиции сохранены в чеке стола.'),
+        backgroundColor: AppTheme.danger,
       ));
     }
   }
@@ -4639,6 +5114,7 @@ class _PrecheckItemRow extends StatelessWidget {
     required this.onQtyChanged,
     required this.onToggleNote,
     required this.onPreset,
+    required this.onDelete,
   });
   final MenuItem item;
   final int qty;
@@ -4647,6 +5123,7 @@ class _PrecheckItemRow extends StatelessWidget {
   final ValueChanged<int> onQtyChanged;
   final VoidCallback onToggleNote;
   final ValueChanged<String> onPreset;
+  final VoidCallback onDelete;
 
   static const _presets = [
     'Без лука',
@@ -4669,6 +5146,13 @@ class _PrecheckItemRow extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
+          Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                  color: item.isBar ? AppTheme.bar : AppTheme.warning,
+                  shape: BoxShape.circle)),
           Expanded(
               child: Text(item.name,
                   style: T.price)),
@@ -4678,11 +5162,30 @@ class _PrecheckItemRow extends StatelessWidget {
         const SizedBox(height: 12),
         Row(children: [
           _CompactStepper(value: qty, onChanged: onQtyChanged),
-          const Spacer(),
+          const SizedBox(width: 12),
           GestureDetector(
             onTap: onToggleNote,
             child: Text(expanded ? '− заметка' : '+ примечание',
                 style: T.priceSmall.copyWith(color: AppTheme.bar)),
+          ),
+          const Spacer(),
+          // Delete the position while the order is still a draft.
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              onDelete();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppTheme.danger.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.delete_outline,
+                  size: 18, color: AppTheme.danger),
+            ),
           ),
         ]),
         if (expanded) ...[
@@ -4773,15 +5276,6 @@ class StaffChatListScreen extends StatelessWidget {
                                     ? ''
                                     : '${last.timestamp.hour}:${last.timestamp.minute.toString().padLeft(2, '0')}',
                                 style: T.label.copyWith(color: AppTheme.ink3)),
-                            const SizedBox(height: 5),
-                            if (i == 0)
-                              Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: const BoxDecoration(
-                                      color: AppTheme.warning,
-                                      shape: BoxShape.circle),
-                                  child: const Text('2',
-                                      style: T.label)),
                           ]),
                     ]),
                   );
@@ -4850,7 +5344,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
                   children: [
                 Text(group.name,
                     style: T.h2.copyWith(fontSize: 17)),
-                const Text('8 онлайн',
+                Text('${group.members.length} участников',
                     style: T.smallSemi),
               ])),
         ]),
@@ -4972,6 +5466,38 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
 class _OverviewTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    // Live numbers from the actual state — the tab used to show hardcoded
+    // demo values (fake revenue, fake deltas), which read as "simulated"
+    // activity even on a clean install.
+    final state = context.watch<CafeState>();
+    final now = DateTime.now();
+    final todayOrders = state.orders
+        .where((o) =>
+            o.createdAt.year == now.year &&
+            o.createdAt.month == now.month &&
+            o.createdAt.day == now.day)
+        .toList();
+    final revenue = todayOrders.fold(0.0, (s, o) => s + o.total);
+    final servedTables = todayOrders.map((o) => o.tableId).toSet().length;
+    final avgCheck = servedTables == 0 ? 0.0 : revenue / servedTables;
+    final activeTables =
+        state.tables.where((t) => t.status != TableStatus.free).length;
+    final activeOrders =
+        state.orders.where((o) => o.status != OrderStatus.completed).toList();
+    final oldestMin = activeOrders.isEmpty
+        ? 0
+        : activeOrders
+            .map((o) => now.difference(o.createdAt).inMinutes)
+            .reduce(max);
+
+    // Revenue by hour (today, 08:00–23:00).
+    final byHour = List<double>.filled(16, 0);
+    for (final o in todayOrders) {
+      final h = o.createdAt.hour;
+      if (h >= 8 && h <= 23) byHour[h - 8] += o.total;
+    }
+    final maxHour = byHour.fold(0.0, max);
+
     return ListView(
       children: [
         GridView.count(
@@ -4981,32 +5507,32 @@ class _OverviewTab extends StatelessWidget {
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
           childAspectRatio: 1.3,
-          children: const [
+          children: [
             MetricCard(
                 label: 'Выручка',
-                value: '1,280 \$',
-                delta: '▲ 12%',
+                value: revenue.rub,
+                delta: 'сегодня · ${todayOrders.length} заказов',
                 isPositive: true,
                 color: AppTheme.success),
             MetricCard(
                 label: 'Средний чек',
-                value: '42.50 \$',
-                delta: '▼ 3%',
-                isPositive: false,
-                color: AppTheme.danger,
+                value: avgCheck.rub,
+                delta: 'по $servedTables столам',
+                isPositive: true,
+                color: AppTheme.gold,
                 index: 1),
             MetricCard(
                 label: 'Столы',
-                value: '8 / 12',
-                delta: 'активны',
+                value: '$activeTables / ${state.tables.length}',
+                delta: 'занято сейчас',
                 isPositive: true,
                 color: AppTheme.tOccupied,
                 index: 2),
             MetricCard(
-                label: 'Готовка',
-                value: '14 мин',
-                delta: '▲ 2 мин',
-                isPositive: false,
+                label: 'В работе',
+                value: '${activeOrders.length}',
+                delta: oldestMin > 0 ? 'старейший $oldestMin мин' : 'нет очереди',
+                isPositive: oldestMin <= 20,
                 color: AppTheme.warning,
                 index: 3),
           ],
@@ -5015,19 +5541,24 @@ class _OverviewTab extends StatelessWidget {
         const SectionTitle('Выручка по часам'),
         AppCard(
           height: 160,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [30, 50, 80, 45, 90, 120, 70, 40]
-                .map((h) => Container(
-                    width: 20,
-                    height: h.toDouble(),
-                    decoration: BoxDecoration(
-                        color:
-                            h == 120 ? AppTheme.cta : const Color(0xFFE4D7C2),
-                        borderRadius: BorderRadius.circular(4))))
-                .toList(),
-          ),
+          child: maxHour == 0
+              ? Center(
+                  child: Text('Сегодня заказов ещё не было',
+                      style: T.body.copyWith(color: AppTheme.ink2)))
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: byHour
+                      .map((v) => Container(
+                          width: 12,
+                          height: v == 0 ? 4 : 8 + 110 * (v / maxHour),
+                          decoration: BoxDecoration(
+                              color: v == maxHour
+                                  ? AppTheme.cta
+                                  : const Color(0xFFE4D7C2),
+                              borderRadius: BorderRadius.circular(4))))
+                      .toList(),
+                ),
         ),
       ],
     );
@@ -5072,7 +5603,12 @@ class MenuManagementScreen extends StatelessWidget {
             onTap: () => _showMenuForm(context, item: item),
             child: Row(
               children: [
-                MenuImage(item.imageUrl, radius: 10, aspectRatio: 1),
+                Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                        color: item.isBar ? AppTheme.bar : AppTheme.warning,
+                        shape: BoxShape.circle)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -5080,8 +5616,9 @@ class MenuManagementScreen extends StatelessWidget {
                     children: [
                       Text(item.name,
                           style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
-                      Text(item.price.rub,
-                          style: T.bodySemi.copyWith(color: AppTheme.cta)),
+                      Text(
+                          '${item.price.rub} · ${item.category} · ${item.isBar ? 'бар' : 'кухня'}',
+                          style: T.smallSemi.copyWith(color: AppTheme.ink2)),
                     ],
                   ),
                 ),
@@ -5102,80 +5639,112 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
   final price = TextEditingController(text: item?.price.toString() ?? '');
   final category = TextEditingController(text: item?.category ?? 'Кухня');
   final prep = TextEditingController(text: item?.prepTime.toString() ?? '10');
+  var station = item == null ? 'kitchen' : (item.isBar ? 'bar' : 'kitchen');
 
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(item == null ? 'Новая позиция' : 'Редактировать позицию',
-                  style: T.h1.copyWith(fontSize: 22)),
-              const SizedBox(height: 20),
-              AppTextField(controller: name, label: 'Название'),
-              const SizedBox(height: 12),
-              AppTextField(
-                  controller: desc,
-                  label: 'Описание',
-                  hint: 'Состав, особенности...'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
+    builder: (_) => StatefulBuilder(
+      builder: (context, setModalState) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          decoration: const BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item == null ? 'Новая позиция' : 'Редактировать позицию',
+                    style: T.h1.copyWith(fontSize: 22)),
+                const SizedBox(height: 20),
+                AppTextField(controller: name, label: 'Название'),
+                const SizedBox(height: 12),
+                AppTextField(
+                    controller: desc,
+                    label: 'Описание',
+                    hint: 'Состав, особенности...'),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                        child: AppTextField(
+                            controller: price,
+                            label: 'Цена',
+                            keyboardType: TextInputType.number)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: AppTextField(
+                            controller: prep,
+                            label: 'Время (мин)',
+                            keyboardType: TextInputType.number)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                AppTextField(controller: category, label: 'Категория'),
+                const SizedBox(height: 16),
+                // Where the position is prepared — this is what routes the
+                // order to the kitchen or bar screen.
+                const Text('ГОТОВИТ', style: T.label),
+                const SizedBox(height: 8),
+                Row(children: [
                   Expanded(
-                      child: AppTextField(
-                          controller: price,
-                          label: 'Цена',
-                          keyboardType: TextInputType.number)),
-                  const SizedBox(width: 12),
+                    child: CategoryChip(
+                      label: 'Кухня',
+                      active: station == 'kitchen',
+                      icon: Icons.restaurant,
+                      onTap: () => setModalState(() => station = 'kitchen'),
+                    ),
+                  ),
                   Expanded(
-                      child: AppTextField(
-                          controller: prep,
-                          label: 'Время (мин)',
-                          keyboardType: TextInputType.number)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              AppTextField(controller: category, label: 'Категория'),
-              const SizedBox(height: 24),
-              AppButton(
-                label: 'Сохранить',
-                onPressed: () {
-                  if (item == null) {
-                    final newItem = MenuItem(
-                      id: 'm${context.read<CafeState>().menu.length + 1}',
-                      name: name.text,
-                      description: desc.text,
-                      price: double.tryParse(price.text) ?? 0.0,
-                      category: category.text,
-                      imageUrl:
-                          'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
-                      tags: [],
-                      prepTime: int.tryParse(prep.text) ?? 10,
-                    );
-                    context.read<CafeState>().menu.add(newItem);
-                  } else {
-                    item.name = name.text;
-                    item.description = desc.text;
-                    item.price = double.tryParse(price.text) ?? item.price;
-                    item.category = category.text;
-                    item.prepTime = int.tryParse(prep.text) ?? item.prepTime;
-                  }
-                  context.read<CafeState>().refresh();
-                  Navigator.pop(context);
-                },
-              ),
-            ],
+                    child: CategoryChip(
+                      label: 'Бар',
+                      active: station == 'bar',
+                      icon: Icons.local_bar,
+                      onTap: () => setModalState(() => station = 'bar'),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 24),
+                AppButton(
+                  label: 'Сохранить',
+                  onPressed: () {
+                    final state = context.read<CafeState>();
+                    if (name.text.trim().isEmpty) return;
+                    if (item == null) {
+                      state.upsertMenuItem(MenuItem(
+                        id: 'm${DateTime.now().millisecondsSinceEpoch}',
+                        name: name.text.trim(),
+                        description: desc.text.trim(),
+                        price: double.tryParse(price.text) ?? 0.0,
+                        category: category.text.trim().isEmpty
+                            ? 'Кухня'
+                            : category.text.trim(),
+                        imageUrl: '',
+                        tags: [],
+                        prepTime: int.tryParse(prep.text) ?? 10,
+                        station: station,
+                      ));
+                    } else {
+                      item.name = name.text.trim();
+                      item.description = desc.text.trim();
+                      item.price = double.tryParse(price.text) ?? item.price;
+                      item.category = category.text.trim().isEmpty
+                          ? item.category
+                          : category.text.trim();
+                      item.prepTime = int.tryParse(prep.text) ?? item.prepTime;
+                      item.station = station;
+                      state.upsertMenuItem(item);
+                    }
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -5341,29 +5910,6 @@ class AppTextField extends StatelessWidget {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       );
-}
-
-class _StaffMenuChips extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<CafeState>();
-    return SizedBox(
-      height: 38,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: state.categories
-            .map((c) => CategoryChip(
-                  label: c,
-                  active: state.selectedCategory == c,
-                  onTap: () {
-                    state.selectedCategory = c;
-                    state.refresh();
-                  },
-                ))
-            .toList(),
-      ),
-    );
-  }
 }
 
 class ChatBubble extends StatelessWidget {
@@ -5677,8 +6223,6 @@ void _showStaffDishDetails(BuildContext context, MenuItem item) {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  MenuImage(item.imageUrl, radius: 16, aspectRatio: 16 / 10),
-                  const SizedBox(height: 20),
                   Row(children: [
                     Expanded(
                         child: Text(item.name,
@@ -5686,9 +6230,55 @@ void _showStaffDishDetails(BuildContext context, MenuItem item) {
                     Text(item.price.rub,
                         style: T.h2.copyWith(color: AppTheme.cta))
                   ]),
+                  const SizedBox(height: 10),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: (item.isBar ? AppTheme.bar : AppTheme.warning)
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(item.isBar ? Icons.local_bar : Icons.restaurant,
+                            size: 13,
+                            color:
+                                item.isBar ? AppTheme.bar : AppTheme.warning),
+                        const SizedBox(width: 5),
+                        Text(item.isBar ? 'Бар' : 'Кухня',
+                            style: T.smallSemi.copyWith(
+                                color: item.isBar
+                                    ? AppTheme.bar
+                                    : AppTheme.warning,
+                                fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: AppTheme.surfaceSunken,
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text('${item.prepTime} мин · ${item.category}',
+                          style: T.smallSemi),
+                    ),
+                    if (!item.available)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: AppTheme.danger.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10)),
+                        child: Text('СТОП-ЛИСТ',
+                            style: T.smallSemi.copyWith(
+                                color: AppTheme.danger,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                  ]),
                   const SizedBox(height: 12),
-                  Text(item.description,
-                      style: T.h3.copyWith(color: AppTheme.ink2)),
+                  if (item.description.isNotEmpty)
+                    Text(item.description,
+                        style: T.h3.copyWith(color: AppTheme.ink2)),
                   const SizedBox(height: 20),
                   const Text('СОСТАВ', style: T.label),
                   const SizedBox(height: 4),
@@ -5718,71 +6308,6 @@ void _showStaffDishDetails(BuildContext context, MenuItem item) {
                       label: 'Готово', onPressed: () => Navigator.pop(context)),
                 ]),
           ));
-}
-
-Future<void> showDishDetails(BuildContext context, MenuItem item,
-    {String? tableId}) async {
-  await showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => DishDetailSheet(item: item, tableId: tableId),
-  );
-}
-
-class DishDetailSheet extends StatefulWidget {
-  const DishDetailSheet({super.key, required this.item, this.tableId});
-  final MenuItem item;
-  final String? tableId;
-  @override
-  State<DishDetailSheet> createState() => _DishDetailSheetState();
-}
-
-class _DishDetailSheetState extends State<DishDetailSheet> {
-  int qty = 1;
-  final notes = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-          color: AppTheme.card,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      padding: EdgeInsets.fromLTRB(
-          20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Expanded(
-                  child: Text(widget.item.name,
-                      style: T.h1.copyWith(fontSize: 20))),
-              Text(widget.item.price.rub,
-                  style: T.h2.copyWith(color: AppTheme.cta))
-            ]),
-            const SizedBox(height: 20),
-            Row(children: [
-              const Expanded(
-                  child: Text('Количество',
-                      style: T.bodySemi)),
-              QuantityStepper(
-                  value: qty, onChanged: (v) => setState(() => qty = v))
-            ]),
-            const SizedBox(height: 16),
-            AppTextField(controller: notes, label: 'Пожелания'),
-            const SizedBox(height: 24),
-            AppButton(
-                label: 'Добавить в чек ·${(widget.item.price * qty).rub}',
-                onPressed: () {
-                  context.read<CafeState>().addToCart(
-                      widget.item, qty, notes.text.trim(),
-                      tableId: widget.tableId);
-                  Navigator.pop(context);
-                }),
-          ]),
-    );
-  }
 }
 
 class _LiveTimer extends StatefulWidget {
@@ -5816,27 +6341,6 @@ class _LiveTimerState extends State<_LiveTimer> {
   }
 }
 
-class TypingDots extends StatelessWidget {
-  const TypingDots({super.key});
-  @override
-  Widget build(BuildContext context) => Row(
-      children: List.generate(
-          3,
-          (i) => Container(
-                  width: 7,
-                  height: 7,
-                  margin: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
-                      color: AppTheme.ink3, shape: BoxShape.circle))
-              .animate(
-                  delay: Duration(milliseconds: i * 150),
-                  onPlay: (c) => c.repeat(reverse: true))
-              .scale(
-                  begin: const Offset(.5, .5),
-                  end: const Offset(1, 1),
-                  duration: 450.ms)));
-}
-
 extension DurationNum on int {
   Duration get ms => Duration(milliseconds: this);
   Duration get seconds => Duration(seconds: this);
@@ -5865,19 +6369,13 @@ Color attentionColor(String attention) => switch (attention) {
 Color statusColor(TableStatus status) => switch (status) {
       TableStatus.free => AppTheme.tFree,
       TableStatus.occupied => AppTheme.tOccupied,
-      TableStatus.awaitingPayment => AppTheme.gold,
-      TableStatus.ready => AppTheme.success,
-      TableStatus.late => AppTheme.danger,
-      TableStatus.newOrder => AppTheme.warning,
+      TableStatus.waiting => AppTheme.warning,
     };
 
 String statusLabel(TableStatus status) => switch (status) {
       TableStatus.free => 'Свободен',
       TableStatus.occupied => 'Занят',
-      TableStatus.awaitingPayment => 'Счёт',
-      TableStatus.ready => 'Готово',
-      TableStatus.late => 'Задержка',
-      TableStatus.newOrder => 'Новый',
+      TableStatus.waiting => 'Ждёт официанта',
     };
 
 class BlurBar extends StatelessWidget {
@@ -5984,17 +6482,27 @@ class SettingsScreen extends StatelessWidget {
             _SettingsRow(label: 'Сервер', value: ApiConfig.baseUrl),
             if (state.backendError != null)
               _SettingsRow(label: 'Последняя ошибка', value: state.backendError),
-            _SettingsRow(
-                label: 'Переподключить',
-                trailing: state.backendConnecting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppTheme.cta))
-                    : const Icon(Icons.sync, color: AppTheme.cta),
-                onTap:
-                    state.backendConnecting ? null : () => state.reconnect()),
+            // Below: two different ways to (re)establish the connection.
+            // reconnect() only works once _lastUser/_lastPass are already set
+            // from a prior successful login (or via --dart-define, which we
+            // deliberately do not bake into the web build — that would ship
+            // real staff passwords inside a publicly downloadable JS bundle).
+            // So the very first connection on a fresh device must go through
+            // a typed login, not "Переподключить" — hence this form.
+            if (!state.backendConnected) const _ConnectionLoginForm(),
+            if (state.backendConnected)
+              _SettingsRow(
+                  label: 'Переподключить',
+                  trailing: state.backendConnecting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppTheme.cta))
+                      : const Icon(Icons.sync, color: AppTheme.cta),
+                  onTap: state.backendConnecting
+                      ? null
+                      : () => state.reconnect()),
           ]),
           _SettingsSection('Данные и синхронизация', [
             _SettingsToggle(
@@ -6015,7 +6523,7 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => _confirmResetToDemo(context, state)),
           ]),
           _SettingsSection('О приложении', [
-            const _SettingsRow(label: 'Версия', value: 'v0.1.0-alpha'),
+            const _SettingsRow(label: 'Версия', value: 'v0.2.0'),
           ]),
         ],
       ),
@@ -6041,6 +6549,56 @@ class SettingsScreen extends StatelessWidget {
                   style: T.bodySemi)),
         ],
       ),
+    );
+  }
+}
+
+// First-time login form for the "Соединение" settings section. Distinct from
+// reconnect() (which only re-uses credentials from an already-successful
+// session): this is the only in-app way to type a username/password, since
+// the web build intentionally does not bake real staff passwords into the
+// public JS bundle via --dart-define.
+class _ConnectionLoginForm extends StatefulWidget {
+  const _ConnectionLoginForm();
+  @override
+  State<_ConnectionLoginForm> createState() => _ConnectionLoginFormState();
+}
+
+class _ConnectionLoginFormState extends State<_ConnectionLoginForm> {
+  final _username = TextEditingController();
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit(CafeState state) async {
+    final username = _username.text.trim();
+    final password = _password.text;
+    if (username.isEmpty || password.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    await state.connectBackend(username: username, password: password);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        AppTextField(controller: _username, label: 'Логин'),
+        const SizedBox(height: 10),
+        AppTextField(controller: _password, label: 'Пароль', obscure: true),
+        const SizedBox(height: 12),
+        PrimaryButton(
+          label: state.backendConnecting ? 'Подключение…' : 'Войти',
+          onTap: state.backendConnecting ? null : () => _submit(state),
+          height: 46,
+        ),
+      ]),
     );
   }
 }
@@ -6074,7 +6632,21 @@ class _SettingsRow extends StatelessWidget {
         title: Text(label, style: T.h3.copyWith(fontWeight: FontWeight.w500)),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
           if (value != null)
-            Text(value!, style: T.body.copyWith(color: AppTheme.ink2)),
+            // Bug fix: an unconstrained long value (e.g. backendError's full
+            // sentence) took its full intrinsic width in ListTile.trailing,
+            // squeezing the title down to ~0px and wrapping it one letter per
+            // line. Capping width + wrapping onto up to 2 lines keeps long
+            // values (error text) readable without starving the label.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 170),
+              child: Text(
+                value!,
+                style: T.body.copyWith(color: AppTheme.ink2),
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
           if (trailing != null) trailing!,
         ]),
         onTap: onTap,

@@ -15,13 +15,14 @@ void main() {
           'name': 'Стол 03',
           'seats': 4,
           'guestCount': 2,
-          'status': 'awaitingPayment',
+          'status': 'waiting',
           'colorTag': '',
           'waiter': 'Елена',
           'openedAt': '2026-06-28T10:00:00Z',
           'currentOrderId': '1201',
-          'attention': null,
+          'attention': 'call',
           'attentionReason': '',
+          'attentionSignalId': '17',
           'ack': false,
         }
       ],
@@ -48,6 +49,7 @@ void main() {
           'tableId': '3',
           'status': 'cooking',
           'station': 'kitchen',
+          'createdAt': '2026-06-28T10:05:00Z',
           'items': [
             {
               'id': '9',
@@ -69,11 +71,15 @@ void main() {
     test('parses currentUser, tables, menu and orders', () {
       final dto = BootstrapDto.fromJson(bootstrap);
       expect(dto.currentUser?.name, 'Елена Соколова');
-      expect(dto.tables.single.status, 'awaitingPayment');
+      expect(dto.tables.single.status, 'waiting');
+      expect(dto.tables.single.attentionSignalId, '17');
       expect(dto.tables.single.seats, 4);
       expect(dto.menu.single.station, 'bar');
       expect(dto.menu.single.price, 4.5);
       expect(dto.orders.single.status, 'cooking');
+      // Server timestamp must survive parsing — the kitchen timer used to
+      // reset to 00:00 on every bootstrap because createdAt was dropped.
+      expect(dto.orders.single.createdAt, '2026-06-28T10:05:00Z');
       expect(dto.orders.single.items.single.qty, 2);
       expect(dto.orders.single.items.single.notes, ['без сахара']);
     });
@@ -98,6 +104,7 @@ void main() {
         },
         'status': 'cooking',
         'station_scope': 'mixed',
+        'created_at': '2026-06-28T10:05:00Z',
         'items': [
           {
             'id': 9,
@@ -120,6 +127,7 @@ void main() {
       expect(order.tableId, '3');
       expect(order.status, 'cooking');
       expect(order.station, 'mixed');
+      expect(order.createdAt, '2026-06-28T10:05:00Z');
       expect(order.items.single.dishId, '1');
       expect(order.items.single.qty, 2);
       expect(order.items.single.price, 4.5); // parsed from string "4.50"
@@ -128,7 +136,8 @@ void main() {
     test('TableDto.fromDrf maps django status to flutter status', () {
       final table = TableDto.fromDrf(
           ((drfOrder['order'] as Map)['table'] as Map).cast<String, dynamic>());
-      expect(table.status, 'newOrder'); // new_order -> newOrder
+      // legacy backend value degrades gracefully to the 3-status model
+      expect(table.status, 'waiting');
       expect(table.attention, 'call');
       expect(table.seats, 4);
     });
@@ -157,11 +166,17 @@ void main() {
       expect(flutterOrderStatusFromDjango('???'), 'accepted');
     });
 
-    test('table status: django -> flutter', () {
-      expect(flutterTableStatusFromDjango('awaiting_payment'), 'awaitingPayment');
-      expect(flutterTableStatusFromDjango('new_order'), 'newOrder');
-      expect(flutterTableStatusFromDjango('needs_service'), 'newOrder');
+    test('table status: django -> flutter (3-status model)', () {
       expect(flutterTableStatusFromDjango('free'), 'free');
+      expect(flutterTableStatusFromDjango('occupied'), 'occupied');
+      expect(flutterTableStatusFromDjango('waiting'), 'waiting');
+      // legacy values from pre-simplification backends degrade gracefully
+      expect(flutterTableStatusFromDjango('awaiting_payment'), 'waiting');
+      expect(flutterTableStatusFromDjango('new_order'), 'waiting');
+      expect(flutterTableStatusFromDjango('needs_service'), 'waiting');
+      expect(flutterTableStatusFromDjango('ready'), 'occupied');
+      expect(flutterTableStatusFromDjango('late'), 'waiting');
+      expect(flutterTableStatusFromDjango('???'), 'free');
     });
   });
 }

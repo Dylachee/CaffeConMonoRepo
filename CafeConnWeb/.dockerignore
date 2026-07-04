@@ -1,5 +1,6 @@
 .git
 .github
+.idea
 .pytest_cache
 .mypy_cache
 .ruff_cache
@@ -15,3 +16,14 @@ media
 node_modules
 dist
 build
+
+# Design/reference exports and runtime data — not read by the Django app at
+# import or request time (nothing under static/ or templates/ references
+# them), so they only bloat the build context and image layers.
+external
+refs
+shots
+uploads
+.thumbnail
+*.dc.html
+support.js
