@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_typography.dart';
@@ -41,8 +42,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Стол ${table.number}',
-                        style: T.screenTitle),
+                    Text(L.tableN(table.number), style: T.screenTitle),
                     Text(_tableSubtitle(table), style: T.subtitle),
                   ],
                 ),
@@ -63,7 +63,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
               children: [
                 Row(
                   children: [
-                    Text('Заказ', style: T.sectionTitle),
+                    Text(L.order, style: T.sectionTitle),
                     const SizedBox(width: 10),
                     if (lines.isNotEmpty)
                       Container(
@@ -74,7 +74,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           borderRadius: BorderRadius.circular(7),
                         ),
                         child: Text(
-                          '${lines.where((l) => l.done).length}/${lines.length} отдано',
+                          L.served(
+                              lines.where((l) => l.done).length, lines.length),
                           style: const TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 11,
@@ -96,10 +97,10 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           const Icon(Icons.receipt_long,
                               size: 48, color: AppTheme.separator),
                           const SizedBox(height: 16),
-                          const Text('Чек пуст', style: T.bodySemi),
+                          Text(L.checkEmpty, style: T.bodySemi),
                           const SizedBox(height: 16),
                           AppButton(
-                              label: 'Добавить блюдо',
+                              label: L.addItem,
                               kind: ButtonKind.secondary,
                               onPressed: () =>
                                   GoRouter.of(context).push('/waiter-menu')),
@@ -135,15 +136,14 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('ИТОГО',
-                          style: T.h2),
+                      Text(L.total, style: T.h2),
                       Text(total.rub,
                           style: T.h2.copyWith(color: AppTheme.cta)),
                     ],
                   ),
                   const SizedBox(height: 16),
                   AppButton(
-                      label: 'Очистить стол',
+                      label: L.clearTable,
                       icon: Icons.cleaning_services,
                       kind: ButtonKind.ghost,
                       color: AppTheme.danger,
@@ -155,17 +155,17 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20)),
                             title: Text(
-                              'Очистить стол ${table.number}?',
+                              L.clearTableQ(table.number),
                               style: T.h2,
                             ),
-                            content: const Text(
-                              'Заказ будет удалён. Убедитесь, что оплата прошла в кассе.',
+                            content: Text(
+                              L.clearTableWarn,
                               style: T.body,
                             ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('Отмена'),
+                                child: Text(L.cancel),
                               ),
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
@@ -175,8 +175,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                                       borderRadius: BorderRadius.circular(12)),
                                 ),
                                 onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('Да, очистить',
-                                    style: T.bodySemi),
+                                child: Text(L.yesClear, style: T.bodySemi),
                               ),
                             ],
                           ),
@@ -188,13 +187,16 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       }),
                   const SizedBox(height: 8),
                   AppButton(
-                      label: 'Сдача / Оплата',
+                      label: L.changePayment,
                       icon: Icons.calculate,
                       kind: ButtonKind.ghost,
                       onPressed: () => _showChangeCalculator(context, total)),
                 ],
                 const SizedBox(height: 32),
-                const SectionTitle('Заметки'),
+                SectionTitle(L.orderHistory),
+                _OrderHistorySection(table: table),
+                const SizedBox(height: 8),
+                SectionTitle(L.notes),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -210,20 +212,19 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         decoration: BoxDecoration(
                             border: Border.all(color: AppTheme.separator),
                             borderRadius: BorderRadius.circular(10)),
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.add, size: 14, color: AppTheme.ink2),
-                              const SizedBox(width: 4),
-                              Text('Добавить',
-                                  style: T.priceSmall.copyWith(color: AppTheme.ink2))
-                            ]),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.add, size: 14, color: AppTheme.ink2),
+                          const SizedBox(width: 4),
+                          Text(L.add,
+                              style:
+                                  T.priceSmall.copyWith(color: AppTheme.ink2))
+                        ]),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 32),
-                const SectionTitle('Статус стола'),
+                SectionTitle(L.tableStatus),
                 SizedBox(
                   height: 38,
                   child: ListView(
@@ -249,14 +250,14 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
               children: [
                 Expanded(
                     child: AppButton(
-                        label: 'Добавить',
+                        label: L.add,
                         icon: Icons.add,
                         onPressed: () =>
                             GoRouter.of(context).push('/waiter-menu'))),
                 const SizedBox(width: 12),
                 Expanded(
                     child: AppButton(
-                        label: 'Отправить',
+                        label: L.send,
                         icon: Icons.send,
                         color: AppTheme.warning,
                         onPressed: () => _sendUnsent(context, state, table))),
@@ -275,40 +276,40 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   }
 
   /// Send everything not yet sent; kitchen/bar routing happens by station.
-  /// Always answers with a snackbar — silence («нажал и ничего») is a bug.
+  /// Always answers with a snackbar; silence after a tap is a bug.
   Future<void> _sendUnsent(
       BuildContext context, CafeState state, CafeTable table) async {
     final messenger = ScaffoldMessenger.of(context);
     final pending = state.tableCart(table.id).where((l) => !l.sent).toList();
     if (pending.isEmpty) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Нет новых позиций — всё уже отправлено')));
+      messenger.showSnackBar(SnackBar(content: Text(L.noNewItems)));
       return;
     }
-    final kitchen = pending.where((l) => !l.isBar).fold(0, (s, l) => s + l.quantity);
+    final kitchen =
+        pending.where((l) => !l.isBar).fold(0, (s, l) => s + l.quantity);
     final bar = pending.where((l) => l.isBar).fold(0, (s, l) => s + l.quantity);
     final order = await state.submitOrder(tableId: table.id);
     if (!context.mounted) return;
     if (order != null) {
       messenger.showSnackBar(SnackBar(
-          content: Text('Отправлено · Кухня $kitchen · Бар $bar'),
+          content: Text(L.sentKitchenBar(kitchen, bar)),
           backgroundColor: AppTheme.success));
     } else {
       messenger.showSnackBar(SnackBar(
           content: Text(state.backendError == null
-              ? 'Не удалось отправить'
-              : 'Не отправлено: ${state.backendError}'),
+              ? L.couldNotSend
+              : L.notSent(state.backendError!)),
           backgroundColor: AppTheme.danger));
     }
   }
 
-  /// Real header data instead of the hardcoded «Открыт 14:05 · Елена».
+  /// Real header data instead of a hardcoded opened-at/waiter line.
   String _tableSubtitle(CafeTable table) {
     final parts = <String>[];
     if (table.openedAt != null) {
       final t = table.openedAt!;
-      parts.add(
-          'Открыт ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
+      parts.add(L.openedAt(
+          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'));
     } else {
       parts.add(statusLabel(table.status));
     }
@@ -330,7 +331,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
           const Icon(Icons.people_outline, size: 19, color: AppColors.occupied),
           const SizedBox(width: 10),
           Expanded(
-            child: Text('Гостей за столом',
+            child: Text(L.guestsAtTable,
                 style: AppTypography.bodySemi().copyWith(fontSize: 13.5)),
           ),
           _stepperBtn(Icons.remove, false,
@@ -365,7 +366,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       offset: const Offset(0, 1))
                 ],
         ),
-        child: Icon(icon, size: 15, color: primary ? Colors.white : AppColors.ink),
+        child:
+            Icon(icon, size: 15, color: primary ? Colors.white : AppColors.ink),
       ),
     );
   }
@@ -411,23 +413,21 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         weight: FontWeight.w700,
                         color: line.done ? AppColors.ink40 : AppColors.ink)
                     .copyWith(
-                        decoration: line.done
-                            ? TextDecoration.lineThrough
-                            : null)),
+                        decoration:
+                            line.done ? TextDecoration.lineThrough : null)),
             const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(line.item.name,
+                  Text(line.item.displayName,
                       style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 14.5,
                           fontWeight: FontWeight.w600,
                           color: line.done ? AppColors.ink40 : AppColors.ink,
-                          decoration: line.done
-                              ? TextDecoration.lineThrough
-                              : null)),
+                          decoration:
+                              line.done ? TextDecoration.lineThrough : null)),
                   if (!line.sent)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
@@ -438,7 +438,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           color: AppTheme.warning.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text('черновик — не отправлено',
+                        child: Text(L.draftNotSent,
                             style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 10.5,
@@ -459,9 +459,10 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.check, size: 10, color: AppColors.ok),
+                            const Icon(Icons.check,
+                                size: 10, color: AppColors.ok),
                             const SizedBox(width: 4),
-                            Text('готово на ${isBar ? "баре" : "кухне"}',
+                            Text(L.readyAt(isBar),
                                 style: const TextStyle(
                                     fontFamily: 'Inter',
                                     fontSize: 10.5,
@@ -477,8 +478,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        ...notes.map(
-                            (n) => _noteChip(n, () => state.removeItemNote(line, n))),
+                        ...notes.map((n) =>
+                            _noteChip(n, () => state.removeItemNote(line, n))),
                         _addNoteChip(
                             () => _showNotePresets(context, state, line)),
                       ],
@@ -549,13 +550,13 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
           border: Border.all(color: const Color(0xFFD8C9A8)),
           borderRadius: BorderRadius.circular(7),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.add, size: 11, color: AppColors.amber),
-            SizedBox(width: 3),
-            Text('примечание',
-                style: TextStyle(
+            const Icon(Icons.add, size: 11, color: AppColors.amber),
+            const SizedBox(width: 3),
+            Text(L.note,
+                style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -567,16 +568,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   }
 
   void _showNotePresets(BuildContext context, CafeState state, CartLine line) {
-    const presets = [
-      'Без лука',
-      'Без льда',
-      'На соевом',
-      'Остро',
-      'Не остро',
-      'Навынос',
-      'Без сахара',
-      'Хорошо прожарить'
-    ];
+    final presets = L.notePresets;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -599,7 +591,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                     borderRadius: BorderRadius.circular(2)),
               ),
             ),
-            Text('${line.quantity}× ${line.item.name}', style: AppTypography.h3()),
+            Text('${line.quantity}× ${line.item.displayName}',
+                style: AppTypography.h3()),
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
@@ -643,16 +636,15 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Новая заметка',
-                  style: T.h2),
+              Text(L.newNote, style: T.h2),
               const SizedBox(height: 16),
               AppTextField(
                   controller: noteController,
-                  label: 'Текст заметки',
-                  hint: 'Аллергия, ДР, VIP...'),
+                  label: L.noteText,
+                  hint: L.noteHint),
               const SizedBox(height: 20),
               AppButton(
-                  label: 'Добавить',
+                  label: L.add,
                   onPressed: () {
                     if (noteController.text.isNotEmpty) {
                       context
@@ -690,22 +682,19 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Калькулятор сдачи',
-                    style: T.h1.copyWith(fontSize: 22)),
+                Text(L.changeCalculator, style: T.h1.copyWith(fontSize: 22)),
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('К оплате:',
-                        style: T.bodySemi.copyWith(fontSize: 16)),
-                    Text(total.rub,
-                        style: T.h2.copyWith(color: AppTheme.cta)),
+                    Text(L.toPay, style: T.bodySemi.copyWith(fontSize: 16)),
+                    Text(total.rub, style: T.h2.copyWith(color: AppTheme.cta)),
                   ],
                 ),
                 const SizedBox(height: 16),
                 AppTextField(
                   controller: cashController,
-                  label: 'Получено наличных',
+                  label: L.cashReceived,
                   keyboardType: TextInputType.number,
                   onChanged: (v) {
                     final cash = double.tryParse(v) ?? 0;
@@ -721,23 +710,153 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('СДАЧА:',
+                      Text(L.change,
                           style: T.label.copyWith(
-                              fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 1)),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1)),
                       Text(change.rub,
                           style: T.h1.copyWith(
-                              fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.success)),
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.success)),
                     ],
                   ),
                 ),
                 const SizedBox(height: 24),
                 AppButton(
-                    label: 'Готово', onPressed: () => Navigator.pop(context)),
+                    label: L.done, onPressed: () => Navigator.pop(context)),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Per-visit order history: every order sent for this table, newest first.
+/// Delivered (completed) orders do NOT disappear — they stay here until the
+/// waiter clears the table, which archives the whole visit.
+class _OrderHistorySection extends StatelessWidget {
+  const _OrderHistorySection({required this.table});
+  final CafeTable table;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final tableOrders = state.orders
+        .where((o) => o.tableId == table.id)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (tableOrders.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child:
+            Text(L.noOrdersYet, style: T.body.copyWith(color: AppTheme.ink2)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...tableOrders.map((o) => _historyCard(context, state, o)),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 6),
+          child: Text(L.deliveredStays,
+              style: T.small.copyWith(color: AppTheme.ink3)),
+        ),
+      ],
+    );
+  }
+
+  Widget _historyCard(BuildContext context, CafeState state, CafeOrder order) {
+    final delivered = order.status == OrderStatus.completed;
+    final statusColor = switch (order.status) {
+      OrderStatus.completed => AppTheme.success,
+      OrderStatus.ready => AppTheme.success,
+      OrderStatus.cooking => AppTheme.warning,
+      OrderStatus.accepted => AppTheme.ink2,
+    };
+    final ts = order.createdAt;
+    final hhmm =
+        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(delivered ? Icons.check_circle : Icons.schedule,
+              size: 15, color: statusColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('#${order.id} · $hhmm',
+                style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(orderStatusLabel(order.status),
+                style: T.label
+                    .copyWith(color: statusColor, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        ...order.items.map((l) {
+          final lineDone = l.done;
+          final lineReady = l.ready;
+          final lineColor =
+              lineDone || lineReady ? AppTheme.success : AppTheme.ink2;
+          final lineStatus = lineDone
+              ? L.itemDelivered
+              : lineReady
+                  ? L.itemReady
+                  : L.inPreparation;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Column(children: [
+              Row(children: [
+                Text('${l.quantity}× ',
+                    style: T.priceSmall.copyWith(fontWeight: FontWeight.w700)),
+                Expanded(
+                  child: Text(l.item.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: T.priceSmall.copyWith(
+                          color: lineDone ? AppTheme.ink2 : AppTheme.ink,
+                          decoration:
+                              lineDone ? TextDecoration.lineThrough : null)),
+                ),
+                Text(l.total.rub,
+                    style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+              ]),
+              const SizedBox(height: 3),
+              Row(children: [
+                Text(lineStatus,
+                    style: T.label.copyWith(
+                        color: lineColor, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                if (state.canDeliverOrders && lineReady && !lineDone)
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.success,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => state.toggleOrderItemDelivered(order, l),
+                    child: Text(L.markDelivered,
+                        style: T.label.copyWith(fontWeight: FontWeight.w900)),
+                  ),
+              ]),
+            ]),
+          );
+        }),
+      ]),
     );
   }
 }

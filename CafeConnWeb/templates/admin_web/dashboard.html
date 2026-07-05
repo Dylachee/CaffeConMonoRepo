@@ -6,22 +6,22 @@
 <section class="toolbar">
   <div>
     <p class="eyebrow">CafeConnect</p>
-    <h1>Панель</h1>
-    <p class="subtle">Заказы, сигналы гостей, меню и столы в одной системе.</p>
+    <h1>Dashboard</h1>
+    <p class="subtle">Orders, guest signals, menu, and tables in one system.</p>
   </div>
   <div class="toolbar-actions">
-    <a class="button secondary" href="/dashboard/prototype/">Прототип</a>
+    <a class="button secondary" href="/dashboard/prototype/">Prototype</a>
     <a class="button" href="/system-admin/">Django Admin</a>
   </div>
 </section>
 
 <section class="stats-grid">
-  <article class="stat"><span>Заказы</span><strong>{{ orders_total }}</strong></article>
-  <article class="stat"><span>Ожидают</span><strong>{{ orders_pending }}</strong></article>
-  <article class="stat"><span>Готовы</span><strong>{{ orders_ready }}</strong></article>
-  <article class="stat"><span>Активные столы</span><strong>{{ active_tables }}</strong></article>
-  <article class="stat"><span>Позиции меню</span><strong>{{ menu_items }}</strong></article>
-  <article class="stat"><span>Выручка</span><strong>{{ sales_total }} EUR</strong></article>
+  <article class="stat"><span>Orders</span><strong>{{ orders_total }}</strong></article>
+  <article class="stat"><span>Accepted</span><strong>{{ orders_pending }}</strong></article>
+  <article class="stat"><span>Ready</span><strong>{{ orders_ready }}</strong></article>
+  <article class="stat"><span>Active tables</span><strong>{{ active_tables }}</strong></article>
+  <article class="stat"><span>Menu items</span><strong>{{ menu_items }}</strong></article>
+  <article class="stat"><span>Revenue</span><strong>{{ sales_total }} EUR</strong></article>
 </section>
 
 <section class="workbench">
@@ -29,7 +29,7 @@
     <div class="section-title-row">
       <div>
         <p class="eyebrow">Realtime</p>
-        <h2>Сигналы гостей</h2>
+        <h2>Guest signals</h2>
       </div>
       <span class="count-pill">{{ active_signals|length }}</span>
     </div>
@@ -41,10 +41,10 @@
             <strong>{{ signal.table }}</strong>
             <p>{{ signal.get_signal_type_display }}{% if signal.reason %} · {{ signal.reason }}{% endif %}</p>
           </div>
-          <button class="button compact" type="submit">Принял</button>
+          <button class="button compact" type="submit">Acknowledge</button>
         </form>
       {% empty %}
-        <p class="subtle">Нет активных сигналов.</p>
+        <p class="subtle">No active signals.</p>
       {% endfor %}
     </div>
   </article>
@@ -53,7 +53,7 @@
     <div class="section-title-row">
       <div>
         <p class="eyebrow">Orders</p>
-        <h2>Последние заказы</h2>
+        <h2>Latest orders</h2>
       </div>
     </div>
     <div class="table-list">
@@ -62,7 +62,7 @@
           {% csrf_token %}
           <span>#{{ order.id }}</span>
           <span>{{ order.table }}</span>
-          <select name="status" aria-label="Статус заказа #{{ order.id }}">
+          <select name="status" aria-label="Order status #{{ order.id }}">
             {% for value, label in order_statuses %}
               <option value="{{ value }}" {% if order.status == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
@@ -70,7 +70,7 @@
           <button class="button compact" type="submit">OK</button>
         </form>
       {% empty %}
-        <p class="subtle">Заказов пока нет.</p>
+        <p class="subtle">No orders yet.</p>
       {% endfor %}
     </div>
   </article>
@@ -81,7 +81,7 @@
     <div class="section-title-row">
       <div>
         <p class="eyebrow">Menu</p>
-        <h2>Стоп-лист и цены</h2>
+        <h2>Stop-list and prices</h2>
       </div>
     </div>
     <div class="menu-admin-list">
@@ -94,11 +94,11 @@
             <p>{{ item.get_station_display }} · {{ item.category }} · {{ item.price }} EUR</p>
           </div>
           <button class="availability-pill {% if item.is_available %}is-on{% endif %}" type="submit">
-            {% if item.is_available %}В наличии{% else %}Стоп-лист{% endif %}
+            {% if item.is_available %}Available{% else %}Stop-list{% endif %}
           </button>
         </form>
       {% empty %}
-        <p class="subtle">Меню пока пустое.</p>
+        <p class="subtle">The menu is empty.</p>
       {% endfor %}
     </div>
   </article>
@@ -107,24 +107,24 @@
     <div class="section-title-row">
       <div>
         <p class="eyebrow">Create</p>
-        <h2>Добавить позицию</h2>
+        <h2>Add item</h2>
       </div>
     </div>
     <form class="admin-form" method="post" action="{% url 'admin_web:create-menu-item' %}">
       {% csrf_token %}
-      <label>Название <input name="name" required></label>
-      <label>Категория <input name="category" required></label>
-      <label>Цена <input name="price" type="number" step="0.01" min="0" required></label>
-      <label>Станция
+      <label>Name <input name="name" required></label>
+      <label>Category <input name="category" required></label>
+      <label>Price <input name="price" type="number" step="0.01" min="0" required></label>
+      <label>Station
         <select name="station">
           {% for value, label in stations %}
             <option value="{{ value }}">{{ label }}</option>
           {% endfor %}
         </select>
       </label>
-      <label>Описание <textarea name="description" rows="3"></textarea></label>
-      <label class="checkbox-row"><input name="is_available" type="checkbox" checked> В наличии</label>
-      <button class="button full" type="submit">Добавить</button>
+      <label>Description <textarea name="description" rows="3"></textarea></label>
+      <label class="checkbox-row"><input name="is_available" type="checkbox" checked> Available</label>
+      <button class="button full" type="submit">Add</button>
     </form>
   </article>
 </section>

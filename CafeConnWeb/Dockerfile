@@ -24,4 +24,9 @@ USER django
 
 EXPOSE 8000
 
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "backend_core.asgi:application"]
+# Self-sufficient by default: migrate + collectstatic + serve, and honor a
+# platform-assigned $PORT (Railway/Render/Fly set this; falls back to 8000
+# for a plain `docker run`). docker-compose.yml overrides this with its own
+# `command:` for local dev, so this only matters when the image runs without
+# that override — i.e. on a hosting platform that just runs the Dockerfile.
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p ${PORT:-8000} backend_core.asgi:application"]

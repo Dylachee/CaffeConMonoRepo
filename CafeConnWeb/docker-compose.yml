@@ -27,17 +27,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   web:
     build: .
     restart: unless-stopped
@@ -58,13 +47,13 @@ services:
       DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
       DJANGO_CORS_ALLOWED_ORIGINS: ${DJANGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       DJANGO_CORS_ALLOW_CREDENTIALS: ${DJANGO_CORS_ALLOW_CREDENTIALS:-false}
-      # DB — force container-internal hostnames so the app always finds the services
+      # DB — defaults to the local Compose database, but can point to Neon via ../.env.
       POSTGRES_DB: ${POSTGRES_DB:-cafeconnect}
       POSTGRES_USER: ${POSTGRES_USER:-cafeconnect}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cafeconnect}
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-}
     ports:
       - "${WEB_PORT:-8000}:8000"
     volumes:
@@ -79,8 +68,6 @@ services:
       start_period: 20s
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
 volumes:

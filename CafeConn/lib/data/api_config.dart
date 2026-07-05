@@ -32,16 +32,18 @@ class ApiConfig {
     return 'http://10.0.2.2:8000';
   }
 
-  static String get _base =>
-      baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+  static String get _base => baseUrl.endsWith('/')
+      ? baseUrl.substring(0, baseUrl.length - 1)
+      : baseUrl;
 
   /// REST root, e.g. http://192.168.1.42:8000/api
   static String get apiRoot => '$_base/api';
 
   /// Authenticated WebSocket URL for the staff realtime feed.
   static Uri staffSocket(String token) {
-    final wsBase =
-        _base.replaceFirst('https://', 'wss://').replaceFirst('http://', 'ws://');
+    final wsBase = _base
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
     return Uri.parse('$wsBase/ws/staff/?token=$token');
   }
 

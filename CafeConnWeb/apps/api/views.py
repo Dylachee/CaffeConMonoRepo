@@ -2,13 +2,19 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
-from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table, reset_free_table
+from apps.core.services import (
+    acknowledge_signal_on_table,
+    apply_signal_to_table,
+    reset_free_table,
+    sync_order_status_from_items,
+)
 from apps.api.serializers import (
     AttentionSignalSerializer,
     EmployeeSerializer,
@@ -18,6 +24,7 @@ from apps.api.serializers import (
     StaffPreferenceSerializer,
     TableSerializer,
 )
+from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
 
 
@@ -45,6 +52,24 @@ def employee_for_user(user):
         return None
 
 
+# Kitchen and bar staff run their station screen only: they may move an order
+# through the cooking pipeline but never complete/cancel it (delivery is the
+# waiter's call) and never touch tables.
+STATION_ROLES = {Employee.Role.KITCHEN, Employee.Role.BAR}
+STATION_ALLOWED_ORDER_STATUSES = {Order.Status.NEW, Order.Status.COOKING, Order.Status.READY}
+
+
+def role_for_user(user):
+    """Effective staff role: employee profile first, Django staff flag as admin
+    fallback, waiter as the most-restricted-but-usable default."""
+    employee = employee_for_user(user)
+    if employee:
+        return employee.role
+    if user.is_superuser or user.is_staff:
+        return Employee.Role.ADMIN
+    return Employee.Role.WAITER
+
+
 def flutter_table_status(status_value: str) -> str:
     # Django values and Flutter TableStatus names now match 1:1 (3 statuses).
     return {
@@ -55,25 +80,27 @@ def flutter_table_status(status_value: str) -> str:
 
 
 def flutter_order_status(status_value: str) -> str:
+    status_value = Order.LEGACY_STATUS_ALIASES.get(status_value, status_value)
     return {
         Order.Status.NEW: "accepted",
-        Order.Status.PENDING: "accepted",
         Order.Status.COOKING: "cooking",
-        Order.Status.PREPARING: "cooking",
         Order.Status.READY: "ready",
-        Order.Status.DELIVERED: "completed",
         Order.Status.COMPLETED: "completed",
         Order.Status.PAID: "completed",
     }.get(status_value, "accepted")
 
 
 def serialize_for_flutter_menu(item: MenuItem) -> dict:
+    labels = menu_item_labels(item)
     return {
         "id": str(item.id),
-        "name": item.name,
-        "description": item.description,
+        "name": labels["name_en"],
+        "nameIt": labels["name_it"],
+        "description": labels["description_en"],
+        "descriptionIt": labels["description_it"],
         "price": float(item.price),
-        "category": item.category,
+        "category": labels["category_en"],
+        "categoryIt": labels["category_it"],
         "imageUrl": item.image_url,
         "tags": item.tags,
         "prepTime": item.preparation_minutes,
@@ -100,7 +127,7 @@ def serialize_for_flutter_table(table: Table) -> dict:
     return {
         "id": str(table.id),
         "number": table.number,
-        "name": table.label or f"Стол {table.number:02d}",
+        "name": table.label or f"Table {table.number:02d}",
         "seats": table.capacity,
         "guestCount": table.guest_count,
         "status": flutter_table_status(table.status),
@@ -128,7 +155,7 @@ def serialize_for_flutter_order(order: Order) -> dict:
             {
                 "id": str(item.id),
                 "dishId": str(item.menu_item_id),
-                "name": item.menu_item.name,
+                "name": menu_item_labels(item.menu_item)["name_en"],
                 "qty": item.quantity,
                 "price": float(item.unit_price),
                 "notes": item.notes,
@@ -172,6 +199,7 @@ class StaffBootstrapView(APIView):
                     "id": str(request.user.id),
                     "username": request.user.username,
                     "name": employee_for_user(request.user).name if employee_for_user(request.user) else request.user.get_full_name(),
+                    "role": role_for_user(request.user),
                 },
                 "tables": [serialize_for_flutter_table(table) for table in tables_qs],
                 "menu": [serialize_for_flutter_menu(item) for item in MenuItem.objects.all()],
@@ -203,6 +231,11 @@ class TableViewSet(viewsets.ModelViewSet):
     ordering_fields = ["number", "updated_at"]
 
     def perform_update(self, serializer):
+        # Tables are the waiter's (and manager's) domain: the station screens
+        # only see their order feed, so a kitchen/bar token must not be able
+        # to clear or re-status a table.
+        if role_for_user(self.request.user) in STATION_ROLES:
+            raise PermissionDenied("Kitchen/bar staff cannot change tables.")
         table = serializer.save()
         if table.status == Table.Status.FREE:
             table = reset_free_table(table)
@@ -235,6 +268,28 @@ class OrderViewSet(viewsets.ModelViewSet):
         broadcast_table_event(order.table)
 
     def perform_update(self, serializer):
+        new_status = serializer.validated_data.get("status")
+        if new_status is not None:
+            role = role_for_user(self.request.user)
+            if role in STATION_ROLES and new_status not in STATION_ALLOWED_ORDER_STATUSES:
+                raise PermissionDenied(
+                    "Kitchen/bar staff can only move an order to cooking or ready. "
+                    "Completing (delivery) is the waiter's action."
+                )
+            if role in STATION_ROLES and new_status == Order.Status.READY:
+                order = serializer.instance
+                station = "bar" if role == Employee.Role.BAR else "kitchen"
+                order.items.filter(station=station).update(ready=True, updated_at=timezone.now())
+                order = sync_order_status_from_items(order)
+                broadcast_order_event("updated", order)
+                return
+            if new_status == Order.Status.COMPLETED and serializer.instance.items.filter(done=False).exists():
+                raise PermissionDenied("Mark each item delivered before completing the order.")
+            if new_status == Order.Status.CANCELLED and role not in {
+                Employee.Role.MANAGER,
+                Employee.Role.ADMIN,
+            }:
+                raise PermissionDenied("Only a manager or admin can cancel an order.")
         order = serializer.save()
         broadcast_order_event("updated", order)
 
@@ -274,14 +329,22 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         item = self.get_object()
         item.ready = True
         item.save(update_fields=["ready", "updated_at"])
+        sync_order_status_from_items(item.order)
         broadcast_order_event("updated", item.order)
         return Response(OrderItemSerializer(item).data)
 
     @decorators.action(detail=True, methods=["post"], url_path="toggle-done")
     def toggle_done(self, request, pk=None):
+        # "done" = delivered to the guest — that's the waiter's confirmation,
+        # not something a station can flip (and un-flip) from the pass.
+        if role_for_user(request.user) in STATION_ROLES:
+            raise PermissionDenied("Only a waiter or manager can mark an item as delivered.")
         item = self.get_object()
         item.done = not item.done
-        item.save(update_fields=["done", "updated_at"])
+        if item.done:
+            item.ready = True
+        item.save(update_fields=["ready", "done", "updated_at"])
+        sync_order_status_from_items(item.order)
         broadcast_order_event("updated", item.order)
         return Response(OrderItemSerializer(item).data)
 

@@ -9,7 +9,7 @@ that convenient.
 
 from django.utils import timezone
 
-from apps.core.models import AttentionSignal, Table
+from apps.core.models import AttentionSignal, Order, Table
 
 ATTENTION_BY_SIGNAL = {
     AttentionSignal.Type.ARRIVED: Table.Attention.ARRIVED,
@@ -48,7 +48,7 @@ def apply_signal_to_table(signal: AttentionSignal, table: Table) -> Table:
 
 
 def acknowledge_signal_on_table(table: Table) -> Table:
-    """Waiter pressed "Принял": clear the badge; WAITING becomes OCCUPIED."""
+    """Waiter pressed "Acknowledge": clear the badge; WAITING becomes OCCUPIED."""
     table.attention = Table.Attention.NONE
     table.attention_reason = ""
     table.attention_acknowledged = True
@@ -67,7 +67,16 @@ def acknowledge_signal_on_table(table: Table) -> Table:
 
 
 def reset_free_table(table: Table) -> Table:
-    """A table set back to FREE drops all per-visit state."""
+    """A table set back to FREE drops all per-visit state.
+
+    The visit's orders are archived to PAID here: bootstrap and the station
+    feeds exclude PAID/CANCELLED, so "clear table" is the single moment an
+    order history leaves the staff screens. Until then delivered (COMPLETED)
+    orders stay visible in the table's history.
+    """
+    table.orders.exclude(
+        status__in=[Order.Status.PAID, Order.Status.CANCELLED]
+    ).update(status=Order.Status.PAID, updated_at=timezone.now())
     table.guest_count = 0
     table.attention = Table.Attention.NONE
     table.attention_reason = ""
@@ -84,3 +93,26 @@ def reset_free_table(table: Table) -> Table:
         ]
     )
     return table
+
+
+def sync_order_status_from_items(order: Order) -> Order:
+    """Derive the order lifecycle from item-level station/delivery flags."""
+    if hasattr(order, "_prefetched_objects_cache"):
+        order._prefetched_objects_cache.pop("items", None)
+    items = list(order.items.all())
+    if not items or order.status in [Order.Status.PAID, Order.Status.CANCELLED]:
+        return order
+
+    if all(item.done for item in items):
+        next_status = Order.Status.COMPLETED
+    elif all(item.ready for item in items):
+        next_status = Order.Status.READY
+    elif any(item.ready for item in items):
+        next_status = Order.Status.COOKING
+    else:
+        next_status = order.status if order.status == Order.Status.COOKING else Order.Status.NEW
+
+    if order.status != next_status:
+        order.status = next_status
+        order.save(update_fields=["status", "updated_at"])
+    return order

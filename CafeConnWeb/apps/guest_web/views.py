@@ -7,9 +7,10 @@ from django.db import transaction
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.core.menu_i18n import category_labels, menu_item_labels
 from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table
 from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
 
@@ -19,28 +20,58 @@ from apps.core.services import acknowledge_signal_on_table, apply_signal_to_tabl
 # that swap a one-liner in menu_page.
 VENUE = {
     "name": "Sissi Bistro Bar",
-    "tagline": "Бистро и бар · европейская кухня · уютный зал",
+    "tagline": "Bistro and bar · European kitchen · cozy room",
+    "tagline_it": "Bistrot e bar · cucina europea · sala accogliente",
     "about": (
-        "Небольшое бистро в центре. Готовим из сезонных продуктов, "
-        "варим спешелти-кофе и держим короткую, честную барную карту."
+        "A small bistro in the center. We cook with seasonal products, "
+        "serve specialty coffee, and keep a short, honest bar list."
     ),
-    "address": "ул. Киевская 77 · 1 этаж",
-    "hours": "Ежедневно 10:00 – 23:00",
-    "badges": ["Веган-опции", "Спешелти-кофе", "Завтраки весь день"],
+    "about_it": (
+        "Un piccolo bistrot in centro. Cuciniamo con prodotti stagionali, "
+        "serviamo specialty coffee e teniamo una carta bar breve e sincera."
+    ),
+    "address": "Kievskaya St. 77 · ground floor",
+    "address_it": "Via Kievskaya 77 · piano terra",
+    "hours": "Daily 10:00–23:00",
+    "hours_it": "Tutti i giorni 10:00–23:00",
+    "badges": [
+        {"en": "Vegan options", "it": "Opzioni vegane"},
+        {"en": "Specialty coffee", "it": "Specialty coffee"},
+        {"en": "All-day breakfast", "it": "Colazione tutto il giorno"},
+    ],
+    "rating": "4.9",
+    "reviews": "320 reviews",
+    "reviews_it": "320 recensioni",
+}
+
+
+ORDER_STATUS_LABELS = {
+    Order.Status.NEW: "Order accepted",
+    Order.Status.COOKING: "Preparing your order",
+    Order.Status.READY: "Order is ready",
+    Order.Status.COMPLETED: "Order served",
+    Order.Status.PAID: "Order paid",
+    Order.Status.CANCELLED: "Order cancelled",
+}
+
+
+MENU_VISUALS = {
+    "aperitivi": ("drink", "🍹"),
+    "bevande": ("drink", "🥤"),
+    "birra": ("drink", "🍺"),
+    "caffetteria": ("coffee", "☕"),
+    "cocktails": ("drink", "🍸"),
+    "colazione": ("breakfast", "🥐"),
+    "cucina": ("hot", "🍽"),
+    "dolci": ("dessert", "🍰"),
+    "gelati": ("dessert", "🍨"),
+    "panini": ("hot", "🍔"),
+    "vino": ("drink", "🍷"),
 }
 
 
 def menu_page(request, table_id=None, table_number=None):
-    """Guest page v3 «Меню и точка»: the menu itself, immediately.
-
-    Owner's brief (2026-07-02): минимальный порог входа — between the QR scan
-    and the first dish there must be nothing. No cover, no mood engine, no
-    client-side dish payload; the template renders everything server-side and
-    ships as a single self-contained document.
-
-    Guests still see stop-listed dishes (greyed, at the end of their section) —
-    the web menu must never look shorter than the printed one.
-    """
+    """Guest QR page: storefront, menu, cart checkout and service signals."""
     menu_items = MenuItem.objects.order_by("category", "name")
     # Two ways to address a table:
     #   /menu/t/<pk>/     — legacy, internal DB id (kept for old links);
@@ -53,11 +84,55 @@ def menu_page(request, table_id=None, table_number=None):
 
     # menu_items is ordered by (category, name), so grouping is a single pass.
     sections = []
+    menu_payload = []
     for item in menu_items:
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
+        item.visual_key, item.visual_icon = _menu_visual(item.category)
+        labels = menu_item_labels(item)
+        item.name_en = labels["name_en"]
+        item.name_it = labels["name_it"]
+        item.description_en = labels["description_en"]
+        item.description_it = labels["description_it"]
+        item.category_en = labels["category_en"]
+        item.category_it = labels["category_it"]
+        menu_payload.append(
+            {
+                "id": item.pk,
+                "name": item.name_en,
+                "nameEn": item.name_en,
+                "nameIt": item.name_it,
+                "description": item.description_en,
+                "descriptionEn": item.description_en,
+                "descriptionIt": item.description_it,
+                "price": float(item.price),
+                "priceText": item.price_str,
+                "category": item.category,
+                "categoryEn": item.category_en,
+                "categoryIt": item.category_it,
+                "imageUrl": item.image_url,
+                "tags": item.tags,
+                "composition": item.composition,
+                "allergens": item.allergens,
+                "available": item.is_available,
+                "promoted": item.is_promoted,
+                "prep": item.preparation_minutes,
+                "portionWeight": item.portion_weight,
+                "calories": item.calories,
+                "visualKey": item.visual_key,
+                "visualIcon": item.visual_icon,
+            }
+        )
         if not sections or sections[-1]["name"] != item.category:
-            sections.append({"name": item.category, "items": []})
+            cat_labels = category_labels(item.category)
+            sections.append(
+                {
+                    "name": item.category,
+                    "name_en": cat_labels["en"],
+                    "name_it": cat_labels["it"],
+                    "items": [],
+                }
+            )
         sections[-1]["items"].append(item)
     for section in sections:
         section["items"].sort(key=lambda i: not i.is_available)  # stable
@@ -65,7 +140,7 @@ def menu_page(request, table_id=None, table_number=None):
     return render(
         request,
         "guest_web/menu.html",
-        {"menu_sections": sections, "table": table, "venue": VENUE},
+        {"menu_sections": sections, "menu_payload": menu_payload, "table": table, "venue": VENUE},
     )
 
 
@@ -119,11 +194,14 @@ def staff_app(request, path=""):
 @require_POST
 def create_guest_order(request):
     table_id = request.POST.get("table")
+    is_fetch = request.headers.get("X-Requested-With") == "fetch"
     # Only numeric ids can match rows; anything else in pk__in raises a 500.
     selected_ids = [s for s in request.POST.getlist("items") if s.isdigit()]
 
     if not table_id or not selected_ids:
-        messages.error(request, "Выберите стол и хотя бы одно блюдо.")
+        if is_fetch:
+            return JsonResponse({"ok": False, "error": "empty"}, status=400)
+        messages.error(request, "Choose a table and at least one item.")
         return _redirect_menu(table_id)
 
     with transaction.atomic():
@@ -132,13 +210,10 @@ def create_guest_order(request):
         try:
             table = Table.objects.select_for_update().get(pk=table_id)
         except (Table.DoesNotExist, ValueError):
-            messages.error(request, "Стол не найден. Отсканируйте QR-код ещё раз.")
+            if is_fetch:
+                return JsonResponse({"ok": False, "error": "table"}, status=404)
+            messages.error(request, "Table not found. Please scan the QR code again.")
             return _redirect_menu(None)
-        order = Order.objects.create(
-            table=table,
-            guest_name=request.POST.get("guest_name", "").strip()[:120],
-            notes=request.POST.get("notes", "").strip()[:2000],
-        )
 
         menu_items = MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
         order_items = []
@@ -152,13 +227,25 @@ def create_guest_order(request):
             quantity = min(max(quantity, 1), 50)
             order_items.append(
                 OrderItem(
-                    order=order,
                     menu_item=item,
                     quantity=quantity,
                     unit_price=item.price,
                     station=item.station,  # was missing — all items defaulted to KITCHEN
                 )
             )
+        if not order_items:
+            if is_fetch:
+                return JsonResponse({"ok": False, "error": "unavailable"}, status=400)
+            messages.error(request, "The selected items are no longer available.")
+            return _redirect_menu(table_id)
+
+        order = Order.objects.create(
+            table=table,
+            guest_name=request.POST.get("guest_name", "").strip()[:120],
+            notes=request.POST.get("notes", "").strip()[:2000],
+        )
+        for order_item in order_items:
+            order_item.order = order
         OrderItem.objects.bulk_create(order_items)
 
         stations = {oi.station for oi in order_items}
@@ -176,13 +263,27 @@ def create_guest_order(request):
 
     broadcast_order_event("created", order)
     broadcast_table_event(table)
-    messages.success(request, f"Заказ #{order.pk} отправлен персоналу.")
+    _remember_guest_order(request, order.pk)
+    if is_fetch:
+        return JsonResponse({"ok": True, "order": _guest_order_payload(order)})
+    messages.success(request, f"Order #{order.pk} was sent to staff.")
     return _redirect_menu(table_id)
+
+
+@require_GET
+def guest_order_status(request, order_id):
+    if order_id not in request.session.get("guest_orders", []):
+        raise Http404("Order is not available in this session.")
+    order = get_object_or_404(
+        Order.objects.select_related("table").prefetch_related("items", "items__menu_item"),
+        pk=order_id,
+    )
+    return JsonResponse({"ok": True, "order": _guest_order_payload(order)})
 
 
 @require_POST
 def create_attention_signal(request):
-    """Guest pressed "Позвать официанта" (or another signal button).
+    """Guest pressed "Call waiter" (or another signal button).
 
     Sets the table into the WAITING status, notifies every staff device over
     the realtime feed and answers JSON when called via fetch() so the guest
@@ -200,12 +301,12 @@ def create_attention_signal(request):
     if cache.incr(rate_key) > 6:
         if is_fetch:
             return JsonResponse({"ok": False, "error": "rate limited"}, status=429)
-        messages.error(request, "Слишком много сигналов подряд. Подождите минуту.")
+        messages.error(request, "Too many requests. Please wait a minute.")
         return _redirect_menu(table_id)
     if signal_type not in AttentionSignal.Type.values:
         if is_fetch:
             return JsonResponse({"ok": False, "error": "unknown signal"}, status=400)
-        messages.error(request, "Неизвестный тип сигнала.")
+        messages.error(request, "Unknown signal type.")
         return _redirect_menu(table_id)
 
     signal = AttentionSignal.objects.create(
@@ -221,17 +322,17 @@ def create_attention_signal(request):
         return JsonResponse(
             {"ok": True, "table_status": table.status, "signal": signal.pk}
         )
-    messages.success(request, "Официант уже идёт к вам.")
+    messages.success(request, "A waiter is on the way.")
     return _redirect_menu(table_id)
 
 
 @require_POST
 def cancel_attention_signal(request):
-    """Guest pressed «Отменить вызов» on their own pending signal.
+    """Guest pressed "Cancel call" on their own pending signal.
 
     Marks the signal acknowledged (nobody has to walk over anymore) and rolls
     the table badge back, broadcasting to staff devices — the same path a
-    waiter's «Принял» takes, so the two can't diverge.
+    waiter's "Acknowledge" action takes, so the two can't diverge.
     """
     signal_id = request.POST.get("signal")
     signal = get_object_or_404(AttentionSignal, pk=signal_id)
@@ -252,3 +353,32 @@ def _redirect_menu(table_id):
         return redirect("guest_web:menu-for-table", table_id=int(table_id))
     except (TypeError, ValueError):
         return redirect("guest_web:menu")
+
+
+def _menu_visual(category):
+    return MENU_VISUALS.get((category or "").strip().lower(), ("default", "🍽"))
+
+
+def _remember_guest_order(request, order_id):
+    orders = request.session.get("guest_orders", [])
+    if order_id not in orders:
+        request.session["guest_orders"] = (orders + [order_id])[-10:]
+        request.session.modified = True
+
+
+def _guest_order_payload(order):
+    return {
+        "id": order.pk,
+        "status": order.status,
+        "statusLabel": ORDER_STATUS_LABELS.get(order.status, "Order accepted"),
+        "total": f"{order.total:.2f}",
+        "items": [
+            {
+                "name": menu_item_labels(item.menu_item)["name_en"],
+                "quantity": item.quantity,
+                "lineTotal": f"{item.line_total:.2f}",
+            }
+            for item in order.items.all()
+        ],
+        "createdAt": order.created_at.isoformat(),
+    }

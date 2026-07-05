@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_typography.dart';
@@ -20,14 +21,14 @@ class StaffMenuScreen extends StatefulWidget {
 }
 
 /// Staff menu tab — a read-only showcase (composition, allergens, stop-list).
-/// Order taking moved to the dedicated composer screen: «Принять заказ» asks
+/// Order taking moved to the dedicated composer screen: «Take order» asks
 /// for the table and opens the exact same flow as inside a table. The old
 /// long-press multi-select is gone — it hid the category chips (locking the
 /// waiter into one category) and hid the bottom navigation without a way back.
 class _StaffMenuScreenState extends State<StaffMenuScreen> {
   final _searchCtrl = TextEditingController();
   String _search = '';
-  String _category = 'Все';
+  String _category = 'All';
 
   @override
   void dispose() {
@@ -38,10 +39,12 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
-      final okCat = _category == 'Все' || m.category == _category;
+      final okCat = _category == 'All' || m.category == _category;
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
-          m.category.toLowerCase().contains(q);
+          m.nameIt.toLowerCase().contains(q) ||
+          m.category.toLowerCase().contains(q) ||
+          m.categoryIt.toLowerCase().contains(q);
       return okCat && okSearch;
     }).toList();
   }
@@ -70,14 +73,14 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
       bottomNav: null,
       child: Stack(children: [
         Column(children: [
-          const Header(title: 'Меню', subtitle: 'Витрина и стоп-лист'),
+          Header(title: L.menu, subtitle: L.showcase),
           AppCard(
             padding: EdgeInsets.zero,
             child: TextField(
               controller: _searchCtrl,
               onChanged: (v) => setState(() => _search = v),
               decoration: InputDecoration(
-                hintText: 'Поиск блюда...',
+                hintText: L.searchItem,
                 prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
                 suffixIcon: _search.isEmpty
                     ? null
@@ -102,7 +105,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
               scrollDirection: Axis.horizontal,
               children: state.categories
                   .map((c) => CategoryChip(
-                        label: c,
+                        label: state.categoryDisplay(c),
                         active: _category == c,
                         onTap: () => setState(() => _category = c),
                       ))
@@ -112,10 +115,10 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
           const SizedBox(height: 4),
           Expanded(
             child: items.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.search_off,
-                    title: 'Ничего не найдено',
-                    sub: 'Поменяйте запрос или категорию')
+                    title: L.nothingFound,
+                    sub: L.changeSearch)
                 : GridView.builder(
                     padding: const EdgeInsets.only(top: 12, bottom: 110),
                     gridDelegate:
@@ -132,16 +135,19 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
                   ),
           ),
         ]),
-        Positioned(
-          bottom: 12,
-          left: 0,
-          right: 0,
-          child: PrimaryButton(
-            label: 'Принять заказ',
-            icon: Icons.point_of_sale,
-            onTap: () => _pickTableAndOrder(context),
+        // Station roles (cook/bartender) have no tables — the menu is a
+        // read-only showcase and stop-list for them.
+        if (!state.isStationRole)
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: PrimaryButton(
+              label: L.takeOrder,
+              icon: Icons.point_of_sale,
+              onTap: () => _pickTableAndOrder(context),
+            ),
           ),
-        ),
       ]),
     );
   }
@@ -171,29 +177,27 @@ class _MenuShowcaseCard extends StatelessWidget {
                     BoxDecoration(color: zoneColor, shape: BoxShape.circle)),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(item.category.toUpperCase(),
+              child: Text(item.displayCategory.toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: T.label.copyWith(color: AppTheme.ink3)),
             ),
             if (!item.available)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                     color: AppTheme.danger,
                     borderRadius: BorderRadius.circular(6)),
-                child: Text('СТОП',
-                    style: T.label
-                        .copyWith(color: Colors.white, fontSize: 9)),
+                child: Text(L.stop,
+                    style: T.label.copyWith(color: Colors.white, fontSize: 9)),
               ),
           ]),
           const SizedBox(height: 8),
-          Text(item.name,
+          Text(item.displayName,
               maxLines: 2, overflow: TextOverflow.ellipsis, style: T.bodySemi),
-          if (item.description.isNotEmpty) ...[
+          if (item.displayDescription.isNotEmpty) ...[
             const SizedBox(height: 3),
-            Text(item.description,
+            Text(item.displayDescription,
                 maxLines: 2, overflow: TextOverflow.ellipsis, style: T.small),
           ],
           const Spacer(),
@@ -202,7 +206,7 @@ class _MenuShowcaseCard extends StatelessWidget {
             const Spacer(),
             const Icon(Icons.schedule, size: 12, color: AppTheme.ink3),
             const SizedBox(width: 3),
-            Text('${item.prepTime} мин',
+            Text(L.minutes(item.prepTime),
                 style: T.label.copyWith(color: AppTheme.ink3)),
           ]),
         ]),
@@ -211,7 +215,7 @@ class _MenuShowcaseCard extends StatelessWidget {
   }
 }
 
-/// «На какой стол?» — the entry into the unified order flow from the menu tab.
+/// «Which table?» — the entry into the unified order flow from the menu tab.
 class _TablePickerSheet extends StatelessWidget {
   const _TablePickerSheet({required this.onPicked});
   final ValueChanged<CafeTable> onPicked;
@@ -236,7 +240,7 @@ class _TablePickerSheet extends StatelessWidget {
               color: AppTheme.separator,
               borderRadius: BorderRadius.circular(2)),
         ),
-        Text('На какой стол?', style: T.h2.copyWith(fontSize: 20)),
+        Text(L.whichTable, style: T.h2.copyWith(fontSize: 20)),
         const SizedBox(height: 16),
         Flexible(
           child: GridView.builder(

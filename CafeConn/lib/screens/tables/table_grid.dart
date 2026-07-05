@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_typography.dart';
@@ -40,9 +41,9 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Header(
-            title: 'Столы',
+            title: L.tables,
             subtitle:
-                'Зал 1 · ${state.tables.where((t) => t.status != TableStatus.free).length} активных · ${state.tables.where((t) => t.status == TableStatus.free).length} свободно',
+                '${L.hall} 1 · ${state.tables.where((t) => t.status != TableStatus.free).length} ${L.active} · ${state.tables.where((t) => t.status == TableStatus.free).length} ${L.free}',
             actions: [
               IconButton(
                 icon: Container(
@@ -69,7 +70,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
             ],
           ),
           // Explicit demo/offline banner: without it the local seed data was
-          // routinely mistaken for the real floor ("почему 12 столов?").
+          // routinely mistaken for the real floor.
           if (!state.backendConnected) ...[
             const SizedBox(height: 12),
             GestureDetector(
@@ -80,8 +81,8 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                 decoration: BoxDecoration(
                   color: AppTheme.warning.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
+                  border: Border.all(
+                      color: AppTheme.warning.withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   children: [
@@ -90,9 +91,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        state.backendConnecting
-                            ? 'Подключение к серверу…'
-                            : 'Демо-режим: данные не с сервера. Нажмите, чтобы войти.',
+                        state.backendConnecting ? L.connecting : L.demoBanner,
                         style: T.smallSemi.copyWith(color: AppTheme.ink),
                       ),
                     ),
@@ -108,12 +107,12 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
             padding: EdgeInsets.zero,
             child: TextField(
               onChanged: (v) => setState(() => search = v),
-              decoration: const InputDecoration(
-                hintText: 'Поиск стола или официанта',
-                prefixIcon: Icon(Icons.search, color: AppTheme.ink3),
+              decoration: InputDecoration(
+                hintText: L.searchTable,
+                prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
                 border: InputBorder.none,
                 contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
           ),
@@ -124,7 +123,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
               scrollDirection: Axis.horizontal,
               children: [
                 CategoryChip(
-                    label: 'Все',
+                    label: L.all,
                     active: filter == null,
                     onTap: () => setState(() => filter = null)),
                 ...TableStatus.values.map((s) => CategoryChip(
@@ -141,8 +140,8 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
             child: filtered.isEmpty
                 ? EmptyState(
                     icon: Icons.table_restaurant_outlined,
-                    title: 'Ничего не найдено',
-                    sub: 'Нет столов с таким фильтром или номером')
+                    title: L.nothingFound,
+                    sub: L.noTablesMatch)
                 : RefreshIndicator(
                     color: AppTheme.cta,
                     onRefresh: () async => context.read<CafeState>().refresh(),
@@ -198,16 +197,15 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(table == null ? 'Новый стол' : 'Редактировать стол',
+                Text(table == null ? L.newTable : L.editTable,
                     style: T.h1.copyWith(fontSize: 22)),
                 const SizedBox(height: 20),
                 AppTextField(
                     controller: numController,
-                    label: 'Номер стола',
+                    label: L.tableNumber,
                     keyboardType: TextInputType.number),
                 const SizedBox(height: 24),
-                const Text('ЦВЕТ МЕТКИ',
-                    style: T.label),
+                Text(L.tagColor, style: T.label),
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 50,
@@ -246,7 +244,7 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                 ),
                 const SizedBox(height: 32),
                 AppButton(
-                  label: table == null ? 'Добавить' : 'Сохранить',
+                  label: table == null ? L.add : L.save,
                   onPressed: () {
                     final num = int.tryParse(numController.text);
                     if (num != null) {
@@ -281,15 +279,14 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Фильтр по статусу',
-                style: T.h2.copyWith(fontSize: 20)),
+            Text(L.filterByStatus, style: T.h2.copyWith(fontSize: 20)),
             const SizedBox(height: 20),
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
                 AppButton(
-                    label: 'Все столы',
+                    label: L.allTables,
                     kind: ButtonKind.secondary,
                     onPressed: () {
                       setState(() => filter = null);
@@ -346,8 +343,9 @@ class _TableCardState extends State<TableCard> {
     final color = statusColor(table.status);
     final hasAttention = table.attention != null;
     final accent = hasAttention ? attentionColor(table.attention!) : color;
-    final pillText =
-        hasAttention ? attentionLabel(table.attention!) : statusLabel(table.status);
+    final pillText = hasAttention
+        ? attentionLabel(table.attention!)
+        : statusLabel(table.status);
     final pulse = table.status == TableStatus.waiting || hasAttention;
     // colorTag bar only shows for a non-default (custom) tag color.
     final hasTag =
@@ -421,7 +419,9 @@ class _TableCardState extends State<TableCard> {
                   Text(
                     table.number.toString().padLeft(2, '0'),
                     style: AppTypography.mono(
-                        size: 30, weight: FontWeight.w800, color: AppColors.ink),
+                        size: 30,
+                        weight: FontWeight.w800,
+                        color: AppColors.ink),
                   ),
                   const SizedBox(height: 6),
                   Container(
@@ -445,7 +445,7 @@ class _TableCardState extends State<TableCard> {
                 ],
               ),
             ),
-            // Order total (mono) or "свободен" at the bottom.
+            // Order total (mono) or "free" at the bottom.
             Positioned(
               bottom: 0,
               left: 0,
@@ -453,7 +453,7 @@ class _TableCardState extends State<TableCard> {
               child: Center(
                 child: Text(
                   table.status == TableStatus.free
-                      ? 'свободен'
+                      ? L.freeLower
                       : state
                           .tableCart(table.id)
                           .fold(0.0, (s, l) => s + l.total)
@@ -512,7 +512,7 @@ void _showQuickCheck(BuildContext context, CafeTable table) {
   showGeneralDialog(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Close',
+    barrierLabel: L.close,
     barrierColor: const Color(0x8C0D0B08),
     transitionDuration: 300.ms,
     pageBuilder: (_, __, ___) => QuickCheckOverlay(table: table),
@@ -566,7 +566,7 @@ class QuickCheckOverlay extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              Text('Стол ${table.number}',
+                              Text(L.tableN(table.number),
                                   style: T.screenTitle),
                               const Spacer(),
                               StatusBadge(table.status, showLabel: true),
@@ -576,28 +576,29 @@ class QuickCheckOverlay extends StatelessWidget {
                           Text(
                               table.openedAt == null
                                   ? statusLabel(table.status)
-                                  : 'Открыт ${table.openedAt!.hour.toString().padLeft(2, '0')}:${table.openedAt!.minute.toString().padLeft(2, '0')}${table.waiterName != '—' && table.waiterName.isNotEmpty ? ' · ${table.waiterName}' : ''}',
+                                  : '${L.openedAt('${table.openedAt!.hour.toString().padLeft(2, '0')}:${table.openedAt!.minute.toString().padLeft(2, '0')}')}${table.waiterName != '—' && table.waiterName.isNotEmpty ? ' · ${table.waiterName}' : ''}',
                               style: T.priceSmall),
                           const Divider(height: 32),
                           if (items.isEmpty)
-                            const Center(
+                            Center(
                                 child: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 32),
-                                    child: Text('Чек пуст',
-                                        style: T.body)))
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 32),
+                                    child:
+                                        Text(L.checkEmpty, style: T.body)))
                           else
                             ...items.map((l) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Row(
                                     children: [
                                       Text('${l.quantity}×',
-                                          style: T.timer.copyWith(color: AppTheme.ink2)),
+                                          style: T.timer
+                                              .copyWith(color: AppTheme.ink2)),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                          child: Text(l.item.name,
+                                          child: Text(l.item.displayName,
                                               style: T.body)),
-                                      Text(l.total.rub,
-                                          style: T.timer),
+                                      Text(l.total.rub, style: T.timer),
                                     ],
                                   ),
                                 )),
@@ -605,8 +606,7 @@ class QuickCheckOverlay extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('ИТОГО',
-                                  style: T.h2),
+                              Text(L.total, style: T.h2),
                               Text(total.rub,
                                   style: T.h2.copyWith(color: AppTheme.cta)),
                             ],
@@ -616,14 +616,14 @@ class QuickCheckOverlay extends StatelessWidget {
                             children: [
                               Expanded(
                                   child: GhostButton(
-                                      label: 'Переслать',
+                                      label: L.forward,
                                       icon: Icons.forward,
                                       onTap: () =>
                                           showForwardSheet(context, table))),
                               const SizedBox(width: 12),
                               Expanded(
                                   child: PrimaryButton(
-                                      label: 'Открыть',
+                                      label: L.open,
                                       icon: Icons.table_restaurant,
                                       onTap: () {
                                         Navigator.pop(context);
@@ -640,8 +640,7 @@ class QuickCheckOverlay extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text('Нажмите на фон, чтобы закрыть',
-                  style: T.priceSmall),
+              Text(L.tapToClose, style: T.priceSmall),
             ],
           ),
         ),

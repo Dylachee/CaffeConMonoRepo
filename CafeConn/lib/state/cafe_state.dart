@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../core/i18n.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils.dart';
 import '../data/cafe_api_client.dart';
@@ -41,6 +42,16 @@ class CafeState extends ChangeNotifier {
   AppUser? currentUser;
   CafeTable? currentTable;
   ChatGroup? currentGroup;
+
+  /// Effective role of the signed-in staff member. Comes from the hub's
+  /// bootstrap (Employee.role); in local demo mode it stays admin so every
+  /// screen is reachable. Persisted so a PWA restart with a saved token
+  /// doesn't flash manager tabs at a cook before the bootstrap answers.
+  UserRole currentRole = UserRole.admin;
+
+  /// UI language (EN/IT). Mirrored into [L.lang]; every mutation notifies.
+  AppLang appLang = AppLang.en;
+
   bool online = true;
   bool noConnectionDismissed = false;
   bool soundEnabled = true;
@@ -55,7 +66,7 @@ class CafeState extends ChangeNotifier {
   bool hapticsEnabled = true;
   double soundVolume = 0.6;
   bool offlineModeSimulated = false;
-  String activeUserName = 'Елена Соколова';
+  String activeUserName = 'Elena Sokolova';
 
   void setSetting<T>(String key, T value, Function(T) apply) {
     apply(value);
@@ -66,6 +77,30 @@ class CafeState extends ChangeNotifier {
   Timer? _retryTimer;
 
   void refresh() => notifyListeners();
+
+  // ---- Role-based visibility -------------------------------------------
+  // cook/bartender: only their order feed, the menu and the chats.
+  // waiter: everything except the analytics panel. manager/admin: everything.
+  bool get isStationRole =>
+      currentRole == UserRole.cook || currentRole == UserRole.bartender;
+  bool get canSeeTables => !isStationRole;
+  bool get canSeePanel =>
+      currentRole == UserRole.manager || currentRole == UserRole.admin;
+  bool get canDeliverOrders => !isStationRole;
+
+  /// Station screens are locked to their own feed zone.
+  FeedType? get lockedZone => switch (currentRole) {
+        UserRole.cook => FeedType.kitchen,
+        UserRole.bartender => FeedType.bar,
+        _ => null,
+      };
+
+  void setLanguage(AppLang value) {
+    appLang = value;
+    L.lang = value;
+    _box.put('appLang', value.index);
+    notifyListeners();
+  }
 
   Future<void> boot() async {
     // --- Seed users & staff (these are config, not user-editable, re-seed always) ---
@@ -157,6 +192,21 @@ class CafeState extends ChangeNotifier {
     final cachedTheme = _box.get('theme') as int?;
     if (cachedTheme != null) themeMode = ThemeMode.values[cachedTheme];
 
+    final cachedLang = _box.get('appLang') as int?;
+    if (cachedLang != null &&
+        cachedLang >= 0 &&
+        cachedLang < AppLang.values.length) {
+      appLang = AppLang.values[cachedLang];
+    }
+    L.lang = appLang;
+
+    final cachedRole = _box.get('currentRole') as int?;
+    if (cachedRole != null &&
+        cachedRole >= 0 &&
+        cachedRole < UserRole.values.length) {
+      currentRole = UserRole.values[cachedRole];
+    }
+
     tablesPerRow = _box.get('tablesPerRow') as int? ?? 3;
     showGestureHints = _box.get('showGestureHints') as bool? ?? true;
     currencySymbol = _box.get('currencySymbol') as String? ?? r'$';
@@ -165,7 +215,7 @@ class CafeState extends ChangeNotifier {
     textScale = (_box.get('textScale') as num?)?.toDouble() ?? 1.0;
     hapticsEnabled = _box.get('hapticsEnabled') as bool? ?? true;
     soundVolume = (_box.get('soundVolume') as num?)?.toDouble() ?? 0.6;
-    activeUserName = _box.get('activeUserName') as String? ?? 'Елена Соколова';
+    activeUserName = _box.get('activeUserName') as String? ?? 'Elena Sokolova';
     soundEnabled = _box.get('soundEnabled') as bool? ?? true;
 
     _retryTimer = Timer.periodic(5.seconds, (_) => retryQueuedOrders());
@@ -174,7 +224,7 @@ class CafeState extends ChangeNotifier {
 
     // Auto-connect, in priority order:
     //   1. a token saved from a previous successful login on this device
-    //      (survives PWA restarts — this is what keeps the app "живым"
+    //      (survives PWA restarts and keeps the app live
     //      after the browser is closed);
     //   2. build-time credentials (--dart-define, dev builds only — never
     //      bake real staff passwords into a public web build).
@@ -212,8 +262,7 @@ class CafeState extends ChangeNotifier {
         'chatMessages', jsonEncode(recent.map((m) => m.toJson()).toList()));
   }
 
-  String _nextMessageId() =>
-      'm${DateTime.now().microsecondsSinceEpoch}';
+  String _nextMessageId() => 'm${DateTime.now().microsecondsSinceEpoch}';
 
   void setGuestCount(String tableId, int count) {
     final table = tables.firstWhereOrNull((t) => t.id == tableId);
@@ -307,7 +356,15 @@ class CafeState extends ChangeNotifier {
   }
 
   List<String> get categories =>
-      ['Все', ...menu.map((m) => m.category).toSet()];
+      ['All', ...menu.map((m) => m.category).toSet()];
+
+  /// Display label for a raw category key ('All' + menu categories):
+  /// raw values stay stable for filtering, only the label is localized.
+  String categoryDisplay(String raw) {
+    if (raw == 'All') return L.all;
+    return menu.firstWhereOrNull((m) => m.category == raw)?.displayCategory ??
+        raw;
+  }
 
   List<CartLine> tableCart(String tableId) =>
       tableChecks.putIfAbsent(tableId, () => []);
@@ -349,14 +406,14 @@ class CafeState extends ChangeNotifier {
   /// Send the table's unsent check lines to the stations.
   ///
   /// Splitting is by MenuItem.station (kitchen/bar), NOT by category name —
-  /// the category guess ("Напитки"/"Кофе") was why beer never reached the
+  /// the category guess ("Drinks"/"Coffee") was why beer never reached the
   /// bar feed. With [onlyFor] set, only that station's lines are sent.
   ///
   /// Returns the last created order, or null when there was nothing to send
   /// (callers must tell the waiter instead of failing silently).
   Future<CafeOrder?> submitOrder({String? tableId, FeedType? onlyFor}) async {
-    final table = tables.firstWhereOrNull(
-        (t) => t.id == (tableId ?? currentTable?.id ?? ''));
+    final table = tables
+        .firstWhereOrNull((t) => t.id == (tableId ?? currentTable?.id ?? ''));
     if (table == null) return null;
     // When connected, send to the hub; realtime echoes it back to all devices.
     if (backendConnected) return _submitOrderRemote(table, onlyFor);
@@ -476,7 +533,7 @@ class CafeState extends ChangeNotifier {
   void discussInChat(CafeOrder order, ChatGroup group, String comment) {
     final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
     final text =
-        '#discuss Заказ Стол${table?.number.toString().padLeft(2, '0') ?? '??'}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}\n\n$comment';
+        '#discuss Order Table${table?.number.toString().padLeft(2, '0') ?? '??'}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}\n\n$comment';
     messages.add(ChatMessage(
       id: _nextMessageId(),
       groupId: group.id,
@@ -492,7 +549,7 @@ class CafeState extends ChangeNotifier {
 
   void forwardTable(CafeTable table, ChatGroup group, String comment) {
     final text =
-        '#forward Стол${table.number.toString().padLeft(2, '0')} ·${statusLabel(table.status)}\n\n$comment';
+        '#forward Table${table.number.toString().padLeft(2, '0')} ·${statusLabel(table.status)}\n\n$comment';
     messages.add(ChatMessage(
       id: _nextMessageId(),
       groupId: group.id,
@@ -515,7 +572,7 @@ class CafeState extends ChangeNotifier {
       groupId: group.id,
       senderId: 'system',
       text:
-          '#orders Новый заказ #${order.id}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}',
+          '#orders New order #${order.id}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}',
       tags: const ['#orders'],
       timestamp: DateTime.now(),
       kind: MessageKind.orderCard,
@@ -563,6 +620,9 @@ class CafeState extends ChangeNotifier {
       table.attention = null;
       table.lastSignalId = null;
       tableChecks[table.id]?.clear();
+      // Clearing the table archives its order history (the hub marks the
+      // orders PAID; the local mirror drops them the same moment).
+      orders.removeWhere((o) => o.tableId == table.id);
     }
     HapticFeedback.selectionClick();
     _saveTables();
@@ -646,7 +706,7 @@ class CafeState extends ChangeNotifier {
   }
 
   void createStaff(String name, UserRole role) {
-    final user = AppUser('u${users.length + 1}', name, role, 'Смена активна');
+    final user = AppUser('u${users.length + 1}', name, role, 'Shift active');
     users.add(user);
     notifyListeners();
   }
@@ -678,14 +738,99 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void markReady(CafeOrder order) {
+  /// Station action (cook/bartender): start preparation. Readiness is tracked
+  /// per order item, because mixed kitchen/bar orders must not become ready
+  /// until every station has finished its own items.
+  void advanceStationStatus(CafeOrder order) {
     final previous = order.status;
-    order.status = order.status == OrderStatus.ready
-        ? OrderStatus.completed
-        : OrderStatus.ready;
+    final next = order.status == OrderStatus.accepted
+        ? OrderStatus.cooking
+        : order.status;
+    if (next == previous) return;
+    order.status = next;
     HapticFeedback.mediumImpact();
     notifyListeners();
     if (backendConnected) _pushOrderStatus(order, previous);
+  }
+
+  /// Station action: mark only this station's items ready. A mixed order is
+  /// ready only after both kitchen and bar items are ready.
+  Future<void> markStationItemsReady(CafeOrder order, FeedType zone) async {
+    final lines = order.itemsFor(zone).where((line) => !line.ready).toList();
+    if (lines.isEmpty) return;
+    final previous = order.status;
+    for (final line in lines) {
+      line.ready = true;
+    }
+    _syncLocalOrderStatus(order);
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (backendConnected) {
+      await _pushItemsReady(order, lines, previous);
+    }
+  }
+
+  /// Waiter/manager action: deliver one ready item, not the whole order.
+  Future<void> toggleOrderItemDelivered(CafeOrder order, CartLine line) async {
+    if (!line.ready && !line.done) return;
+    final previousStatus = order.status;
+    final previousDone = line.done;
+    final previousReady = line.ready;
+    line.done = !line.done;
+    if (line.done) line.ready = true;
+    _syncLocalOrderStatus(order);
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (backendConnected && line.orderItemId != null) {
+      await _pushItemDone(
+          order, line, previousDone, previousReady, previousStatus);
+    }
+  }
+
+  void _syncLocalOrderStatus(CafeOrder order) {
+    if (order.items.isEmpty) return;
+    if (order.items.every((line) => line.done)) {
+      order.status = OrderStatus.completed;
+    } else if (order.items.every((line) => line.ready)) {
+      order.status = OrderStatus.ready;
+    } else if (order.items.any((line) => line.ready) ||
+        order.status == OrderStatus.cooking) {
+      order.status = OrderStatus.cooking;
+    } else {
+      order.status = OrderStatus.accepted;
+    }
+  }
+
+  Future<void> _pushItemsReady(
+      CafeOrder order, List<CartLine> lines, OrderStatus rollback) async {
+    try {
+      for (final line in lines) {
+        final id = line.orderItemId;
+        if (id != null) await _remoteApi.markItemReady(id);
+      }
+    } on ApiException catch (e) {
+      for (final line in lines) {
+        line.ready = false;
+      }
+      order.status = rollback;
+      backendError = e.message;
+      debugPrint('markItemReady push failed: $e');
+      notifyListeners();
+    }
+  }
+
+  Future<void> _pushItemDone(CafeOrder order, CartLine line, bool rollbackDone,
+      bool rollbackReady, OrderStatus rollbackStatus) async {
+    try {
+      await _remoteApi.toggleItemDone(line.orderItemId!);
+    } on ApiException catch (e) {
+      line.done = rollbackDone;
+      line.ready = rollbackReady;
+      order.status = rollbackStatus;
+      backendError = e.message;
+      debugPrint('toggleItemDone push failed: $e');
+      notifyListeners();
+    }
   }
 
   Future<void> _pushOrderStatus(CafeOrder order, OrderStatus rollback) async {
@@ -693,7 +838,7 @@ class CafeState extends ChangeNotifier {
       OrderStatus.ready => 'ready',
       OrderStatus.completed => 'completed',
       OrderStatus.cooking => 'cooking',
-      OrderStatus.accepted => 'pending',
+      OrderStatus.accepted => 'new',
     };
     try {
       await _remoteApi.updateOrderStatus(order.id, wire);
@@ -806,7 +951,7 @@ class CafeState extends ChangeNotifier {
   }
 
   /// Re-run the connection using the saved token, in-memory credentials or
-  /// build-time credentials. Used by Settings → "Переподключить".
+  /// build-time credentials. Used by Settings → "Reconnect".
   Future<bool> reconnect() async {
     final user = _lastUser ?? const String.fromEnvironment('API_USERNAME');
     final pass = _lastPass ?? const String.fromEnvironment('API_PASSWORD');
@@ -817,12 +962,23 @@ class CafeState extends ChangeNotifier {
     if (savedToken != null && savedToken.isNotEmpty) {
       return connectWithToken(savedToken);
     }
-    backendError = 'Нет данных входа. Введите логин и пароль ниже.';
+    backendError = 'No login data. Enter username and password below.';
     notifyListeners();
     return false;
   }
 
   void _applyBootstrap(BootstrapDto data) {
+    final user = data.currentUser;
+    if (user != null) {
+      if (user.role.isNotEmpty) {
+        currentRole = roleFromWire(user.role);
+        _box.put('currentRole', currentRole.index);
+      }
+      if (user.name.isNotEmpty) {
+        activeUserName = user.name;
+        _box.put('activeUserName', user.name);
+      }
+    }
     if (data.menu.isNotEmpty) {
       menu
         ..clear()
@@ -888,12 +1044,16 @@ class CafeState extends ChangeNotifier {
     if (table.status == TableStatus.free) {
       table.currentOrderId = null;
       tableChecks[table.id]?.clear();
+      // The hub archived this visit's orders (PAID) — drop the local copies
+      // so the history disappears everywhere at the same time.
+      orders.removeWhere((o) => o.tableId == table.id);
     }
     _saveTables();
     notifyListeners();
   }
 
-  void _upsertOrderFromDto(OrderDto dto) => _upsertLocalOrder(_orderFromDto(dto));
+  void _upsertOrderFromDto(OrderDto dto) =>
+      _upsertLocalOrder(_orderFromDto(dto));
 
   void _upsertLocalOrder(CafeOrder order) {
     final index = orders.indexWhere((o) => o.id == order.id);
@@ -975,6 +1135,9 @@ class CafeState extends ChangeNotifier {
     _remoteApi.setToken(null);
     _box.delete('apiToken');
     _box.delete('apiUser');
+    // Back to local demo — no logged-in employee, no role restrictions.
+    currentRole = UserRole.admin;
+    _box.delete('currentRole');
     notifyListeners();
   }
 
@@ -983,9 +1146,12 @@ class CafeState extends ChangeNotifier {
   MenuItem _menuFromDto(MenuItemDto d) => MenuItem(
         id: d.id,
         name: d.name,
+        nameIt: d.nameIt,
         description: d.description,
+        descriptionIt: d.descriptionIt,
         price: d.price,
         category: d.category,
+        categoryIt: d.categoryIt,
         imageUrl: d.imageUrl,
         tags: d.tags,
         prepTime: d.prepTime,
@@ -1009,7 +1175,7 @@ class CafeState extends ChangeNotifier {
     table.waiterName = d.waiter.isEmpty ? '—' : d.waiter;
     if (d.openedAt != null) table.openedAt = DateTime.tryParse(d.openedAt!);
     // Carry over an unacked guest signal so the badge (and the ability to
-    // "Принять" it) survives an app restart.
+    // acknowledge it) survives an app restart.
     table.attention = d.ack ? null : d.attention;
     table.lastSignalId = d.ack ? null : d.attentionSignalId;
     return table;
@@ -1028,6 +1194,7 @@ class CafeState extends ChangeNotifier {
         sent: true,
         ready: it.ready,
         done: it.done,
+        orderItemId: it.id,
         lockedPrice: it.price > 0 ? it.price : null,
       );
     }).toList();
@@ -1047,10 +1214,10 @@ class CafeState extends ChangeNotifier {
 
   MenuItem _placeholderMenuItem(OrderItemDto it) => MenuItem(
         id: it.dishId,
-        name: it.name.isEmpty ? 'Позиция' : it.name,
+        name: it.name.isEmpty ? 'Item' : it.name,
         description: '',
         price: it.price,
-        category: it.station == 'bar' ? 'Напитки' : 'Кухня',
+        category: it.station == 'bar' ? 'Drinks' : 'Kitchen',
         imageUrl: '',
         tags: const [],
         prepTime: 5,
@@ -1090,11 +1257,11 @@ class CafeState extends ChangeNotifier {
 
 class MockCafeApi {
   List<AppUser> seedUsers() => [
-        AppUser('admin', 'Администратор', UserRole.admin, 'В системе'),
-        AppUser('manager', 'Алекс Ривера', UserRole.manager, 'Онлайн'),
-        AppUser('waiter', 'Елена Соколова', UserRole.waiter, 'На смене'),
-        AppUser('cook', 'Марко Чен', UserRole.cook, 'На кухне'),
-        AppUser('bar', 'Сара Дженкинс', UserRole.bartender, 'За баром'),
+        AppUser('admin', 'Administrator', UserRole.admin, 'In system'),
+        AppUser('manager', 'Alex Rivera', UserRole.manager, 'Online'),
+        AppUser('waiter', 'Elena Sokolova', UserRole.waiter, 'On shift'),
+        AppUser('cook', 'Marco Chen', UserRole.cook, 'In kitchen'),
+        AppUser('bar', 'Sara Jenkins', UserRole.bartender, 'At the bar'),
       ];
 
   /// Offline demo floor: mirrors the real bar (30 tables), everything free.
@@ -1108,87 +1275,87 @@ class MockCafeApi {
   List<MenuItem> seedMenu() => [
         MenuItem(
             id: 'm1',
-            name: 'Флэт уайт',
-            description: 'Шёлковый эспрессо с мягким молоком.',
+            name: 'Flat white',
+            description: 'Silky espresso with soft milk.',
             price: 4.50,
-            category: 'Кофе',
+            category: 'Coffee',
             imageUrl:
                 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=400',
             tags: ['Dairy'],
             prepTime: 4,
             promo: true,
-            composition: 'Эспрессо, молоко 3.2%, микропена.',
+            composition: 'Espresso, 3.2% milk, microfoam.',
             allergens: ['Dairy'],
             station: 'bar'),
         MenuItem(
             id: 'm2',
-            name: 'Круассан',
-            description: 'Тёплый хрустящий круассан.',
+            name: 'Croissant',
+            description: 'Warm crispy croissant.',
             price: 3.80,
-            category: 'Выпечка',
+            category: 'Bakery',
             imageUrl:
                 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=400',
             tags: ['Gluten'],
             prepTime: 3,
-            composition: 'Мука, сливочное масло, сахар, дрожжи.',
+            composition: 'Flour, butter, sugar, yeast.',
             allergens: ['Gluten', 'Eggs']),
         MenuItem(
             id: 'm3',
-            name: 'Бенедикт',
-            description: 'Яйца пашот с голландским соусом.',
+            name: 'Benedict',
+            description: 'Poached eggs with hollandaise sauce.',
             price: 18.50,
-            category: 'Завтраки',
+            category: 'Breakfast',
             imageUrl:
                 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400',
             tags: ['Eggs'],
             prepTime: 14,
             promo: true,
-            composition: 'Яйца, бриошь, бекон, голландский соус.',
+            composition: 'Eggs, brioche, bacon, hollandaise sauce.',
             allergens: ['Eggs', 'Gluten', 'Dairy']),
         MenuItem(
             id: 'm4',
-            name: 'Авокадо тост',
-            description: 'Заквасочный хлеб и авокадо.',
+            name: 'Avocado toast',
+            description: 'Sourdough bread and avocado.',
             price: 12.00,
-            category: 'Завтраки',
+            category: 'Breakfast',
             imageUrl:
                 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400',
             tags: ['Vegan'],
             prepTime: 8,
-            composition: 'Заквасочный хлеб, авокадо, семена, чили.',
+            composition: 'Sourdough bread, avocado, seeds, chili.',
             allergens: ['Gluten']),
         MenuItem(
             id: 'm5',
-            name: 'Колд брю',
-            description: 'Кофе холодной экстракции.',
+            name: 'Cold brew',
+            description: 'Cold-extraction coffee.',
             price: 5.20,
-            category: 'Кофе',
+            category: 'Coffee',
             imageUrl:
                 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=400',
             tags: ['Vegan'],
             prepTime: 2,
-            composition: 'Кофе холодной заварки 12 часов.',
+            composition: '12-hour cold brew coffee.',
             station: 'bar'),
         MenuItem(
             id: 'm6',
-            name: 'Лимонад',
-            description: 'Домашний лимонад с базиликом.',
+            name: 'Lemonade',
+            description: 'Homemade lemonade with basil.',
             price: 4.90,
-            category: 'Напитки',
+            category: 'Drinks',
             imageUrl:
                 'https://images.unsplash.com/photo-1621263764928-df1444c5e859?w=400',
             tags: ['Vegan'],
             prepTime: 3,
-            composition: 'Лимонный сок, сахарный сироп, базилик, газировка.',
+            composition: 'Lemon juice, sugar syrup, basil, soda.',
             station: 'bar'),
       ];
 
   List<ChatGroup> seedGroups(List<AppUser> staff) => [
-        ChatGroup('g1', 'Общий чат', null, staff.map((s) => s.id).toList(),
+        ChatGroup('g1', 'General chat', null, staff.map((s) => s.id).toList(),
             pinned: true),
         ChatGroup(
             'g2',
-            'Кухня',
+            'Kitchen',
             FeedType.kitchen,
             staff
                 .where((s) =>
@@ -1200,7 +1367,7 @@ class MockCafeApi {
             pinned: true),
         ChatGroup(
             'g3',
-            'Бар',
+            'Bar',
             FeedType.bar,
             staff
                 .where((s) =>

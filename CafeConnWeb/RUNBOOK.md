@@ -42,7 +42,7 @@ docker compose up -d
 
 # 2. Confirm all three services are healthy (wait ~20s after first boot)
 docker compose ps
-# Expected output: db Up (healthy) | redis Up (healthy) | web Up (healthy)
+# Expected output: db Up (healthy) | web Up (healthy)
 
 # 3. Apply any pending migrations (no-op if none)
 docker compose exec web python manage.py migrate

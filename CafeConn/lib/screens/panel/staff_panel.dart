@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
@@ -33,7 +34,7 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
       bottomNav: null,
       child: Column(
         children: [
-          Header(title: 'Панель', subtitle: 'Управление системой', actions: [
+          Header(title: L.panel, subtitle: L.systemManagement, actions: [
             IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 onPressed: () => GoRouter.of(context).push('/settings')),
@@ -46,11 +47,11 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
               indicatorColor: AppTheme.cta,
               labelColor: AppTheme.ink,
               unselectedLabelColor: AppTheme.ink2,
-              tabs: const [
-                Tab(text: 'Обзор'),
-                Tab(text: 'Команда'),
-                Tab(text: 'Меню'),
-                Tab(text: 'Доступ')
+              tabs: [
+                Tab(text: L.overview),
+                Tab(text: L.team),
+                Tab(text: L.menu),
+                Tab(text: L.access)
               ],
             ),
           ),
@@ -119,41 +120,41 @@ class _OverviewTab extends StatelessWidget {
           childAspectRatio: 1.3,
           children: [
             MetricCard(
-                label: 'Выручка',
+                label: L.revenue,
                 value: revenue.rub,
-                delta: 'сегодня · ${todayOrders.length} заказов',
+                delta: L.todayOrders(todayOrders.length),
                 isPositive: true,
                 color: AppTheme.success),
             MetricCard(
-                label: 'Средний чек',
+                label: L.avgCheck,
                 value: avgCheck.rub,
-                delta: 'по $servedTables столам',
+                delta: L.acrossTables(servedTables),
                 isPositive: true,
                 color: AppTheme.gold,
                 index: 1),
             MetricCard(
-                label: 'Столы',
+                label: L.tables,
                 value: '$activeTables / ${state.tables.length}',
-                delta: 'занято сейчас',
+                delta: L.occupiedNow,
                 isPositive: true,
                 color: AppTheme.tOccupied,
                 index: 2),
             MetricCard(
-                label: 'В работе',
+                label: L.inProgress,
                 value: '${activeOrders.length}',
-                delta: oldestMin > 0 ? 'старейший $oldestMin мин' : 'нет очереди',
+                delta: oldestMin > 0 ? L.oldestMin(oldestMin) : L.noQueue,
                 isPositive: oldestMin <= 20,
                 color: AppTheme.warning,
                 index: 3),
           ],
         ),
         const SizedBox(height: 20),
-        const SectionTitle('Выручка по часам'),
+        SectionTitle(L.revenueByHour),
         AppCard(
           height: 160,
           child: maxHour == 0
               ? Center(
-                  child: Text('Сегодня заказов ещё не было',
+                  child: Text(L.noOrdersToday,
                       style: T.body.copyWith(color: AppTheme.ink2)))
               : Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -182,9 +183,9 @@ class TeamManagementScreen extends StatelessWidget {
     final state = context.watch<CafeState>();
     return ListView(children: [
       Row(children: [
-        const Expanded(child: SectionTitle('Сотрудники')),
+        Expanded(child: SectionTitle(L.staff)),
         AppButton(
-            label: 'Добавить',
+            label: L.add,
             kind: ButtonKind.ghost,
             icon: Icons.person_add,
             onPressed: () => _showStaffForm(context))
@@ -201,9 +202,9 @@ class MenuManagementScreen extends StatelessWidget {
     final state = context.watch<CafeState>();
     return ListView(children: [
       Row(children: [
-        const Expanded(child: SectionTitle('Позиции')),
+        Expanded(child: SectionTitle(L.items)),
         AppButton(
-            label: 'Добавить блюдо',
+            label: L.addItem,
             kind: ButtonKind.ghost,
             icon: Icons.add,
             onPressed: () => _showMenuForm(context)),
@@ -224,10 +225,11 @@ class MenuManagementScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.name,
-                          style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+                      Text(item.displayName,
+                          style: T.h3.copyWith(
+                              fontWeight: FontWeight.w700, fontSize: 16)),
                       Text(
-                          '${item.price.rub} · ${item.category} · ${item.isBar ? 'бар' : 'кухня'}',
+                          '${item.price.rub} · ${item.displayCategory} · ${item.isBar ? L.bar.toLowerCase() : L.kitchen.toLowerCase()}',
                           style: T.smallSemi.copyWith(color: AppTheme.ink2)),
                     ],
                   ),
@@ -247,7 +249,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
   final name = TextEditingController(text: item?.name ?? '');
   final desc = TextEditingController(text: item?.description ?? '');
   final price = TextEditingController(text: item?.price.toString() ?? '');
-  final category = TextEditingController(text: item?.category ?? 'Кухня');
+  final category = TextEditingController(text: item?.category ?? 'Kitchen');
   final prep = TextEditingController(text: item?.prepTime.toString() ?? '10');
   var station = item == null ? 'kitchen' : (item.isBar ? 'bar' : 'kitchen');
 
@@ -269,42 +271,42 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item == null ? 'Новая позиция' : 'Редактировать позицию',
+                Text(item == null ? L.newItem : L.editItem,
                     style: T.h1.copyWith(fontSize: 22)),
                 const SizedBox(height: 20),
-                AppTextField(controller: name, label: 'Название'),
+                AppTextField(controller: name, label: L.name),
                 const SizedBox(height: 12),
                 AppTextField(
                     controller: desc,
-                    label: 'Описание',
-                    hint: 'Состав, особенности...'),
+                    label: L.description,
+                    hint: L.descriptionHint),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
                         child: AppTextField(
                             controller: price,
-                            label: 'Цена',
+                            label: L.price,
                             keyboardType: TextInputType.number)),
                     const SizedBox(width: 12),
                     Expanded(
                         child: AppTextField(
                             controller: prep,
-                            label: 'Время (мин)',
+                            label: L.timeMin,
                             keyboardType: TextInputType.number)),
                   ],
                 ),
                 const SizedBox(height: 12),
-                AppTextField(controller: category, label: 'Категория'),
+                AppTextField(controller: category, label: L.category),
                 const SizedBox(height: 16),
                 // Where the position is prepared — this is what routes the
                 // order to the kitchen or bar screen.
-                const Text('ГОТОВИТ', style: T.label),
+                Text(L.station, style: T.label),
                 const SizedBox(height: 8),
                 Row(children: [
                   Expanded(
                     child: CategoryChip(
-                      label: 'Кухня',
+                      label: L.kitchen,
                       active: station == 'kitchen',
                       icon: Icons.restaurant,
                       onTap: () => setModalState(() => station = 'kitchen'),
@@ -312,7 +314,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                   ),
                   Expanded(
                     child: CategoryChip(
-                      label: 'Бар',
+                      label: L.bar,
                       active: station == 'bar',
                       icon: Icons.local_bar,
                       onTap: () => setModalState(() => station = 'bar'),
@@ -321,7 +323,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                 ]),
                 const SizedBox(height: 24),
                 AppButton(
-                  label: 'Сохранить',
+                  label: L.save,
                   onPressed: () {
                     final state = context.read<CafeState>();
                     if (name.text.trim().isEmpty) return;
@@ -332,7 +334,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                         description: desc.text.trim(),
                         price: double.tryParse(price.text) ?? 0.0,
                         category: category.text.trim().isEmpty
-                            ? 'Кухня'
+                            ? 'Kitchen'
                             : category.text.trim(),
                         imageUrl: '',
                         tags: [],
@@ -367,18 +369,24 @@ class _AccessTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        const SectionTitle('Права ролей'),
-        _roleAccessCard('Официант', [
-          ('Заказы', true),
-          ('Счёт', true),
-          ('Меню', true),
-          ('Админка', false)
+        SectionTitle(L.rolePermissions),
+        _roleAccessCard(L.roleWaiter, [
+          (L.orders, true),
+          (L.bill, true),
+          (L.menu, true),
+          (L.roleAdmin, false)
         ]),
-        _roleAccessCard('Повар', [
-          ('Заказы', true),
-          ('Столы', false),
-          ('Меню', true),
-          ('Админка', false)
+        _roleAccessCard(L.roleCook, [
+          (L.orders, true),
+          (L.tables, false),
+          (L.menu, true),
+          (L.roleAdmin, false)
+        ]),
+        _roleAccessCard(L.roleBartender, [
+          (L.orders, true),
+          (L.tables, false),
+          (L.menu, true),
+          (L.roleAdmin, false)
         ]),
       ],
     );
@@ -460,10 +468,10 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                 padding: EdgeInsets.fromLTRB(
                     20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(user == null ? 'Новый сотрудник' : 'Редактировать',
+                  Text(user == null ? L.newStaffMember : L.edit,
                       style: T.h2),
                   const SizedBox(height: 20),
-                  AppTextField(controller: name, label: 'Имя'),
+                  AppTextField(controller: name, label: L.name),
                   const SizedBox(height: 12),
                   DropdownButtonFormField(
                       value: role,
@@ -474,7 +482,7 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                       onChanged: (v) => set(() => role = v!)),
                   const SizedBox(height: 20),
                   AppButton(
-                      label: 'Сохранить',
+                      label: L.save,
                       onPressed: () {
                         if (user == null) {
                           context

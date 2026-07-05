@@ -23,6 +23,10 @@ class MenuItem(models.Model):
     is_available = models.BooleanField(default=True)
     is_promoted = models.BooleanField(default=False)
     preparation_minutes = models.PositiveSmallIntegerField(default=5)
+    # Dish-detail card on the guest page: portion size / calories.
+    # Free-form weight so "380 g" and "250 ml" both fit.
+    portion_weight = models.CharField(max_length=32, blank=True)
+    calories = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,9 +44,9 @@ class Table(models.Model):
         # a table is either free, taken, or the guests want a waiter.
         # Everything finer-grained (new order / bill / late / reserved)
         # proved to be noise for a small bar floor.
-        FREE = "free", "Свободен"
-        OCCUPIED = "occupied", "Занят"
-        WAITING = "waiting", "Ждёт официанта"
+        FREE = "free", "Free"
+        OCCUPIED = "occupied", "Occupied"
+        WAITING = "waiting", "Waiting for waiter"
 
     class Attention(models.TextChoices):
         NONE = "", "None"
@@ -52,7 +56,7 @@ class Table(models.Model):
 
     number = models.PositiveIntegerField(unique=True)
     label = models.CharField(max_length=80, blank=True)
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.FREE)
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.FREE, db_index=True)
     capacity = models.PositiveSmallIntegerField(default=2)
     guest_count = models.PositiveSmallIntegerField(default=0)
     color_tag = models.CharField(max_length=24, blank=True)
@@ -109,15 +113,23 @@ class Employee(models.Model):
 
 class Order(models.Model):
     class Status(models.TextChoices):
+        # Canonical lifecycle: NEW → COOKING → READY → COMPLETED → PAID,
+        # plus CANCELLED. The former synonyms (pending≈new, preparing≈cooking,
+        # delivered≈completed) were collapsed in migration 0006; the API still
+        # accepts them on write for older clients (see LEGACY_STATUS_ALIASES).
         NEW = "new", "New"
-        PENDING = "pending", "Pending"
         COOKING = "cooking", "Cooking"
-        PREPARING = "preparing", "Preparing"
         READY = "ready", "Ready"
-        DELIVERED = "delivered", "Delivered"
         COMPLETED = "completed", "Completed"
         PAID = "paid", "Paid"
         CANCELLED = "cancelled", "Cancelled"
+
+    # Old wire values still sent by deployed staff-app builds.
+    LEGACY_STATUS_ALIASES = {
+        "pending": Status.NEW,
+        "preparing": Status.COOKING,
+        "delivered": Status.COMPLETED,
+    }
 
     class Source(models.TextChoices):
         GUEST_WEB = "guest_web", "Guest web"
@@ -148,6 +160,11 @@ class Order(models.Model):
     class Meta:
         db_table = "cafe_orders"
         ordering = ["-created_at"]
+        indexes = [
+            # The hot query: active orders (status NOT IN paid/cancelled)
+            # ordered by recency — bootstrap, station feed, guest tracking.
+            models.Index(fields=["status", "-created_at"], name="order_status_created_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"Order #{self.pk} - {self.table}"
@@ -171,6 +188,12 @@ class OrderItem(models.Model):
 
     class Meta:
         db_table = "cafe_order_items"
+        constraints = [
+            # Quantity and price come from the guest's browser on the guest
+            # order path — the DB is the last line against zero/negative rows.
+            models.CheckConstraint(check=models.Q(quantity__gte=1), name="orderitem_qty_gte_1"),
+            models.CheckConstraint(check=models.Q(unit_price__gte=0), name="orderitem_price_gte_0"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.quantity} x {self.menu_item.name}"
@@ -203,6 +226,10 @@ class AttentionSignal(models.Model):
     class Meta:
         db_table = "cafe_attention_signals"
         ordering = ["-created_at"]
+        indexes = [
+            # Bootstrap prefetches unacked signals per table.
+            models.Index(fields=["table", "ack"], name="signal_table_ack_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.get_signal_type_display()} - {self.table}"
@@ -235,6 +262,9 @@ class StaffPreference(models.Model):
 
     class Meta:
         db_table = "cafe_staff_preferences"
+        constraints = [
+            models.CheckConstraint(check=models.Q(volume__lte=100), name="staffpref_volume_lte_100"),
+        ]
 
     def __str__(self) -> str:
         return f"Preferences for {self.user}"

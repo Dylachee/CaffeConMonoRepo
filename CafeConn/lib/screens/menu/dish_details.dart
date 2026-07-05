@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
@@ -21,7 +22,7 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                 children: [
                   Row(children: [
                     Expanded(
-                        child: Text(item.name,
+                        child: Text(item.displayName,
                             style: T.h1.copyWith(fontSize: 22))),
                     Text(item.price.rub,
                         style: T.h2.copyWith(color: AppTheme.cta))
@@ -41,7 +42,7 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                             color:
                                 item.isBar ? AppTheme.bar : AppTheme.warning),
                         const SizedBox(width: 5),
-                        Text(item.isBar ? 'Бар' : 'Кухня',
+                        Text(item.isBar ? L.bar : L.kitchen,
                             style: T.smallSemi.copyWith(
                                 color: item.isBar
                                     ? AppTheme.bar
@@ -55,7 +56,8 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                       decoration: BoxDecoration(
                           color: AppTheme.surfaceSunken,
                           borderRadius: BorderRadius.circular(10)),
-                      child: Text('${item.prepTime} мин · ${item.category}',
+                      child: Text(
+                          '${L.minutes(item.prepTime)} · ${item.displayCategory}',
                           style: T.smallSemi),
                     ),
                     if (!item.available)
@@ -65,22 +67,22 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                         decoration: BoxDecoration(
                             color: AppTheme.danger.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10)),
-                        child: Text('СТОП-ЛИСТ',
+                        child: Text(L.stopList,
                             style: T.smallSemi.copyWith(
                                 color: AppTheme.danger,
                                 fontWeight: FontWeight.w800)),
                       ),
                   ]),
                   const SizedBox(height: 12),
-                  if (item.description.isNotEmpty)
-                    Text(item.description,
+                  if (item.displayDescription.isNotEmpty)
+                    Text(item.displayDescription,
                         style: T.h3.copyWith(color: AppTheme.ink2)),
                   const SizedBox(height: 20),
-                  const Text('СОСТАВ', style: T.label),
+                  Text(L.composition, style: T.label),
                   const SizedBox(height: 4),
                   Text(item.composition, style: T.body),
                   const SizedBox(height: 20),
-                  const Text('АЛЛЕРГЕНЫ', style: T.label),
+                  Text(L.allergens, style: T.label),
                   const SizedBox(height: 8),
                   Wrap(
                       spacing: 8,
@@ -93,7 +95,7 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                                       color: AppTheme.success
                                           .withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(10)),
-                                  child: const Text('Без аллергенов',
+                                  child: Text(L.noAllergens,
                                       style: T.smallSemi))
                             ]
                           : item.allergens
@@ -101,7 +103,7 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                               .toList()),
                   const SizedBox(height: 32),
                   AppButton(
-                      label: 'Готово', onPressed: () => Navigator.pop(context)),
+                      label: L.done, onPressed: () => Navigator.pop(context)),
                 ]),
           ));
 }

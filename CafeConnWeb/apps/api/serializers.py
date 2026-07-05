@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
 
 User = get_user_model()
@@ -23,10 +24,20 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "is_available",
             "is_promoted",
             "preparation_minutes",
+            "portion_weight",
+            "calories",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        labels = menu_item_labels(instance)
+        data["name"] = labels["name_en"]
+        data["description"] = labels["description_en"]
+        data["category"] = labels["category_en"]
+        return data
 
 
 class TableSerializer(serializers.ModelSerializer):
@@ -95,6 +106,10 @@ class OrderSerializer(serializers.ModelSerializer):
     table = TableSerializer(read_only=True)
     table_id = serializers.PrimaryKeyRelatedField(source="table", queryset=Table.objects.all(), write_only=True)
     employee = EmployeeSerializer(read_only=True)
+    status = serializers.ChoiceField(
+        choices=list(Order.Status.choices) + [(value, value.title()) for value in Order.LEGACY_STATUS_ALIASES],
+        required=False,
+    )
     items = OrderItemSerializer(many=True)
     total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
@@ -116,6 +131,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def validate_status(self, value):
+        return Order.LEGACY_STATUS_ALIASES.get(value, value)
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])

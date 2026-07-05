@@ -77,9 +77,12 @@ String flutterTableStatusFromDjango(String s) {
 class MenuItemDto {
   final String id;
   final String name;
+  final String nameIt;
   final String description;
+  final String descriptionIt;
   final double price;
   final String category;
+  final String categoryIt;
   final String imageUrl;
   final List<String> tags;
   final int prepTime;
@@ -92,9 +95,12 @@ class MenuItemDto {
   const MenuItemDto({
     required this.id,
     required this.name,
+    this.nameIt = '',
     required this.description,
+    this.descriptionIt = '',
     required this.price,
     required this.category,
+    this.categoryIt = '',
     required this.imageUrl,
     required this.tags,
     required this.prepTime,
@@ -108,9 +114,12 @@ class MenuItemDto {
   factory MenuItemDto.fromBootstrap(Map<String, dynamic> j) => MenuItemDto(
         id: _asString(j['id']),
         name: _asString(j['name']),
+        nameIt: _asString(j['nameIt']),
         description: _asString(j['description']),
+        descriptionIt: _asString(j['descriptionIt']),
         price: _asDouble(j['price']),
         category: _asString(j['category']),
+        categoryIt: _asString(j['categoryIt']),
         imageUrl: _asString(j['imageUrl']),
         tags: _asStringList(j['tags']),
         prepTime: _asInt(j['prepTime'], 5),
@@ -296,8 +305,7 @@ class TableDto {
         waiter: _asString(j['waiter']),
         openedAt: j['opened_at'] == null ? null : _asString(j['opened_at']),
         currentOrderId: null,
-        attention: (j['attention'] == null ||
-                _asString(j['attention']).isEmpty)
+        attention: (j['attention'] == null || _asString(j['attention']).isEmpty)
             ? null
             : _asString(j['attention']),
         attentionReason: _asString(j['attention_reason']),
@@ -309,12 +317,20 @@ class CurrentUserDto {
   final String id;
   final String username;
   final String name;
+
+  /// Employee.Role wire value: waiter | kitchen | bar | manager | accountant
+  /// | admin. Empty when the hub predates role-aware bootstraps.
+  final String role;
   const CurrentUserDto(
-      {required this.id, required this.username, required this.name});
+      {required this.id,
+      required this.username,
+      required this.name,
+      this.role = ''});
   factory CurrentUserDto.fromJson(Map<String, dynamic> j) => CurrentUserDto(
         id: _asString(j['id']),
         username: _asString(j['username']),
         name: _asString(j['name']),
+        role: _asString(j['role']),
       );
 }
 
@@ -339,14 +355,16 @@ class BootstrapDto {
             : CurrentUserDto.fromJson(
                 (j['currentUser'] as Map).cast<String, dynamic>()),
         tables: ((j['tables'] as List?) ?? const [])
-            .map((e) => TableDto.fromBootstrap((e as Map).cast<String, dynamic>()))
+            .map((e) =>
+                TableDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
         menu: ((j['menu'] as List?) ?? const [])
             .map((e) =>
                 MenuItemDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
         orders: ((j['orders'] as List?) ?? const [])
-            .map((e) => OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
+            .map((e) =>
+                OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
         preferences:
             (j['preferences'] as Map?)?.cast<String, dynamic>() ?? const {},

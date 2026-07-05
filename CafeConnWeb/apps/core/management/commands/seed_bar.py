@@ -30,10 +30,10 @@ class Command(BaseCommand):
             ("uluk",  "Uluk",  Employee.Role.ADMIN, True, False, "cafeconnect"),
             # One account per position so the floor can work (and the app can
             # later gate features) per role. Manager gets dashboard access.
-            ("manager",   "Менеджер", Employee.Role.MANAGER, True,  False, "Manager2026!"),
-            ("waiter",    "Официант", Employee.Role.WAITER,  False, False, "Waiter2026!"),
-            ("cook",      "Повар",    Employee.Role.KITCHEN, False, False, "Cook2026!"),
-            ("bartender", "Бармен",   Employee.Role.BAR,     False, False, "Bartender2026!"),
+            ("manager",   "Manager",   Employee.Role.MANAGER, True,  False, "Manager2026!"),
+            ("waiter",    "Waiter",    Employee.Role.WAITER,  False, False, "Waiter2026!"),
+            ("cook",      "Cook",      Employee.Role.KITCHEN, False, False, "Cook2026!"),
+            ("bartender", "Bartender", Employee.Role.BAR,     False, False, "Bartender2026!"),
         ]
         for username, name, role, is_staff, is_superuser, password in staff:
             user, created = User.objects.get_or_create(
@@ -59,7 +59,7 @@ class Command(BaseCommand):
             Table.objects.update_or_create(
                 number=number,
                 defaults={
-                    "label": f"Стол {number:02d}",
+                    "label": f"Table {number:02d}",
                     "capacity": 4,
                 },
             )

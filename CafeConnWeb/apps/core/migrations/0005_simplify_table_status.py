@@ -1,5 +1,5 @@
 # Hand-written (no local Django runner). Collapses the nine table statuses
-# down to three: free / occupied / waiting ("ждёт официанта").
+# down to three: free / occupied / waiting ("waiting for waiter").
 #
 # Old value            -> new value
 #   reserved, closed   -> free      (nobody is at the table)
@@ -39,9 +39,9 @@ class Migration(migrations.Migration):
             name="status",
             field=models.CharField(
                 choices=[
-                    ("free", "Свободен"),
-                    ("occupied", "Занят"),
-                    ("waiting", "Ждёт официанта"),
+                    ("free", "Free"),
+                    ("occupied", "Occupied"),
+                    ("waiting", "Waiting for waiter"),
                 ],
                 default="free",
                 max_length=32,

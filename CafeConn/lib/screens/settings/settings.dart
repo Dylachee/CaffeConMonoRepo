@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../core/i18n.dart';
+import '../../models/models.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -18,26 +21,35 @@ class SettingsScreen extends StatelessWidget {
         backgroundColor: AppTheme.bg,
         elevation: 0,
         leading: const BackButton(),
-        title: const Text('Настройки', style: T.h2),
+        title: Text(L.settings, style: T.h2),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _SettingsSection('Аккаунт', [
-            _SettingsRow(
-                label: 'Текущий сотрудник', value: state.activeUserName),
+          _SettingsSection(L.account, [
+            _SettingsRow(label: L.currentStaff, value: state.activeUserName),
+            if (state.backendConnected)
+              _SettingsRow(label: L.role, value: roleLabel(state.currentRole)),
           ]),
-          _SettingsSection('Внешний вид', [
+          _SettingsSection(L.appearance, [
+            // EN/IT toggle: flips every label in the app and the menu
+            // content (names/descriptions come bilingual from the hub).
             _SettingsSegmented(
-              label: 'Тема',
-              options: const ['Светлая', 'Тёмная', 'Системная'],
+              label: L.language,
+              options: const ['English', 'Italiano'],
+              selected: state.appLang.index,
+              onChanged: (i) => state.setLanguage(AppLang.values[i]),
+            ),
+            _SettingsSegmented(
+              label: L.theme,
+              options: [L.themeLight, L.themeDark, L.themeSystem],
               selected: state.themeMode.index,
               onChanged: (i) => state.setSetting(
                   'theme', i, (v) => state.themeMode = ThemeMode.values[v]),
             ),
             _SettingsSegmented(
-              label: 'Размер текста',
-              options: const ['Мал.', 'Норм.', 'Бол.'],
+              label: L.textSize,
+              options: [L.sizeSmall, L.sizeNormal, L.sizeLarge],
               selected: state.textScale == 0.85
                   ? 0
                   : state.textScale == 1.15
@@ -50,59 +62,59 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
           ]),
-          _SettingsSection('Дисплей', [
+          _SettingsSection(L.display, [
             _SettingsSegmented(
-              label: 'Столов в ряду',
+              label: L.tablesPerRow,
               options: const ['3', '4'],
               selected: state.tablesPerRow == 3 ? 0 : 1,
               onChanged: (i) => state.setSetting('tablesPerRow', i == 0 ? 3 : 4,
                   (v) => state.tablesPerRow = v),
             ),
             _SettingsToggle(
-                label: 'Подсказки жестов',
+                label: L.gestureHints,
                 value: state.showGestureHints,
                 onChanged: (v) => state.setSetting(
                     'showGestureHints', v, (x) => state.showGestureHints = x)),
             _SettingsToggle(
-                label: '24-часовой формат',
+                label: L.hour24,
                 value: state.use24hClock,
                 onChanged: (v) => state.setSetting(
                     'use24hClock', v, (x) => state.use24hClock = x)),
           ]),
-          _SettingsSection('Вибро и звук', [
+          _SettingsSection(L.hapticsSound, [
             _SettingsToggle(
-                label: 'Вибрация',
+                label: L.haptics,
                 value: state.hapticsEnabled,
                 onChanged: (v) => state.setSetting(
                     'hapticsEnabled', v, (x) => state.hapticsEnabled = x)),
             _SettingsToggle(
-                label: 'Звуки',
+                label: L.sounds,
                 value: state.soundEnabled,
                 onChanged: (v) => state.setSetting(
                     'soundEnabled', v, (x) => state.soundEnabled = x)),
           ]),
-          _SettingsSection('Соединение', [
+          _SettingsSection(L.connection, [
             _SettingsRow(
-                label: 'Статус',
+                label: L.statusLbl,
                 value: state.backendConnecting
-                    ? 'Подключение…'
+                    ? L.connectingS
                     : state.backendConnected
-                        ? 'Подключено'
-                        : 'Локальный режим'),
-            _SettingsRow(label: 'Сервер', value: ApiConfig.baseUrl),
+                        ? L.connected
+                        : L.localMode),
+            _SettingsRow(label: L.server, value: ApiConfig.baseUrl),
             if (state.backendError != null)
-              _SettingsRow(label: 'Последняя ошибка', value: state.backendError),
+              _SettingsRow(label: L.lastError, value: state.backendError),
             // Below: two different ways to (re)establish the connection.
             // reconnect() only works once _lastUser/_lastPass are already set
             // from a prior successful login (or via --dart-define, which we
             // deliberately do not bake into the web build — that would ship
             // real staff passwords inside a publicly downloadable JS bundle).
             // So the very first connection on a fresh device must go through
-            // a typed login, not "Переподключить" — hence this form.
+            // a typed login, not "Reconnect" — hence this form.
             if (!state.backendConnected) const _ConnectionLoginForm(),
             if (state.backendConnected)
               _SettingsRow(
-                  label: 'Переподключить',
+                  label: L.reconnect,
                   trailing: state.backendConnecting
                       ? const SizedBox(
                           width: 18,
@@ -110,13 +122,12 @@ class SettingsScreen extends StatelessWidget {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: AppTheme.cta))
                       : const Icon(Icons.sync, color: AppTheme.cta),
-                  onTap: state.backendConnecting
-                      ? null
-                      : () => state.reconnect()),
+                  onTap:
+                      state.backendConnecting ? null : () => state.reconnect()),
           ]),
-          _SettingsSection('Данные и синхронизация', [
+          _SettingsSection(L.dataSync, [
             _SettingsToggle(
-                label: 'Симулировать офлайн (QA)',
+                label: L.simulateOffline,
                 value: state.offlineModeSimulated,
                 onChanged: (v) {
                   state.setSetting('offlineModeSimulated', v,
@@ -125,15 +136,15 @@ class SettingsScreen extends StatelessWidget {
                   state.refresh();
                 }),
             _SettingsRow(
-                label: 'Ожидают отправки',
-                value: '${state.pendingQueueCount} действий'),
+                label: L.pendingUpload,
+                value: L.actionsCount(state.pendingQueueCount)),
             _SettingsRow(
-                label: 'Сброс к демо-данным',
+                label: L.resetDemo,
                 trailing: const Icon(Icons.restart_alt, color: AppTheme.danger),
                 onTap: () => _confirmResetToDemo(context, state)),
           ]),
-          _SettingsSection('О приложении', [
-            const _SettingsRow(label: 'Версия', value: 'v0.2.0'),
+          _SettingsSection(L.aboutApp, [
+            _SettingsRow(label: L.version, value: 'v0.2.0'),
           ]),
         ],
       ),
@@ -144,26 +155,24 @@ class SettingsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Сброс данных'),
-        content: const Text(
-            'Это удалит все текущие изменения и вернет демо-данные. Продолжить?'),
+        title: Text(L.resetData),
+        content: Text(L.resetWarn),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
+              onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
           TextButton(
               onPressed: () {
                 state.resetToDemo();
                 Navigator.pop(c);
               },
-              child: const Text('Сбросить',
-                  style: T.bodySemi)),
+              child: Text(L.reset, style: T.bodySemi)),
         ],
       ),
     );
   }
 }
 
-// First-time login form for the "Соединение" settings section. Distinct from
+// First-time login form for the "Connection" settings section. Distinct from
 // reconnect() (which only re-uses credentials from an already-successful
 // session): this is the only in-app way to type a username/password, since
 // the web build intentionally does not bake real staff passwords into the
@@ -199,12 +208,12 @@ class _ConnectionLoginFormState extends State<_ConnectionLoginForm> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        AppTextField(controller: _username, label: 'Логин'),
+        AppTextField(controller: _username, label: L.login),
         const SizedBox(height: 10),
-        AppTextField(controller: _password, label: 'Пароль', obscure: true),
+        AppTextField(controller: _password, label: L.password, obscure: true),
         const SizedBox(height: 12),
         PrimaryButton(
-          label: state.backendConnecting ? 'Подключение…' : 'Войти',
+          label: state.backendConnecting ? L.connectingS : L.signIn,
           onTap: state.backendConnecting ? null : () => _submit(state),
           height: 46,
         ),

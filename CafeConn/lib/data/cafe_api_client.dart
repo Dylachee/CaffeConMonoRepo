@@ -61,8 +61,8 @@ class CafeApiClient {
 
   /// Hydrate the staff app: tables, menu, open orders and preferences.
   Future<BootstrapDto> bootstrap() async {
-    final res =
-        await _send(() => _http.get(ApiConfig.bootstrap(), headers: _headers()));
+    final res = await _send(
+        () => _http.get(ApiConfig.bootstrap(), headers: _headers()));
     return BootstrapDto.fromJson(_decodeMap(res));
   }
 
@@ -99,17 +99,17 @@ class CafeApiClient {
   }
 
   /// Mark a single order item ready (kitchen/bar -> waiter).
-  Future<void> markItemReady(String itemId) =>
-      _send(() => _http.post(ApiConfig.markItemReady(itemId), headers: _headers()));
+  Future<void> markItemReady(String itemId) => _send(
+      () => _http.post(ApiConfig.markItemReady(itemId), headers: _headers()));
 
   /// Toggle "delivered to guest" for an item.
-  Future<void> toggleItemDone(String itemId) =>
-      _send(() => _http.post(ApiConfig.toggleItemDone(itemId), headers: _headers()));
+  Future<void> toggleItemDone(String itemId) => _send(
+      () => _http.post(ApiConfig.toggleItemDone(itemId), headers: _headers()));
 
-  /// Acknowledge a guest attention signal ("Принял"). Server-side this also
+  /// Acknowledge a guest attention signal ("Acknowledge"). Server-side this also
   /// flips a waiting table to occupied and broadcasts `table.updated`.
-  Future<void> ackAttention(String signalId) =>
-      _send(() => _http.post(ApiConfig.ackAttention(signalId), headers: _headers()));
+  Future<void> ackAttention(String signalId) => _send(
+      () => _http.post(ApiConfig.ackAttention(signalId), headers: _headers()));
 
   /// Set a menu item's availability (stop-list on/off).
   Future<void> updateMenuAvailability(String id, bool available) async {
@@ -150,10 +150,11 @@ class CafeApiClient {
     try {
       final decoded = jsonDecode(res.body);
       if (decoded is Map<String, dynamic>) return decoded;
-      throw ApiException(
-          res.statusCode, 'Expected a JSON object, got ${decoded.runtimeType}.');
+      throw ApiException(res.statusCode,
+          'Expected a JSON object, got ${decoded.runtimeType}.');
     } on FormatException catch (e) {
-      throw ApiException(res.statusCode, 'Invalid JSON from server: ${e.message}');
+      throw ApiException(
+          res.statusCode, 'Invalid JSON from server: ${e.message}');
     }
   }
 

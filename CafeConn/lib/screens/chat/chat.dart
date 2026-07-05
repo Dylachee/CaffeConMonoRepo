@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
@@ -18,7 +19,7 @@ class StaffChatListScreen extends StatelessWidget {
     return AppScaffold(
       bottomNav: null,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Header(title: 'Чаты', subtitle: 'Команда на связи'),
+        Header(title: L.chats, subtitle: L.teamOnline),
         Expanded(
             child: ListView.builder(
                 itemCount: groups.length,
@@ -39,7 +40,7 @@ class StaffChatListScreen extends StatelessWidget {
                       GoRouter.of(context).push('/chat');
                     },
                     child: Row(children: [
-                      Avatar(label: group.name, color: zoneColor),
+                      Avatar(label: _groupDisplayName(group), color: zoneColor),
                       const SizedBox(width: 12),
                       Expanded(
                           child: Column(
@@ -47,16 +48,19 @@ class StaffChatListScreen extends StatelessWidget {
                               children: [
                             Row(children: [
                               Expanded(
-                                  child: Text(group.name,
-                                      style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16))),
+                                  child: Text(_groupDisplayName(group),
+                                      style: T.h3.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16))),
                               if (group.pinned)
                                 const Icon(Icons.push_pin,
                                     size: 14, color: AppTheme.ink3)
                             ]),
-                            Text(last?.text ?? 'Нет сообщений',
+                            Text(last?.text ?? L.noMessages,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+                                style: T.priceSmall
+                                    .copyWith(color: AppTheme.ink2)),
                           ])),
                       const SizedBox(width: 8),
                       Column(
@@ -127,24 +131,22 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
           IconButton(
               onPressed: () => context.pop(),
               icon: const Icon(Icons.arrow_back, color: AppTheme.ink)),
-          Avatar(label: group.name, color: zoneColor),
+          Avatar(label: _groupDisplayName(group), color: zoneColor),
           const SizedBox(width: 12),
           Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(group.name,
-                    style: T.h2.copyWith(fontSize: 17)),
-                Text('${group.members.length} участников',
-                    style: T.smallSemi),
+                Text(_groupDisplayName(group), style: T.h2.copyWith(fontSize: 17)),
+                Text(L.membersCount(group.members.length), style: T.smallSemi),
               ])),
         ]),
         Expanded(
             child: messages.isEmpty
                 ? EmptyState(
                     icon: Icons.chat_bubble_outline,
-                    title: 'Чатик пуст',
-                    sub: 'Начните общение — отправьте первое сообщение')
+                    title: L.chatEmpty,
+                    sub: L.startConversation)
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -158,19 +160,17 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
                         return OrderReceiptCard(message: msg);
                       }
                       final senderName = state.staff
-                              .firstWhereOrNull(
-                                  (u) => u.id == msg.senderId)
+                              .firstWhereOrNull((u) => u.id == msg.senderId)
                               ?.name ??
                           msg.senderId;
-                      return ChatBubble(
-                          message: msg, senderName: senderName);
+                      return ChatBubble(message: msg, senderName: senderName);
                     })),
         Padding(
           padding: EdgeInsets.only(
               bottom: keyboardInset > 0 ? keyboardInset + 8 : 8, top: 8),
           child: Row(children: [
             Expanded(
-                child: AppTextField(controller: input, label: 'Сообщение...')),
+                child: AppTextField(controller: input, label: L.message)),
             const SizedBox(width: 8),
             GestureDetector(
               onTap: () {
@@ -193,8 +193,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
 }
 
 class ChatBubble extends StatelessWidget {
-  const ChatBubble(
-      {super.key, required this.message, this.senderName = ''});
+  const ChatBubble({super.key, required this.message, this.senderName = ''});
   final ChatMessage message;
   final String senderName;
   @override
@@ -209,12 +208,11 @@ class ChatBubble extends StatelessWidget {
           if (!own && senderName.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 2),
-              child: Text(senderName,
-                  style: T.label),
+              child: Text(senderName, style: T.label),
             ),
           Container(
-            constraints:
-                BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .78),
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * .78),
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -224,11 +222,13 @@ class ChatBubble extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(message.text,
-                  style: T.body.copyWith(color: own ? Colors.white : AppTheme.ink)),
+                  style: T.body
+                      .copyWith(color: own ? Colors.white : AppTheme.ink)),
               const SizedBox(height: 4),
               Text(
                   '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: T.label.copyWith(color: own ? Colors.white70 : AppTheme.ink3)),
+                  style: T.label
+                      .copyWith(color: own ? Colors.white70 : AppTheme.ink3)),
             ]),
           ),
         ],
@@ -243,14 +243,13 @@ class OrderReceiptCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.read<CafeState>();
-    final order = state.orders
-        .firstWhereOrNull((o) => o.id == message.refId);
+    final order = state.orders.firstWhereOrNull((o) => o.id == message.refId);
     final table = order != null
         ? state.tables.firstWhereOrNull((t) => t.id == order.tableId)
         : null;
     final isKitchen = order?.splitTo == FeedType.kitchen;
     final zoneColor = isKitchen ? AppTheme.warning : AppTheme.bar;
-    final zoneLabel = isKitchen ? 'Кухня' : 'Бар';
+    final zoneLabel = isKitchen ? L.kitchen : L.bar;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -266,9 +265,9 @@ class OrderReceiptCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.receipt_long_outlined, size: 14),
             const SizedBox(width: 6),
-            Text(
-                'Новый заказ · Стол ${table?.number ?? '??'}',
-                style: T.priceSmall.copyWith(color: zoneColor, fontWeight: FontWeight.w700)),
+            Text(L.newOrderTable(table?.number ?? '??'),
+                style: T.priceSmall
+                    .copyWith(color: zoneColor, fontWeight: FontWeight.w700)),
           ]),
           const Divider(height: 16),
           if (order != null)
@@ -276,10 +275,10 @@ class OrderReceiptCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(children: [
                     Text('${l.quantity}×  ',
-                        style: T.priceSmall.copyWith(fontWeight: FontWeight.w700)),
+                        style:
+                            T.priceSmall.copyWith(fontWeight: FontWeight.w700)),
                     Expanded(
-                        child: Text(l.item.name,
-                            style: T.priceSmall)),
+                        child: Text(l.item.displayName, style: T.priceSmall)),
                     if (l.modifiers.isNotEmpty)
                       Text('(${l.modifiers})',
                           style: T.label.copyWith(color: AppTheme.ink2)),
@@ -308,18 +307,18 @@ class ForwardedTableCard extends StatelessWidget {
         Row(children: [
           const Icon(Icons.forward, size: 14, color: AppTheme.tOccupied),
           const SizedBox(width: 8),
-          Text('ПЕРЕСЛАНО · Елена',
-              style: T.label.copyWith(color: AppTheme.tOccupied, fontWeight: FontWeight.w800))
+          Text(L.forwarded,
+              style: T.label.copyWith(
+                  color: AppTheme.tOccupied, fontWeight: FontWeight.w800))
         ]),
         const SizedBox(height: 8),
-        Text('Стол${table?.number ?? '??'}',
+        Text(L.tableN(table?.number ?? '??'),
             style: T.h2.copyWith(fontSize: 17)),
         const SizedBox(height: 4),
-        Text(message.text,
-            style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+        Text(message.text, style: T.priceSmall.copyWith(color: AppTheme.ink2)),
         const Divider(height: 24),
         AppButton(
-            label: 'Открыть стол',
+            label: L.openTable,
             kind: ButtonKind.ghost,
             onPressed: () {
               if (table != null) {
@@ -331,3 +330,9 @@ class ForwardedTableCard extends StatelessWidget {
     );
   }
 }
+
+String _groupDisplayName(ChatGroup group) => switch (group.type) {
+      FeedType.kitchen => L.kitchen,
+      FeedType.bar => L.bar,
+      _ => L.generalChat,
+    };

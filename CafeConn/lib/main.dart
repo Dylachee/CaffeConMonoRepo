@@ -38,9 +38,7 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
       refreshListenable: _cafeState,
       initialLocation: '/tables',
       routes: [
-        GoRoute(
-            path: '/tables',
-            builder: (_, __) => const MainShellScreen()),
+        GoRoute(path: '/tables', builder: (_, __) => const MainShellScreen()),
         GoRoute(
             path: '/table-details',
             builder: (_, __) => const TableDetailsScreen()),
@@ -48,9 +46,7 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
             path: '/waiter-menu',
             builder: (_, __) => const WaiterOrderScreen()),
         GoRoute(path: '/chat', builder: (_, __) => const StaffChatScreen()),
-        GoRoute(
-            path: '/settings',
-            builder: (_, __) => const SettingsScreen()),
+        GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
       ],
     );
   }

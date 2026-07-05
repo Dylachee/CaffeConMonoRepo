@@ -1,363 +1,877 @@
-{% comment %}
-   ==========================================================================
-   Guest menu — v3 «Меню и точка» (2026-07-02, third rewrite, owner's brief:
-   "минимальный порог входа, мизерное меню, максимум удобства").
-
-   Design contract — read before "improving":
-   • ZERO external requests. No Google Fonts, no CSS/JS files, no images.
-     Everything inline: the page renders in one round-trip over bar Wi-Fi
-     on a 5-year-old phone. This is the entire point of v3 — do not add
-     a <link> or <script src> here, ever.
-   • Zero UI to learn. No tabs, no moods, no overlays, no theme toggles.
-     Scan → menu. Light/dark follows the phone (prefers-color-scheme).
-   • Works without JavaScript: category chips are plain anchors, the two
-     buttons are plain <form method="post"> (the backend answers a redirect
-     for non-fetch posts and the waiting state is server-rendered).
-     JS only makes the same actions smoother.
-   • Endpoints and semantics are owned by apps/core/services.py and
-     apps/guest_web/views.py — this file may not invent states.
-   ==========================================================================
-{% endcomment %}<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16110b">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f2e9">
-<title>{% if table %}Стол {{ table.number }} · {% endif %}{{ venue.name }}</title>
+<meta name="theme-color" content="#f2efe8">
+<title>{% if table %}Table {{ table.number }} · {% endif %}{{ venue.name }}</title>
 <style>
-  /* ---- Palette: warm paper by day, warm espresso by night ---- */
   :root{
-    --bg:#f7f2e9; --card:#fffdf9; --ink:#2e241a; --mut:#82735f; --faint:#a99a84;
-    --acc:#a96f24; --ok:#4c7c3f; --okbg:#eaf0e2;
-    --line:rgba(46,36,26,.12); --dots:rgba(46,36,26,.3);
-    --btn1:#e9b269; --btn2:#d8963e; --btntx:#241a0e;
-    --navbg:rgba(247,242,233,.88); --barbg:rgba(252,249,243,.92);
+    --bg:#f2efe8; --card:#fff; --ink:#1e1b16; --mut:#8b8377; --line:#e7e2d8;
+    --accent:#c8821e; --accent-deep:#9a6310; --accent-soft:#f1e2c8;
+    --green:#3e9c63; --danger:#d9564a; --purple:#8a6fc0; --dark:#221f1a;
+    --shadow:0 1px 2px rgba(43,36,24,.05),0 12px 24px -18px rgba(43,36,24,.38);
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#16110b; --card:#211a11; --ink:#f4ecdd; --mut:#a2937d; --faint:#7c6e5b;
-      --acc:#e0a35c; --ok:#a3c48f; --okbg:#25301e;
-      --line:rgba(244,236,221,.1); --dots:rgba(244,236,221,.28);
-      --btn1:#e8b06a; --btn2:#d3913c; --btntx:#241a0e;
-      --navbg:rgba(22,17,11,.86); --barbg:rgba(28,22,14,.92);
-    }
-  }
-
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   [hidden]{display:none!important}
-  html{scroll-behavior:smooth}
-  @media (prefers-reduced-motion: reduce){
-    html{scroll-behavior:auto}
-    *,*::before,*::after{animation:none!important;transition:none!important}
-  }
+  html,body{min-height:100%}
   body{
     background:var(--bg); color:var(--ink);
-    font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-    padding-bottom:calc(96px + env(safe-area-inset-bottom));
+    font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-bottom:calc(88px + env(safe-area-inset-bottom));
   }
-  .wrap{max-width:640px;margin:0 auto;padding:0 16px}
-  .serif{font-family:Georgia,"Times New Roman",serif}
+  button,input,textarea{font:inherit}
+  button{cursor:pointer;border:0}
+  button:focus{outline:0}
+  button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid rgba(154,99,16,.35);outline-offset:2px}
+  .app{max-width:760px;margin:0 auto;min-height:100vh;position:relative}
+  .screen{display:none;padding:54px 18px 112px;animation:rise .18s ease-out}
+  .screen.active{display:block}
+  @keyframes rise{from{opacity:.6;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  /* ---- Header: who we are + where you sit. One line, no hero. ---- */
-  .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;
-      padding:18px 0 14px}
-  .hd-name{font-family:Georgia,serif;font-size:19px;font-weight:700;letter-spacing:.2px}
-  .hd-tag{display:block;font-size:11.5px;color:var(--mut);margin-top:2px;
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}
-  .hd-table{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;
-            padding:7px 14px;font-size:12.5px;color:var(--mut);background:var(--card)}
-  .hd-table b{font-family:Georgia,serif;font-size:16px;color:var(--ink);margin-left:4px}
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:25;background:rgba(242,239,232,.9);backdrop-filter:blur(18px)}
+  .topbar-in{max-width:760px;margin:0 auto;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:17px;letter-spacing:-.3px}
+  .brand-icon{width:30px;height:30px;border-radius:9px;background:var(--dark);display:grid;place-items:center;color:#fff}
+  .table-pill{height:32px;padding:0 11px;border-radius:11px;background:rgba(34,31,26,.09);display:flex;align-items:center;gap:7px;font-weight:800;font-size:13px}
+  .lang-toggle{height:32px;border-radius:11px;background:rgba(34,31,26,.08);display:flex;align-items:center;padding:3px;gap:2px}
+  .lang-toggle button{height:26px;border-radius:8px;padding:0 8px;background:transparent;color:rgba(30,27,22,.55);font-size:12px;font-weight:900}
+  .lang-toggle button.active{background:#fff;color:var(--accent-deep);box-shadow:0 1px 2px rgba(43,36,24,.08)}
+  .muted{color:var(--mut)}
 
-  /* ---- Category chips: sticky, horizontal, plain anchors ---- */
-  .cats{position:sticky;top:0;z-index:10;display:flex;gap:7px;overflow-x:auto;
-        padding:10px 16px;margin:0 -16px;scrollbar-width:none;
-        background:var(--navbg);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
-        border-bottom:1px solid var(--line)}
-  .cats::-webkit-scrollbar{display:none}
-  .cat{flex:0 0 auto;text-decoration:none;color:var(--mut);font-size:13px;
-       border:1px solid var(--line);border-radius:999px;padding:7px 13px;
-       background:transparent;transition:color .15s,border-color .15s;touch-action:manipulation}
-  .cat.on{color:var(--ink);border-color:var(--acc);
-          background:color-mix(in srgb, var(--acc) 14%, transparent)}
+  .cover{height:196px;margin:-54px -18px 0;background:linear-gradient(135deg,#e8a04d 0%,#c2613b 55%,#8e3253 100%);position:relative}
+  .cover:after{content:"";position:absolute;inset:0 0 auto;height:88px;background:linear-gradient(rgba(13,11,8,.34),transparent)}
+  .profile-head{position:relative;margin-top:-42px}
+  .logo{width:84px;height:84px;border-radius:24px;background:var(--accent);border:4px solid var(--bg);box-shadow:0 10px 24px -12px rgba(40,32,20,.5);display:grid;place-items:center;color:#fff}
+  .title-row{margin-top:12px;display:flex;align-items:center;gap:7px}
+  h1{font-size:32px;line-height:1.05;font-weight:900;letter-spacing:-1px}
+  .check{width:20px;height:20px;border-radius:50%;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:900;flex:0 0 auto}
+  .tagline{margin-top:6px;color:var(--mut);font-size:15px}
+  .rating{margin-top:14px;display:flex;align-items:center;gap:13px;color:var(--mut);font-size:13px;flex-wrap:wrap}
+  .rating b{color:var(--ink);font-size:15px}
+  .star{color:var(--accent);font-size:18px}
+  .divider{width:1px;height:16px;background:var(--line)}
+  .badges{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  .badge{height:31px;padding:0 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent-deep);display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .hero-actions{margin-top:17px;display:flex;gap:10px}
+  .primary{height:54px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;box-shadow:0 10px 22px -10px rgba(200,130,30,.45);display:flex;align-items:center;justify-content:center;gap:9px}
+  .primary.flex{flex:1}
+  .icon-btn{width:54px;height:54px;border-radius:16px;background:#fff;border:1.5px solid var(--line);display:grid;place-items:center;color:var(--ink)}
 
-  /* ---- Sections & cards ---- */
-  .sec{margin-top:24px;scroll-margin-top:74px}
-  .sec-h{font-family:Georgia,serif;font-size:21px;font-weight:700;margin-bottom:12px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
-        padding:13px 15px;margin-bottom:10px}
-  .card.off{opacity:.5}
-  .star{display:block;font-size:10.5px;font-weight:700;letter-spacing:.12em;
-        text-transform:uppercase;color:var(--acc);margin-bottom:4px}
-  .row{display:flex;align-items:baseline}
-  .nm{font-family:Georgia,serif;font-size:16.5px;font-weight:600;line-height:1.3}
-  .dots{flex:1 1 14px;min-width:14px;margin:0 7px;position:relative;top:-3px;
-        border-bottom:1px dotted var(--dots)}
-  .pr{font-size:15.5px;font-weight:600;color:var(--acc);white-space:nowrap;
-      font-variant-numeric:tabular-nums}
-  .card.off .pr{color:var(--faint);font-weight:500;font-size:12.5px}
-  .ds{font-size:13.5px;color:var(--mut);margin-top:5px}
-  .cp{font-size:12.5px;color:var(--faint);font-style:italic;margin-top:4px}
-  .al{font-size:11.5px;color:var(--faint);margin-top:5px}
+  .section-title{margin-top:26px;display:flex;align-items:baseline;gap:9px}
+  .section-title h2{font-size:21px;font-weight:900;letter-spacing:-.4px}
+  .rail{margin:13px -18px 0;display:flex;gap:12px;overflow-x:auto;padding:2px 18px 5px;scrollbar-width:none}
+  .rail::-webkit-scrollbar,.chips::-webkit-scrollbar{display:none}
+  .feature{flex:0 0 168px;background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left}
+  .photo{width:100%;height:120px;border-radius:13px;background:linear-gradient(135deg,#ead7bd,#c88b3b);position:relative;overflow:hidden;background-size:cover;background-position:center}
+  .photo.empty{display:grid;place-items:center;color:#fff}
+  .photo.empty:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.62),transparent 22%),radial-gradient(circle at 78% 78%,rgba(255,255,255,.18),transparent 24%),linear-gradient(135deg,#e7c17d,#bd7a2a)}
+  .photo.empty:after{content:attr(data-icon);position:relative;z-index:1;width:54px;height:54px;border-radius:18px;background:rgba(255,255,255,.2);backdrop-filter:blur(10px);display:grid;place-items:center;font-size:29px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.24)}
+  .photo.coffee:before{background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.55),transparent 22%),linear-gradient(135deg,#c79b68,#5b4534)}
+  .photo.drink:before{background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.58),transparent 22%),linear-gradient(135deg,#efb35a,#b5476b)}
+  .photo.breakfast:before{background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#f0c777,#c8821e)}
+  .photo.hot:before{background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.56),transparent 22%),linear-gradient(135deg,#d98c48,#8f4a2c)}
+  .photo.dessert:before{background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#e7b5b8,#8a6fc0)}
+  .hit{position:absolute;top:8px;left:8px;height:23px;padding:0 9px;border-radius:8px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;gap:4px}
+  .feature-name{margin-top:9px;font-size:15px;line-height:1.16;font-weight:800;text-align:left}
+  .price{margin-top:4px;color:var(--accent-deep);font-weight:900}
+  .about{margin-top:23px;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+  .about h2{font-size:16px;margin-bottom:8px}
+  .about p{color:var(--mut);font-size:14px}
 
-  .empty{color:var(--mut);text-align:center;padding:48px 0}
+  .page-title{font-size:34px;font-weight:900;letter-spacing:-1px}
+  .sub{margin-top:3px;color:var(--mut);font-size:15px}
+  .search{margin-top:16px;height:48px;border-radius:15px;background:#fff;box-shadow:var(--shadow);display:flex;align-items:center;gap:10px;padding:0 14px}
+  .search input{border:0;outline:0;background:transparent;flex:1;font-size:16px;color:var(--ink);min-width:0}
+  .chips{display:flex;gap:8px;overflow-x:auto;margin:15px -18px 0;padding:2px 18px;scrollbar-width:none}
+  .chip{height:34px;padding:0 14px;border-radius:11px;background:#fff;border:1.5px solid var(--line);color:rgba(30,27,22,.72);font-size:14px;font-weight:800;white-space:nowrap}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:16px}
+  .dish{background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
+  .dish.off{opacity:.62}
+  .dish-hit{display:block!important;width:100%!important}
+  .dish .photo{aspect-ratio:1;height:auto}
+  .meta{position:absolute;top:8px;left:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(13,11,8,.65);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;gap:4px}
+  .alg{position:absolute;top:8px;right:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(252,250,245,.92);color:var(--accent-deep);font-size:11px;font-weight:800}
+  .stop{position:absolute;inset:0;background:rgba(13,11,8,.42);display:grid;place-items:center;color:#fff;font-weight:900}
+  .dish-name{margin-top:9px;font-size:16px;font-weight:900;line-height:1.16;letter-spacing:-.2px}
+  .dish-bottom{margin-top:7px;display:flex;align-items:center;gap:6px}
+  .avail{width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:auto}
+  .small{font-size:12px;color:var(--mut)}
+  .add{width:32px;height:32px;border-radius:11px;background:var(--accent);color:#fff;font-weight:900;font-size:20px;margin-left:5px}
+  .empty{padding:50px 12px;text-align:center;color:var(--mut);grid-column:1/-1}
 
-  /* ---- Footer ---- */
-  .ft{margin-top:34px;text-align:center;font-size:12px;color:var(--faint)}
-  .ft span{display:block;margin-top:3px}
+  .service-card{border-radius:20px;padding:20px;background:#fff;border:1.5px solid var(--line);box-shadow:var(--shadow);display:flex;align-items:center;gap:15px;width:100%;text-align:left}
+  .service-card.dark{background:var(--dark);border-color:var(--dark);color:#fff;box-shadow:0 14px 30px -14px rgba(34,31,26,.55)}
+  .service-icon{width:52px;height:52px;border-radius:16px;background:var(--accent);display:grid;place-items:center;color:#fff;flex:0 0 auto}
+  .service-card.bill .service-icon{background:rgba(138,111,192,.16);color:var(--purple)}
+  .service-title{display:block;font-size:19px;font-weight:900}
+  .service-sub{display:block;margin-top:6px;color:rgba(30,27,22,.55);font-size:14px}
+  .dark .service-sub{color:rgba(255,255,255,.62)}
+  .service-list{display:flex;flex-direction:column;gap:12px;margin-top:19px}
+  .pending{margin-top:17px;border-radius:20px;padding:18px;background:rgba(200,130,30,.1);border:1.5px solid rgba(200,130,30,.38)}
+  .pending-title{font-size:17px;font-weight:900;color:var(--accent-deep)}
+  .pending-sub{margin-top:4px;color:var(--mut);font-size:14px}
+  .secondary{height:44px;border-radius:13px;background:#fff;border:1.5px solid var(--line);font-weight:800;color:var(--ink)}
+  .how{margin-top:20px;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+  .how h2{font-size:15px;margin-bottom:8px}
+  .how p{color:var(--mut);font-size:14px;line-height:1.55}
 
-  /* ---- Bottom action bar ---- */
-  .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;
-       padding:10px 14px calc(10px + env(safe-area-inset-bottom));
-       background:var(--barbg);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
-       border-top:1px solid var(--line)}
-  .bar-in{max-width:640px;margin:0 auto}
-  .bar-idle{display:flex;gap:10px}
-  .f-call{flex:1 1 auto}
-  .f-bill{flex:0 0 auto}
-  .b-call,.b-bill{height:52px;border-radius:15px;font-size:15.5px;font-weight:700;
-       border:0;cursor:pointer;touch-action:manipulation;
-       font-family:inherit;transition:transform .1s}
-  .b-call{width:100%;color:var(--btntx);
-       background:linear-gradient(180deg,var(--btn1),var(--btn2))}
-  .b-bill{padding:0 20px;background:transparent;color:var(--ink);
-       border:1px solid var(--line)}
-  .b-call:active,.b-bill:active{transform:scale(.97)}
-  .b-call[disabled],.b-bill[disabled]{opacity:.6}
+  .order-card{margin-top:18px;background:#fff;border-radius:18px;padding:15px;box-shadow:var(--shadow)}
+  .status-line{display:flex;align-items:center;gap:9px;font-weight:900}
+  .status-dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .order-list{margin-top:12px;display:flex;flex-direction:column;gap:11px}
+  .order-mini{border-top:1px solid var(--line);padding-top:11px}
+  .order-mini:first-child{border-top:0;padding-top:0}
+  .order-mini-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:900}
+  .order-mini-status{color:var(--accent-deep)}
+  .order-mini-line{margin-top:7px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;color:rgba(30,27,22,.72);font-size:13px}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:13px}
+  .step{height:5px;border-radius:4px;background:#ece6db}
+  .step.on{background:var(--accent)}
+  .order-total{margin-top:11px;color:var(--accent-deep);font-weight:900}
 
-  .bar-done{display:flex;align-items:center;justify-content:space-between;gap:12px;
-       min-height:52px;border-radius:15px;padding:8px 16px;
-       background:var(--okbg);border:1px solid color-mix(in srgb, var(--ok) 36%, transparent)}
-  .done-txt{color:var(--ok);font-weight:700;font-size:15px}
-  @keyframes pop{0%{transform:scale(.92);opacity:0}100%{transform:scale(1);opacity:1}}
-  .bar-done{animation:pop .22s ease-out}
-  .b-cancel{background:none;border:0;color:var(--mut);font-size:13px;font-family:inherit;
-       text-decoration:underline;cursor:pointer;padding:8px 0 8px 8px;touch-action:manipulation}
+  .bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(252,250,245,.94);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:8px 14px calc(12px + env(safe-area-inset-bottom))}
+  .nav-in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:8px}
+  .tab{flex:1 1 0;min-width:0;height:52px;border-radius:14px;background:transparent;color:rgba(30,27,22,.46);font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .tab.active{color:var(--accent-deep);background:rgba(200,130,30,.1)}
+  .checkout{height:52px;border-radius:15px;background:var(--accent);color:#fff;font-weight:900;padding:0 15px;display:none;align-items:center;gap:9px;box-shadow:0 10px 22px -10px rgba(200,130,30,.45);white-space:nowrap}
+  .checkout.show{display:flex}
+  .cart-count{min-width:24px;height:24px;border-radius:12px;background:#fff;color:var(--accent-deep);display:grid;place-items:center;font-size:13px}
 
-  .hint{max-width:640px;margin:0 auto;font-size:12.5px;color:var(--mut);text-align:center}
+  .sheet{position:fixed;inset:0;z-index:60;display:none}
+  .sheet.open{display:block}
+  .shade{position:absolute;inset:0;background:rgba(13,11,8,.42)}
+  .panel{position:absolute;left:0;right:0;bottom:0;max-width:760px;margin:0 auto;background:#fff;border-radius:24px 24px 0 0;padding:18px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px -24px rgba(13,11,8,.45);max-height:82vh;overflow:auto}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .panel h2{font-size:23px;letter-spacing:-.4px}
+  .x{width:38px;height:38px;border-radius:13px;background:#f4f0e8;color:var(--ink)}
+  .cart-lines{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .cart-line{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border-radius:15px;background:#f8f4ed}
+  .qty{display:flex;align-items:center;gap:8px}
+  .qty button{width:30px;height:30px;border-radius:10px;background:#fff;border:1px solid var(--line);font-weight:900}
+  .field{margin-top:12px}
+  .field label{display:block;font-size:12px;color:var(--mut);font-weight:800;margin:0 0 6px 2px}
+  .field input,.field textarea{width:100%;border:1.5px solid var(--line);border-radius:14px;background:#fff;padding:12px 13px;outline:0;color:var(--ink)}
+  .field textarea{min-height:74px;resize:vertical}
+  .total-row{margin-top:14px;display:flex;align-items:center;justify-content:space-between;font-size:18px;font-weight:900}
+  .submit-order{margin-top:14px;width:100%}
 
-  /* ---- Error toast ---- */
-  .toast{position:fixed;left:50%;transform:translateX(-50%);
-       bottom:calc(96px + env(safe-area-inset-bottom));z-index:30;
-       background:var(--ink);color:var(--bg);font-size:13px;padding:9px 16px;
-       border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
-  .toast.show{opacity:.94}
+  .detail{position:fixed;inset:0;z-index:55;background:var(--bg);display:none;overflow:auto}
+  .detail.open{display:block}
+  .detail-photo{height:310px;background:linear-gradient(135deg,#ead7bd,#bd7a2a);background-size:cover;background-position:center;position:relative;overflow:hidden}
+  .detail-photo.empty{display:grid;place-items:center;color:#fff}
+  .detail-photo.empty:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.6),transparent 22%),radial-gradient(circle at 78% 76%,rgba(255,255,255,.18),transparent 25%),linear-gradient(135deg,#e7c17d,#bd7a2a)}
+  .detail-photo.empty:after{content:attr(data-icon);position:relative;z-index:1;width:86px;height:86px;border-radius:26px;background:rgba(255,255,255,.2);backdrop-filter:blur(10px);display:grid;place-items:center;font-size:46px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.24)}
+  .detail-photo.coffee:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.55),transparent 22%),linear-gradient(135deg,#c79b68,#5b4534)}
+  .detail-photo.drink:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.58),transparent 22%),linear-gradient(135deg,#efb35a,#b5476b)}
+  .detail-photo.breakfast:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#f0c777,#c8821e)}
+  .detail-photo.hot:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.56),transparent 22%),linear-gradient(135deg,#d98c48,#8f4a2c)}
+  .detail-photo.dessert:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#e7b5b8,#8a6fc0)}
+  .back{position:absolute;top:52px;left:14px;width:40px;height:40px;border-radius:14px;background:rgba(252,250,245,.92);display:grid;place-items:center;color:var(--ink)}
+  .detail-body{padding:18px 18px 118px;max-width:760px;margin:0 auto}
+  .detail-title{display:flex;align-items:flex-start;gap:12px}
+  .detail-title h2{flex:1;font-size:27px;line-height:1.12;letter-spacing:-.6px}
+  .detail-price{font-size:24px;font-weight:900;color:var(--accent-deep);white-space:nowrap}
+  .detail-section{margin-top:18px}
+  .detail-section h3{font-size:15px;margin-bottom:7px}
+  .detail-section p{font-size:15px;color:rgba(30,27,22,.68);line-height:1.6}
+  .allergens{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .allergen{height:32px;padding:0 12px;border-radius:11px;background:rgba(217,86,74,.1);color:#c0463b;font-size:13px;font-weight:800;display:flex;align-items:center}
+  .facts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}
+  .fact{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px}
+  .fact span{font-size:12px;color:var(--mut)}
+  .fact b{display:block;margin-top:3px}
+  .detail-bar{position:fixed;left:0;right:0;bottom:0;z-index:56;background:rgba(252,250,245,.96);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:14px 18px calc(18px + env(safe-area-inset-bottom))}
+  .detail-bar-in{max-width:760px;margin:0 auto;display:flex;gap:10px}
+
+  .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));z-index:80;transform:translateX(-50%);background:var(--dark);color:#fff;border-radius:12px;padding:10px 15px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:.96}
+  .server-messages{display:none}
+
+  @media (max-width:360px){
+    .grid{gap:10px}
+    .dish-name{font-size:15px}
+    .page-title{font-size:31px}
+  }
 </style>
 </head>
-<body{% if table %} data-table="{{ table.pk }}" data-status="{{ table.status }}" data-attention="{{ table.attention }}" data-cancel-url="{% url 'guest_web:cancel-attention' %}"{% endif %}>
-
-<div class="wrap">
-  <header class="hd">
-    <div>
-      <span class="hd-name">{{ venue.name }}</span>
-      <span class="hd-tag">{{ venue.tagline }}</span>
-    </div>
-    {% if table %}<span class="hd-table">стол<b>{{ table.number }}</b></span>{% endif %}
-  </header>
-
-  {% if menu_sections %}
-  <nav class="cats" id="cats" aria-label="Разделы меню">
-    {% for section in menu_sections %}
-    <a class="cat{% if forloop.first %} on{% endif %}" href="#s{{ forloop.counter }}">{{ section.name }}</a>
-    {% endfor %}
-  </nav>
+<body
+  {% if table %}
+  data-table="{{ table.pk }}"
+  data-table-number="{{ table.number }}"
+  data-attention="{{ table.attention }}"
+  data-create-order-url="{% url 'guest_web:create-order' %}"
+  data-create-attention-url="{% url 'guest_web:create-attention' %}"
+  data-cancel-url="{% url 'guest_web:cancel-attention' %}"
+  data-order-status-base="{% url 'guest_web:menu' %}order/"
   {% endif %}
+>
+{% csrf_token %}
+{{ menu_payload|json_script:"menu-data" }}
 
-  <main>
-    {% for section in menu_sections %}
-    <section class="sec" id="s{{ forloop.counter }}">
-      <h2 class="sec-h">{{ section.name }}</h2>
-      {% for item in section.items %}
-      <article class="card{% if not item.is_available %} off{% endif %}">
-        {% if item.is_promoted and item.is_available %}<span class="star">★ шеф советует</span>{% endif %}
-        <div class="row">
-          <h3 class="nm">{{ item.name }}</h3>
-          <span class="dots" aria-hidden="true"></span>
-          <span class="pr">{% if item.is_available %}{{ item.price_str }}{% else %}закончилось{% endif %}</span>
-        </div>
-        {% if item.description %}<p class="ds">{{ item.description }}</p>{% endif %}
-        {% if item.composition %}<p class="cp">{{ item.composition }}</p>{% endif %}
-        {% if item.allergens %}<p class="al">аллергены: {{ item.allergens|join:" · " }}</p>{% endif %}
-      </article>
-      {% endfor %}
-    </section>
-    {% empty %}
-    <p class="empty">Меню наполняется — попросите бумажное у официанта.</p>
-    {% endfor %}
-  </main>
-
-  <footer class="ft">
-    <span>{{ venue.hours }}</span>
-    <span>{{ venue.address }}</span>
-  </footer>
-</div>
-
-{% if table %}
-<div class="bar">
-  <div class="bar-in">
-    <div class="bar-idle" id="bar-idle" {% if table.status == 'waiting' %}hidden{% endif %}>
-      <form class="f-call" method="post" action="{% url 'guest_web:create-attention' %}">
-        {% csrf_token %}
-        <input type="hidden" name="table" value="{{ table.pk }}">
-        <input type="hidden" name="signal_type" value="call_waiter">
-        <button class="b-call" type="submit">Позвать официанта</button>
-      </form>
-      <form class="f-bill" method="post" action="{% url 'guest_web:create-attention' %}">
-        {% csrf_token %}
-        <input type="hidden" name="table" value="{{ table.pk }}">
-        <input type="hidden" name="signal_type" value="bill_request">
-        <button class="b-bill" type="submit">Счёт</button>
-      </form>
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">☕</div>
+      <span>CafeConnect</span>
     </div>
-    <div class="bar-done" id="bar-done" {% if table.status != 'waiting' %}hidden{% endif %} aria-live="polite">
-      <span class="done-txt" id="done-txt">{% if table.attention == 'bill' %}✓ Сейчас принесут счёт{% else %}✓ Официант уже идёт{% endif %}</span>
-      <button class="b-cancel" id="b-cancel" type="button" hidden>Отменить</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="lang-toggle" aria-label="Language">
+        <button class="active" type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="it">IT</button>
+      </div>
+      {% if table %}
+        <div class="table-pill" aria-label="Table {{ table.number }}">▦ <span data-i18n="table_short">Table</span> {{ table.number }}</div>
+      {% endif %}
     </div>
   </div>
 </div>
-{% else %}
-<div class="bar"><p class="hint">Отсканируйте QR-код на вашем столе, чтобы позвать официанта отсюда.</p></div>
+
+<main class="app">
+  <section class="screen active" id="profile-screen" data-screen="profile">
+    <div class="cover"></div>
+    <div class="profile-head">
+      <div class="logo" aria-hidden="true">☕</div>
+      <div class="title-row">
+        <h1>{{ venue.name }}</h1>
+        <span class="check">✓</span>
+      </div>
+      <p class="tagline" data-i18n-text data-en="{{ venue.tagline }}" data-it="{{ venue.tagline_it }}">{{ venue.tagline }}</p>
+      <div class="rating">
+        <span><span class="star">★</span> <b>{{ venue.rating }}</b> · <span data-i18n-text data-en="{{ venue.reviews }}" data-it="{{ venue.reviews_it }}">{{ venue.reviews }}</span></span>
+        <span class="divider"></span>
+        <span data-i18n="open_until">Open until 23:00</span>
+      </div>
+      <div class="badges">
+        {% for badge in venue.badges %}
+          <span class="badge"><span class="dot"></span><span data-i18n-text data-en="{{ badge.en }}" data-it="{{ badge.it }}">{{ badge.en }}</span></span>
+        {% endfor %}
+      </div>
+      <div class="hero-actions">
+        <button class="primary flex" type="button" data-go="menu">▤ <span data-i18n="view_menu">View menu</span></button>
+        <button class="icon-btn" type="button" data-go="service" aria-label="Service">🔔</button>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2 data-i18n="daily_special">Daily special</h2>
+      <span class="muted" data-i18n="chef_pick">chef's pick</span>
+    </div>
+    <div class="rail">
+      {% for section in menu_sections %}
+        {% for item in section.items %}
+          {% if item.is_promoted and item.is_available %}
+          <button class="feature" type="button" data-detail="{{ item.pk }}">
+            <div class="photo {{ item.visual_key }}{% if not item.image_url %} empty{% endif %}" {% if item.image_url %}style="background-image:url('{{ item.image_url }}')"{% else %}data-icon="{{ item.visual_icon }}"{% endif %}>
+              <span class="hit">★ <span data-i18n="hit">Hit</span></span>
+            </div>
+            <div class="feature-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</div>
+            <div class="price">{{ item.price_str }} €</div>
+          </button>
+          {% endif %}
+        {% endfor %}
+      {% empty %}
+        <p class="muted" data-i18n="daily_empty">Daily specials will appear after the menu is filled.</p>
+      {% endfor %}
+    </div>
+
+    <section class="about">
+      <h2 data-i18n="about">About us</h2>
+      <p data-i18n-text data-en="{{ venue.about }}" data-it="{{ venue.about_it }}">{{ venue.about }}</p>
+      <p style="margin-top:12px"><span data-i18n-text data-en="{{ venue.address }}" data-it="{{ venue.address_it }}">{{ venue.address }}</span> · <span data-i18n-text data-en="{{ venue.hours }}" data-it="{{ venue.hours_it }}">{{ venue.hours }}</span></p>
+    </section>
+  </section>
+
+  <section class="screen" id="menu-screen" data-screen="menu">
+    <h1 class="page-title" data-i18n="menu">Menu</h1>
+    <p class="sub">{{ venue.name }} · <span data-i18n="tap_details">tap an item for details</span></p>
+    <div class="search">
+      <span aria-hidden="true">⌕</span>
+      <input id="menu-search" type="search" placeholder="Search menu" data-placeholder-en="Search menu" data-placeholder-it="Cerca nel menu" autocomplete="off">
+    </div>
+    {% if menu_sections %}
+    <div class="chips" id="category-chips">
+      <button class="chip active" type="button" data-category="all" data-i18n="all">All</button>
+      {% for section in menu_sections %}
+        <button class="chip" type="button" data-category="{{ section.name }}" data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="grid" id="menu-grid">
+      {% for section in menu_sections %}
+        {% for item in section.items %}
+        <article class="dish{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
+          <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}" style="all:unset;display:block;cursor:pointer">
+            <div class="photo {{ item.visual_key }}{% if not item.image_url %} empty{% endif %}" {% if item.image_url %}style="background-image:url('{{ item.image_url }}')"{% else %}data-icon="{{ item.visual_icon }}"{% endif %}>
+              <span class="meta">◷ {{ item.preparation_minutes }} <span data-i18n="min">min</span></span>
+              {% if item.allergens %}<span class="alg">⚠ {{ item.allergens|length }}</span>{% endif %}
+              {% if not item.is_available %}<span class="stop" data-i18n="sold_out">Sold out</span>{% endif %}
+            </div>
+            <h2 class="dish-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</h2>
+          </button>
+          <div class="dish-bottom">
+            <span class="price">{{ item.price_str }} €</span>
+            <span class="avail" style="background:{% if item.is_available %}var(--green){% else %}var(--danger){% endif %}"></span>
+            <span class="small">{% if item.is_available %}<span data-i18n="available">available</span>{% else %}<span data-i18n="unavailable">unavailable</span>{% endif %}</span>
+            {% if item.is_available %}
+              <button class="add" type="button" data-add="{{ item.pk }}" aria-label="Add {{ item.name_en }}">+</button>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      {% empty %}
+        <p class="empty" data-i18n="menu_empty">The menu is being filled. Ask your waiter for a paper menu.</p>
+      {% endfor %}
+      <p class="empty" id="no-results" hidden data-i18n="no_results">No results found.</p>
+    </div>
+  </section>
+
+  <section class="screen" id="service-screen" data-screen="service">
+    <h1 class="page-title" data-i18n="service">Service</h1>
+    <p class="sub">{% if table %}<span data-i18n="table_short">Table</span> {{ table.number }} · <span data-i18n="seated">you are seated</span>{% else %}<span data-i18n="scan_qr">Scan the QR code on your table</span>{% endif %}</p>
+
+    <div id="order-status" class="order-card" hidden>
+      <div class="status-line"><span class="status-dot"></span><span id="order-status-title" data-i18n="active_orders">Active orders</span></div>
+      <div class="order-list" id="order-list"></div>
+      <div class="order-total" id="order-status-total"></div>
+    </div>
+
+    <div id="signal-pending" class="pending" {% if table.status != 'waiting' %}hidden{% endif %}>
+      <div class="pending-title" id="signal-title">{% if table.attention == 'bill' %}Preparing your bill{% else %}A waiter is on the way{% endif %}</div>
+      <p class="pending-sub" data-i18n="signal_sent">The signal has been sent to staff. Your table is highlighted in the app.</p>
+      <button class="secondary" id="cancel-signal" type="button" style="width:100%;margin-top:14px" hidden data-i18n="cancel_call">Cancel call</button>
+    </div>
+
+    <div class="service-list" id="signal-idle" {% if table.status == 'waiting' %}hidden{% endif %}>
+      <button class="service-card dark" type="button" data-signal="call_waiter">
+        <span class="service-icon">🔔</span>
+        <span style="flex:1"><span class="service-title" data-i18n="call_waiter">Call waiter</span><span class="service-sub" data-i18n="come_table">They will come to your table</span></span>
+        <span aria-hidden="true">›</span>
+      </button>
+      <button class="service-card bill" type="button" data-signal="bill_request">
+        <span class="service-icon">▤</span>
+        <span style="flex:1"><span class="service-title" data-i18n="ask_bill">Ask for bill</span><span class="service-sub" data-i18n="bring_bill">A waiter will bring the bill</span></span>
+        <span aria-hidden="true">›</span>
+      </button>
+    </div>
+
+    <section class="how">
+      <h2 data-i18n="how_title">ⓘ How it works</h2>
+      <p data-i18n="how_body">The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.</p>
+    </section>
+  </section>
+</main>
+
+<nav class="bottom-nav" aria-label="Navigation">
+  <div class="nav-in">
+    <button class="tab active" type="button" data-go="profile"><span>⌂</span><span data-i18n="profile">Profile</span></button>
+    <button class="tab" type="button" data-go="menu"><span>▤</span><span data-i18n="menu">Menu</span></button>
+    <button class="tab" type="button" data-go="service"><span>🔔</span><span data-i18n="service">Service</span></button>
+    {% if table %}
+      <button class="checkout" id="checkout" type="button"><span class="cart-count" id="cart-count">0</span><span id="cart-total">0 €</span></button>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="detail" id="detail" aria-modal="true" role="dialog">
+  <div class="detail-photo" id="detail-photo">
+    <button class="back" id="detail-close" type="button" aria-label="Back">‹</button>
+    <span class="meta" id="detail-prep">◷</span>
+  </div>
+  <div class="detail-body">
+    <div class="detail-title">
+      <div>
+        <h2 id="detail-name"></h2>
+        <p class="sub" id="detail-cat"></p>
+      </div>
+      <div class="detail-price" id="detail-price"></div>
+    </div>
+    <section class="detail-section">
+      <h3 data-i18n="composition">Composition</h3>
+      <p id="detail-comp"></p>
+    </section>
+    <section class="detail-section" id="detail-allergens-wrap">
+      <h3 data-i18n="allergens">Allergens</h3>
+      <div class="allergens" id="detail-allergens"></div>
+    </section>
+    <div class="facts">
+      <div class="fact"><span data-i18n="portion">Portion size</span><b id="detail-weight">—</b></div>
+      <div class="fact"><span data-i18n="calories">Calories</span><b id="detail-kcal">—</b></div>
+    </div>
+  </div>
+  <div class="detail-bar">
+    <div class="detail-bar-in">
+      <button class="primary flex" id="detail-add" type="button" data-i18n="add_order">Add to order</button>
+      <button class="icon-btn" type="button" data-go="service">🔔</button>
+    </div>
+  </div>
+</div>
+
+{% if table %}
+<div class="sheet" id="cart-sheet" aria-modal="true" role="dialog">
+  <div class="shade" data-close-cart></div>
+  <div class="panel">
+    <div class="panel-head">
+      <h2 data-i18n="your_order">Your order</h2>
+      <button class="x" type="button" data-close-cart aria-label="Close">×</button>
+    </div>
+    <div class="cart-lines" id="cart-lines"></div>
+    <div class="field">
+      <label for="guest-name" data-i18n="name_waiter">Name for the waiter</label>
+      <input id="guest-name" maxlength="120" placeholder="For example, Ayaz" data-placeholder-en="For example, Ayaz" data-placeholder-it="Per esempio, Ayaz">
+    </div>
+    <div class="field">
+      <label for="order-notes" data-i18n="comment">Comment</label>
+      <textarea id="order-notes" maxlength="2000" placeholder="Allergies, serving requests" data-placeholder-en="Allergies, serving requests" data-placeholder-it="Allergie, richieste di servizio"></textarea>
+    </div>
+    <div class="total-row"><span data-i18n="total">Total</span><span id="sheet-total">0 €</span></div>
+    <button class="primary submit-order" id="submit-order" type="button" data-i18n="start_order">Start order</button>
+  </div>
+</div>
 {% endif %}
 
+{% if messages %}
+<div class="server-messages" id="server-messages">
+  {% for message in messages %}<span>{{ message }}</span>{% endfor %}
+</div>
+{% endif %}
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-(function () {
+(function(){
   "use strict";
 
-  /* ---------- Category chips follow the scroll ---------- */
-  var cats = document.getElementById("cats");
-  if (cats) {
-    var chips = [].slice.call(cats.querySelectorAll(".cat"));
-    var secs = chips.map(function (c) {
-      return document.getElementById(c.getAttribute("href").slice(1));
-    });
-    var ticking = false;
-    function syncChips() {
-      ticking = false;
-      var i, active = 0;
-      for (i = 0; i < secs.length; i++) {
-        if (secs[i] && secs[i].getBoundingClientRect().top <= 120) active = i;
-      }
-      for (i = 0; i < chips.length; i++) chips[i].classList.toggle("on", i === active);
-      var chip = chips[active];
-      if (chip) {
-        var want = chip.offsetLeft - 24;
-        if (Math.abs(cats.scrollLeft - want) > 8) cats.scrollTo({ left: want, behavior: "smooth" });
-      }
-    }
-    window.addEventListener("scroll", function () {
-      if (!ticking) { ticking = true; requestAnimationFrame(syncChips); }
-    }, { passive: true });
-  }
+  var menu = JSON.parse(document.getElementById("menu-data").textContent);
+  var byId = {};
+  menu.forEach(function(item){ byId[String(item.id)] = item; });
 
-  /* ---------- Waiter call / bill request ---------- */
   var body = document.body;
   var tablePk = body.getAttribute("data-table");
-  if (!tablePk) return;
+  var csrf = document.querySelector("[name=csrfmiddlewaretoken]");
+  var csrfToken = csrf ? csrf.value : "";
+  var cart = readJson("cc-cart-" + (tablePk || "no-table"), {});
+  var currentDetail = null;
+  var legacyOrderKey = "cc-order-" + (tablePk || "no-table");
+  var ordersKey = "cc-orders-" + (tablePk || "no-table");
+  var signalKey = "cc-signal-" + (tablePk || "no-table");
+  var lang = localStorage.getItem("cc-guest-lang") || "en";
+  var i18n = {
+    en: {
+      table_short:"Table", open_until:"Open until 23:00", view_menu:"View menu",
+      daily_special:"Daily special", chef_pick:"chef's pick", hit:"Hit",
+      daily_empty:"Daily specials will appear after the menu is filled.", about:"About us",
+      menu:"Menu", tap_details:"tap an item for details", all:"All", min:"min",
+      sold_out:"Sold out", available:"available", unavailable:"unavailable",
+      menu_empty:"The menu is being filled. Ask your waiter for a paper menu.",
+      no_results:"No results found.", service:"Service", seated:"you are seated",
+      scan_qr:"Scan the QR code on your table", signal_sent:"The signal has been sent to staff. Your table is highlighted in the app.",
+      cancel_call:"Cancel call", call_waiter:"Call waiter", come_table:"They will come to your table",
+      ask_bill:"Ask for bill", bring_bill:"A waiter will bring the bill",
+      how_title:"ⓘ How it works", how_body:"The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.",
+      profile:"Profile", composition:"Composition", allergens:"Allergens", portion:"Portion size",
+      calories:"Calories", add_order:"Add to order", your_order:"Your order",
+      name_waiter:"Name for the waiter", comment:"Comment", total:"Total", start_order:"Start order",
+      scan_table:"Scan the QR code on your table", added:"Added: ", empty_cart:"Cart is empty",
+      sending:"Sending...", sent:"Order sent", send_failed:"Could not send order",
+      default_comp:"Ask your waiter for the composition.", accepted:"Order accepted",
+      order_total:"Order total: ", bill_pending:"Preparing your bill", waiter_pending:"A waiter is on the way",
+      status_new:"Order accepted", status_cooking:"Preparing your order", status_ready:"Order is ready", status_completed:"Order served", status_paid:"Order paid", status_cancelled:"Order cancelled",
+      active_orders:"Active orders", current_check:"Current check: ", order_label:"Order",
+      signal_failed:"Could not send signal", cancel_failed:"Could not cancel the call"
+    },
+    it: {
+      table_short:"Tavolo", open_until:"Aperto fino alle 23:00", view_menu:"Guarda il menu",
+      daily_special:"Piatto del giorno", chef_pick:"scelto dallo chef", hit:"Top",
+      daily_empty:"I piatti del giorno appariranno quando il menu sarà compilato.", about:"Chi siamo",
+      menu:"Menu", tap_details:"tocca un piatto per i dettagli", all:"Tutto", min:"min",
+      sold_out:"Esaurito", available:"disponibile", unavailable:"non disponibile",
+      menu_empty:"Il menu è in preparazione. Chiedi il menu cartaceo al cameriere.",
+      no_results:"Nessun risultato.", service:"Servizio", seated:"sei al tavolo",
+      scan_qr:"Scansiona il QR code sul tavolo", signal_sent:"Il segnale è stato inviato allo staff. Il tuo tavolo è evidenziato nell'app.",
+      cancel_call:"Annulla chiamata", call_waiter:"Chiama cameriere", come_table:"Arriveranno al tuo tavolo",
+      ask_bill:"Chiedi il conto", bring_bill:"Un cameriere porterà il conto",
+      how_title:"ⓘ Come funziona", how_body:"Il segnale arriva subito nell'app dello staff. Puoi comporre l'ordine nel carrello e lo staff lo vedrà nel feed condiviso.",
+      profile:"Profilo", composition:"Composizione", allergens:"Allergeni", portion:"Porzione",
+      calories:"Calorie", add_order:"Aggiungi all'ordine", your_order:"Il tuo ordine",
+      name_waiter:"Nome per il cameriere", comment:"Commento", total:"Totale", start_order:"Inizia ordine",
+      scan_table:"Scansiona il QR code sul tavolo", added:"Aggiunto: ", empty_cart:"Il carrello è vuoto",
+      sending:"Invio...", sent:"Ordine inviato", send_failed:"Ordine non inviato",
+      default_comp:"Chiedi la composizione al cameriere.", accepted:"Ordine accettato",
+      order_total:"Totale ordine: ", bill_pending:"Stiamo preparando il conto", waiter_pending:"Il cameriere sta arrivando",
+      status_new:"Ordine accettato", status_cooking:"Stiamo preparando il tuo ordine", status_ready:"Ordine pronto", status_completed:"Ordine servito", status_paid:"Ordine pagato", status_cancelled:"Ordine annullato",
+      active_orders:"Ordini attivi", current_check:"Conto attuale: ", order_label:"Ordine",
+      signal_failed:"Impossibile inviare il segnale", cancel_failed:"Impossibile annullare la chiamata"
+    }
+  };
 
-  var idle = document.getElementById("bar-idle");
-  var done = document.getElementById("bar-done");
-  var doneTxt = document.getElementById("done-txt");
-  var cancelBtn = document.getElementById("b-cancel");
-  var toast = document.getElementById("toast");
-  var KEY = "cc-signal-" + tablePk;
-  var TTL = 15 * 60 * 1000; /* your own call is cancellable for 15 min */
-  var TEXTS = { call_waiter: "✓ Официант уже идёт", bill_request: "✓ Сейчас принесут счёт" };
+  function money(value){ return Number(value || 0).toFixed(2).replace(".", ",") + " €"; }
+  function readJson(key, fallback){
+    try { return JSON.parse(sessionStorage.getItem(key)) || fallback; } catch(e){ return fallback; }
+  }
+  function writeJson(key, value){
+    try { sessionStorage.setItem(key, JSON.stringify(value)); } catch(e){}
+  }
+  function removeKey(key){
+    try { sessionStorage.removeItem(key); } catch(e){}
+  }
+  function isArchivedOrder(order){
+    return !order || order.status === "paid" || order.status === "cancelled";
+  }
+  function readOrders(){
+    var orders = readJson(ordersKey, null);
+    if (!Array.isArray(orders)) {
+      var legacy = readJson(legacyOrderKey, null);
+      orders = legacy ? [legacy] : [];
+    }
+    return orders.filter(function(order){ return order && order.id && !isArchivedOrder(order); });
+  }
+  function writeOrders(orders){
+    writeJson(ordersKey, orders.filter(function(order){ return order && order.id && !isArchivedOrder(order); }));
+    removeKey(legacyOrderKey);
+  }
+  function upsertOrder(order){
+    var orders = readOrders();
+    var id = String(order.id);
+    var found = false;
+    orders = orders.map(function(existing){
+      if (String(existing.id) === id) {
+        found = true;
+        return order;
+      }
+      return existing;
+    });
+    if (!found) orders.push(order);
+    writeOrders(orders);
+    return orders;
+  }
+  function toast(text){
+    var node = document.getElementById("toast");
+    node.textContent = text;
+    node.classList.add("show");
+    setTimeout(function(){ node.classList.remove("show"); }, 2600);
+  }
+  function tr(key){ return (i18n[lang] && i18n[lang][key]) || i18n.en[key] || key; }
+  function nameFor(item){ return lang === "it" ? (item.nameIt || item.name) : (item.nameEn || item.name); }
+  function descriptionFor(item){
+    return lang === "it" ? (item.descriptionIt || item.description || "") : (item.descriptionEn || item.description || "");
+  }
+  function setLanguage(next){
+    lang = next === "it" ? "it" : "en";
+    localStorage.setItem("cc-guest-lang", lang);
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach(function(el){ el.textContent = tr(el.getAttribute("data-i18n")); });
+    document.querySelectorAll("[data-i18n-text]").forEach(function(el){ el.textContent = el.getAttribute("data-" + lang) || el.getAttribute("data-en") || ""; });
+    document.querySelectorAll("[data-placeholder-en]").forEach(function(el){ el.placeholder = el.getAttribute("data-placeholder-" + lang) || el.getAttribute("data-placeholder-en"); });
+    document.querySelectorAll("[data-lang]").forEach(function(el){ el.classList.toggle("active", el.getAttribute("data-lang") === lang); });
+    document.querySelectorAll(".chip[data-en]").forEach(function(el){ el.textContent = el.getAttribute("data-" + lang) || el.getAttribute("data-en"); });
+    if (currentDetail) {
+      document.getElementById("detail-name").textContent = nameFor(currentDetail);
+      document.getElementById("detail-cat").textContent = lang === "it" ? currentDetail.categoryIt : currentDetail.categoryEn;
+      document.getElementById("detail-comp").textContent = currentDetail.composition || descriptionFor(currentDetail) || tr("default_comp");
+    }
+    renderCart();
+    renderOrders(readOrders());
+  }
+  document.querySelectorAll("[data-lang]").forEach(function(btn){
+    btn.addEventListener("click", function(){ setLanguage(btn.getAttribute("data-lang")); });
+  });
 
-  function readOwn() {
-    try {
-      var raw = sessionStorage.getItem(KEY);
-      if (!raw) return null;
-      var v = JSON.parse(raw);
-      if (!v.id || Date.now() - v.ts > TTL) { sessionStorage.removeItem(KEY); return null; }
-      return v;
-    } catch (e) { return null; }
+  function go(name){
+    document.querySelectorAll(".screen").forEach(function(s){
+      s.classList.toggle("active", s.getAttribute("data-screen") === name);
+    });
+    document.querySelectorAll(".tab").forEach(function(t){
+      t.classList.toggle("active", t.getAttribute("data-go") === name);
+    });
+    document.getElementById("detail").classList.remove("open");
+    window.scrollTo({top:0, behavior:"smooth"});
   }
-  function storeOwn(id, type) {
-    try { sessionStorage.setItem(KEY, JSON.stringify({ id: id, type: type, ts: Date.now() })); } catch (e) {}
-  }
-  function clearOwn() { try { sessionStorage.removeItem(KEY); } catch (e) {} }
+  document.querySelectorAll("[data-go]").forEach(function(btn){
+    btn.addEventListener("click", function(){ go(btn.getAttribute("data-go")); });
+  });
 
-  function csrf() {
-    var inp = document.querySelector("[name=csrfmiddlewaretoken]");
-    return inp ? inp.value : "";
+  var search = document.getElementById("menu-search");
+  var activeCategory = "all";
+  function filterMenu(){
+    var q = (search ? search.value : "").trim().toLowerCase();
+    var shown = 0;
+    document.querySelectorAll("[data-card]").forEach(function(card){
+      var okCat = activeCategory === "all" || card.getAttribute("data-category") === activeCategory;
+      var okText = !q || card.getAttribute("data-name").indexOf(q) !== -1;
+      var show = okCat && okText;
+      card.hidden = !show;
+      if (show) shown += 1;
+    });
+    document.getElementById("no-results").hidden = shown !== 0;
   }
-  function showToast(msg) {
-    toast.textContent = msg;
-    toast.classList.add("show");
-    setTimeout(function () { toast.classList.remove("show"); }, 2600);
+  if (search) search.addEventListener("input", filterMenu);
+  document.querySelectorAll(".chip").forEach(function(chip){
+    chip.addEventListener("click", function(){
+      activeCategory = chip.getAttribute("data-category");
+      document.querySelectorAll(".chip").forEach(function(c){ c.classList.toggle("active", c === chip); });
+      filterMenu();
+    });
+  });
+
+  function addToCart(id, qty){
+    if (!tablePk) { toast(tr("scan_table")); return; }
+    var item = byId[String(id)];
+    if (!item || !item.available) return;
+    cart[String(id)] = Math.min((cart[String(id)] || 0) + (qty || 1), 50);
+    writeJson("cc-cart-" + tablePk, cart);
+    renderCart();
+    toast(tr("added") + nameFor(item));
   }
-  function showDone(type, cancellable) {
-    doneTxt.textContent = TEXTS[type] || TEXTS.call_waiter;
-    cancelBtn.hidden = !cancellable;
-    idle.hidden = true;
-    done.hidden = false;
+  document.querySelectorAll("[data-add]").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      addToCart(btn.getAttribute("data-add"), 1);
+    });
+  });
+
+  function cartTotals(){
+    var count = 0, total = 0;
+    Object.keys(cart).forEach(function(id){
+      var item = byId[id];
+      if (!item) return;
+      count += cart[id];
+      total += cart[id] * Number(item.price);
+    });
+    return {count:count,total:total};
   }
-  function showIdle() {
-    done.hidden = true;
-    idle.hidden = false;
-    [].forEach.call(idle.querySelectorAll("button"), function (b) { b.disabled = false; });
+  function renderCart(){
+    var totals = cartTotals();
+    var checkout = document.getElementById("checkout");
+    if (checkout) checkout.classList.toggle("show", totals.count > 0);
+    var count = document.getElementById("cart-count");
+    var total = document.getElementById("cart-total");
+    var sheetTotal = document.getElementById("sheet-total");
+    if (count) count.textContent = totals.count;
+    if (total) total.textContent = money(totals.total);
+    if (sheetTotal) sheetTotal.textContent = money(totals.total);
+
+    var lines = document.getElementById("cart-lines");
+    if (!lines) return;
+    lines.innerHTML = "";
+    Object.keys(cart).forEach(function(id){
+      var item = byId[id];
+      if (!item) return;
+      var row = document.createElement("div");
+      row.className = "cart-line";
+      row.innerHTML =
+        '<div><b>' + escapeHtml(nameFor(item)) + '</b><div class="small">' + money(item.price * cart[id]) + '</div></div>' +
+        '<div class="qty"><button type="button" data-dec="' + id + '">−</button><b>' + cart[id] + '</b><button type="button" data-inc="' + id + '">+</button></div>';
+      lines.appendChild(row);
+    });
+  }
+  function escapeHtml(text){
+    return String(text).replace(/[&<>"']/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];
+    });
+  }
+  var checkout = document.getElementById("checkout");
+  var cartSheet = document.getElementById("cart-sheet");
+  if (checkout) checkout.addEventListener("click", function(){ cartSheet.classList.add("open"); });
+  document.querySelectorAll("[data-close-cart]").forEach(function(btn){
+    btn.addEventListener("click", function(){ cartSheet.classList.remove("open"); });
+  });
+  document.addEventListener("click", function(e){
+    var inc = e.target.getAttribute("data-inc");
+    var dec = e.target.getAttribute("data-dec");
+    if (inc) { cart[inc] = Math.min((cart[inc] || 0) + 1, 50); writeJson("cc-cart-" + tablePk, cart); renderCart(); }
+    if (dec) {
+      cart[dec] = (cart[dec] || 0) - 1;
+      if (cart[dec] <= 0) delete cart[dec];
+      writeJson("cc-cart-" + tablePk, cart);
+      renderCart();
+    }
+  });
+
+  var submit = document.getElementById("submit-order");
+  if (submit) submit.addEventListener("click", function(){
+    if (!cartTotals().count) { toast(tr("empty_cart")); return; }
+    submit.disabled = true;
+    submit.textContent = tr("sending");
+    var fd = new FormData();
+    fd.append("csrfmiddlewaretoken", csrfToken);
+    fd.append("table", tablePk);
+    fd.append("guest_name", document.getElementById("guest-name").value || "");
+    fd.append("notes", document.getElementById("order-notes").value || "");
+    Object.keys(cart).forEach(function(id){
+      fd.append("items", id);
+      fd.append("quantity_" + id, cart[id]);
+    });
+    fetch(body.getAttribute("data-create-order-url"), {
+      method:"POST",
+      body:fd,
+      headers:{"X-Requested-With":"fetch"}
+    }).then(function(res){
+      if (!res.ok) throw new Error("order failed");
+      return res.json();
+    }).then(function(data){
+      if (!data.ok) throw new Error(data.error || "order failed");
+      cart = {};
+      writeJson("cc-cart-" + tablePk, cart);
+      var orders = upsertOrder(data.order);
+      renderCart();
+      renderOrders(orders);
+      cartSheet.classList.remove("open");
+      go("service");
+      toast(tr("sent"));
+    }).catch(function(){
+      toast(tr("send_failed"));
+    }).finally(function(){
+      submit.disabled = false;
+      submit.textContent = tr("start_order");
+    });
+  });
+
+  function openDetail(id){
+    var item = byId[String(id)];
+    if (!item) return;
+    currentDetail = item;
+    var detail = document.getElementById("detail");
+    var photo = document.getElementById("detail-photo");
+    photo.className = "detail-photo" + (item.imageUrl ? "" : " empty " + (item.visualKey || "default"));
+    photo.style.backgroundImage = item.imageUrl ? "url('" + item.imageUrl + "')" : "";
+    photo.setAttribute("data-icon", item.visualIcon || "🍽");
+    document.getElementById("detail-prep").textContent = "◷ " + item.prep + " " + tr("min");
+    document.getElementById("detail-name").textContent = nameFor(item);
+    document.getElementById("detail-cat").textContent = lang === "it" ? item.categoryIt : item.categoryEn;
+    document.getElementById("detail-price").textContent = money(item.price);
+    document.getElementById("detail-comp").textContent = item.composition || descriptionFor(item) || tr("default_comp");
+    document.getElementById("detail-weight").textContent = item.portionWeight || "—";
+    document.getElementById("detail-kcal").textContent = item.calories ? item.calories + " kcal" : "—";
+    var wrap = document.getElementById("detail-allergens-wrap");
+    var list = document.getElementById("detail-allergens");
+    list.innerHTML = "";
+    wrap.hidden = !item.allergens || !item.allergens.length;
+    (item.allergens || []).forEach(function(a){
+      var span = document.createElement("span");
+      span.className = "allergen";
+      span.textContent = a;
+      list.appendChild(span);
+    });
+    document.getElementById("detail-add").hidden = !item.available;
+    detail.classList.add("open");
+  }
+  document.querySelectorAll("[data-detail]").forEach(function(btn){
+    btn.addEventListener("click", function(){ openDetail(btn.getAttribute("data-detail")); });
+  });
+  document.getElementById("detail-close").addEventListener("click", function(){ document.getElementById("detail").classList.remove("open"); });
+  document.getElementById("detail-add").addEventListener("click", function(){
+    if (currentDetail) addToCart(currentDetail.id, 1);
+    document.getElementById("detail").classList.remove("open");
+  });
+
+  function renderOrders(orders){
+    var box = document.getElementById("order-status");
+    if (!box) return;
+    orders = (orders || []).filter(function(order){ return !isArchivedOrder(order); });
+    box.hidden = orders.length === 0;
+    if (!orders.length) return;
+    document.getElementById("order-status-title").textContent = tr("active_orders");
+    var list = document.getElementById("order-list");
+    list.innerHTML = "";
+    var checkTotal = 0;
+    orders.slice().reverse().forEach(function(order){
+      checkTotal += Number(order.total || 0);
+      var card = document.createElement("div");
+      card.className = "order-mini";
+      var status = tr("status_" + order.status) !== ("status_" + order.status)
+        ? tr("status_" + order.status)
+        : (order.statusLabel || tr("accepted"));
+      var html = '<div class="order-mini-head"><span>' + tr("order_label") + ' #' + escapeHtml(order.id) + '</span><span class="order-mini-status">' + escapeHtml(status) + '</span></div>';
+      (order.items || []).forEach(function(item){
+        html += '<div class="order-mini-line"><b>' + Number(item.quantity || 0) + '×</b><span>' + escapeHtml(item.name || "") + '</span><b>' + money(Number(item.lineTotal || 0)) + '</b></div>';
+      });
+      card.innerHTML = html;
+      list.appendChild(card);
+    });
+    document.getElementById("order-status-total").textContent = tr("current_check") + money(checkTotal);
+  }
+  function pollOrders(){
+    var orders = readOrders();
+    if (!orders.length || !tablePk) {
+      renderOrders(orders);
+      return;
+    }
+    renderOrders(orders);
+    Promise.all(orders.map(function(order){
+      return fetch(body.getAttribute("data-order-status-base") + order.id + "/status/")
+        .then(function(res){ if (!res.ok) throw new Error("missing"); return res.json(); })
+        .then(function(data){ return data.ok ? data.order : order; })
+        .catch(function(){ return order; });
+    })).then(function(updated){
+      writeOrders(updated);
+      renderOrders(readOrders());
+    });
   }
 
-  /* Restore state on load: the server already rendered waiting/idle;
-     we only add the cancel button when the pending call is our own. */
-  var own = readOwn();
-  if (!done.hidden) {
-    if (own) showDone(own.type, true);
-  } else {
-    clearOwn();
+  function showSignal(type, id){
+    document.getElementById("signal-idle").hidden = true;
+    document.getElementById("signal-pending").hidden = false;
+    document.getElementById("signal-title").textContent = type === "bill_request" ? tr("bill_pending") : tr("waiter_pending");
+    var cancel = document.getElementById("cancel-signal");
+    cancel.hidden = !id;
   }
-
-  [].forEach.call(document.querySelectorAll(".bar-idle form"), function (form) {
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var type = form.querySelector("[name=signal_type]").value;
-      [].forEach.call(idle.querySelectorAll("button"), function (b) { b.disabled = true; });
-      fetch(form.action, {
-        method: "POST",
-        body: new FormData(form),
-        headers: { "X-Requested-With": "fetch" }
-      }).then(function (res) {
-        if (!res.ok) throw new Error("http " + res.status);
+  function clearSignal(){
+    removeKey(signalKey);
+    document.getElementById("signal-pending").hidden = true;
+    document.getElementById("signal-idle").hidden = false;
+  }
+  document.querySelectorAll("[data-signal]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      if (!tablePk) { toast(tr("scan_table")); return; }
+      var type = btn.getAttribute("data-signal");
+      var fd = new FormData();
+      fd.append("csrfmiddlewaretoken", csrfToken);
+      fd.append("table", tablePk);
+      fd.append("signal_type", type);
+      fetch(body.getAttribute("data-create-attention-url"), {
+        method:"POST",
+        body:fd,
+        headers:{"X-Requested-With":"fetch"}
+      }).then(function(res){
+        if (!res.ok) throw new Error("signal failed");
         return res.json();
-      }).then(function (data) {
-        if (!data.ok) throw new Error("rejected");
-        storeOwn(data.signal, type);
-        showDone(type, true);
-      }).catch(function () {
-        /* Wi-Fi hiccup: let the plain form do it the old way (full reload). */
-        showIdle();
-        showToast("Не получилось — пробуем ещё раз…");
-        setTimeout(function () { form.submit(); }, 400);
+      }).then(function(data){
+        if (!data.ok) throw new Error(data.error || "signal failed");
+        writeJson(signalKey, {id:data.signal,type:type,ts:Date.now()});
+        showSignal(type, data.signal);
+      }).catch(function(){
+        toast(tr("signal_failed"));
       });
     });
   });
-
-  cancelBtn.addEventListener("click", function () {
-    var own = readOwn();
-    if (!own) { cancelBtn.hidden = true; return; }
-    cancelBtn.disabled = true;
+  var ownSignal = readJson(signalKey, null);
+  if (ownSignal && Date.now() - ownSignal.ts < 15 * 60 * 1000) showSignal(ownSignal.type, ownSignal.id);
+  var cancelSignal = document.getElementById("cancel-signal");
+  if (cancelSignal) cancelSignal.addEventListener("click", function(){
+    var own = readJson(signalKey, null);
+    if (!own || !own.id) return;
     var fd = new FormData();
+    fd.append("csrfmiddlewaretoken", csrfToken);
     fd.append("signal", own.id);
-    fd.append("csrfmiddlewaretoken", csrf());
     fetch(body.getAttribute("data-cancel-url"), {
-      method: "POST",
-      body: fd,
-      headers: { "X-Requested-With": "fetch" }
-    }).then(function (res) {
-      if (!res.ok) throw new Error("http " + res.status);
-      return res.json();
-    }).then(function () {
-      clearOwn();
-      cancelBtn.disabled = false;
-      showIdle();
-    }).catch(function () {
-      cancelBtn.disabled = false;
-      showToast("Не удалось отменить — официант уже в пути");
-    });
+      method:"POST",
+      body:fd,
+      headers:{"X-Requested-With":"fetch"}
+    }).then(function(res){
+      if (!res.ok) throw new Error("cancel failed");
+      clearSignal();
+    }).catch(function(){ toast(tr("cancel_failed")); });
   });
+
+  var serverMessages = document.getElementById("server-messages");
+  if (serverMessages && serverMessages.textContent.trim()) toast(serverMessages.textContent.trim());
+  renderCart();
+  setLanguage(lang);
+  pollOrders();
+  setInterval(pollOrders, 8000);
 })();
 </script>
 </body>

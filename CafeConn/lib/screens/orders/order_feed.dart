@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
@@ -22,77 +23,81 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
+    // Cook is locked to the kitchen feed, bartender to the bar feed — they
+    // only ever see their own orders. Everyone else can switch.
+    final locked = state.lockedZone;
+    final zone = locked ?? (_zone == 0 ? FeedType.kitchen : FeedType.bar);
+
     // Feeds are driven by the items' station, not by the order's splitTo:
     // a mixed order (e.g. from the guest web) has to appear in BOTH feeds,
     // each showing only its own positions. splitTo alone hid the bar half.
-    final active =
-        state.orders.where((o) => o.status != OrderStatus.completed).toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final active = state.orders
+        .where((o) => o.status != OrderStatus.completed)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    bool visibleInZone(CafeOrder order, FeedType feed) {
+      final items = order.itemsFor(feed);
+      if (items.isEmpty) return false;
+      return state.isStationRole
+          ? items.any((line) => !line.ready)
+          : items.any((line) => !line.done);
+    }
+
     final kitchenOrders =
-        active.where((o) => o.hasZone(FeedType.kitchen)).toList();
-    final barOrders = active.where((o) => o.hasZone(FeedType.bar)).toList();
+        active.where((o) => visibleInZone(o, FeedType.kitchen)).toList();
+    final barOrders =
+        active.where((o) => visibleInZone(o, FeedType.bar)).toList();
+    final visible = zone == FeedType.kitchen ? kitchenOrders : barOrders;
 
     return AppScaffold(
       bottomNav: null,
       child: Column(
         children: [
           Header(
-              title: 'Заказы',
-              subtitle: '${kitchenOrders.length + barOrders.length} активных'),
-          // Tap-only segmented control — no swipe widget, no gesture conflict
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-                color: AppTheme.surfaceSunken,
-                borderRadius: BorderRadius.circular(14)),
-            child: Row(children: [
-              _ZoneTab(
-                label: 'КУХНЯ',
-                count: kitchenOrders.length,
-                icon: Icons.restaurant,
-                iconColor: AppTheme.warning,
-                selected: _zone == 0,
-                onTap: () => setState(() => _zone = 0),
-              ),
-              _ZoneTab(
-                label: 'БАР',
-                count: barOrders.length,
-                icon: Icons.local_bar,
-                iconColor: AppTheme.bar,
-                selected: _zone == 1,
-                onTap: () => setState(() => _zone = 1),
-              ),
-            ]),
-          ),
+              title: L.orders,
+              subtitle: locked != null
+                  ? L.activeCount(visible.length)
+                  : L.activeCount(kitchenOrders.length + barOrders.length)),
+          // Tap-only segmented control — no swipe widget, no gesture conflict.
+          // Hidden for station roles: their zone is fixed.
+          if (locked == null)
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                  color: AppTheme.surfaceSunken,
+                  borderRadius: BorderRadius.circular(14)),
+              child: Row(children: [
+                _ZoneTab(
+                  label: L.kitchenU,
+                  count: kitchenOrders.length,
+                  icon: Icons.restaurant,
+                  iconColor: AppTheme.warning,
+                  selected: zone == FeedType.kitchen,
+                  onTap: () => setState(() => _zone = 0),
+                ),
+                _ZoneTab(
+                  label: L.barU,
+                  count: barOrders.length,
+                  icon: Icons.local_bar,
+                  iconColor: AppTheme.bar,
+                  selected: zone == FeedType.bar,
+                  onTap: () => setState(() => _zone = 1),
+                ),
+              ]),
+            ),
           const SizedBox(height: 16),
           Expanded(
-            child: IndexedStack(
-              index: _zone,
-              children: [
-                kitchenOrders.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.check_circle_outline,
-                        title: 'Всё готово',
-                        sub: 'Нет активных заказов на кухне')
-                    : ListView.builder(
-                        itemCount: kitchenOrders.length,
-                        itemBuilder: (_, i) => OrderCard(
-                            order: kitchenOrders[i],
-                            zone: FeedType.kitchen,
-                            index: i)),
-                barOrders.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.check_circle_outline,
-                        title: 'Всё готово',
-                        sub: 'Нет активных заказов в баре')
-                    : ListView.builder(
-                        itemCount: barOrders.length,
-                        itemBuilder: (_, i) => OrderCard(
-                            order: barOrders[i],
-                            zone: FeedType.bar,
-                            index: i)),
-              ],
-            ),
+            child: visible.isEmpty
+                ? EmptyState(
+                    icon: Icons.check_circle_outline,
+                    title: L.allDone,
+                    sub: zone == FeedType.kitchen
+                        ? L.noActiveKitchen
+                        : L.noActiveBar)
+                : ListView.builder(
+                    itemCount: visible.length,
+                    itemBuilder: (_, i) =>
+                        OrderCard(order: visible[i], zone: zone, index: i)),
           ),
         ],
       ),
@@ -100,7 +105,7 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
   }
 }
 
-// Tap-only zone tab for КУХНЯ/БАР — replaces swipeable TabBar
+// Tap-only zone tab for KITCHEN/BAR — replaces swipeable TabBar
 class _ZoneTab extends StatelessWidget {
   const _ZoneTab({
     required this.label,
@@ -144,8 +149,7 @@ class _ZoneTab extends StatelessWidget {
 }
 
 class OrderCard extends StatelessWidget {
-  const OrderCard(
-      {super.key, required this.order, this.zone, this.index = 0});
+  const OrderCard({super.key, required this.order, this.zone, this.index = 0});
   final CafeOrder order;
 
   /// The feed this card is rendered in. A mixed order shows only this
@@ -195,14 +199,17 @@ class OrderCard extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: zoneColor,
                           borderRadius: BorderRadius.circular(10)),
-                      child: Text('СТОЛ${table?.number ?? '??'}',
-                          style: T.priceSmall.copyWith(color: Colors.white, fontWeight: FontWeight.w900)),
+                      child: Text(L.tableN(table?.number ?? '??').toUpperCase(),
+                          style: T.priceSmall.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900)),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                         child: Text(
-                            '#${order.id} ·${effectiveZone == FeedType.kitchen ? 'Кухня' : 'Бар'}',
-                            style: T.priceSmall.copyWith(color: AppTheme.ink2))),
+                            '#${order.id} · ${effectiveZone == FeedType.kitchen ? L.kitchen : L.bar}',
+                            style:
+                                T.priceSmall.copyWith(color: AppTheme.ink2))),
                     LiveTimer(createdAt: order.createdAt, color: color),
                   ],
                 ),
@@ -213,19 +220,26 @@ class OrderCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('${line.quantity}×',
-                              style: T.price.copyWith(color: zoneColor, fontWeight: FontWeight.w900)),
+                              style: T.price.copyWith(
+                                  color: zoneColor,
+                                  fontWeight: FontWeight.w900)),
                           const SizedBox(width: 8),
                           Expanded(
                               child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                Text(line.item.name, style: T.h3),
+                                Text(line.item.displayName, style: T.h3),
                                 if (line.modifiers.isNotEmpty)
                                   Text(line.modifiers,
                                       style: T.small.copyWith(
                                           color: AppTheme.warning,
                                           fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 5),
+                                _ItemStateLine(
+                                    order: order,
+                                    line: line,
+                                    state: state,
+                                    zoneColor: zoneColor),
                               ])),
                         ],
                       ),
@@ -234,11 +248,7 @@ class OrderCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                        child: AppButton(
-                            label: order.status == OrderStatus.ready
-                                ? 'Завершить'
-                                : 'Готово',
-                            onPressed: () => state.markReady(order))),
+                        child: _actionFor(state, effectiveZone, visibleItems)),
                     const SizedBox(width: 12),
                     AppButton(
                         label: '',
@@ -257,6 +267,137 @@ class OrderCard extends StatelessWidget {
             late ? AppTheme.danger.withValues(alpha: .05) : Colors.transparent,
         duration: 500.ms);
   }
+
+  /// Role-aware primary action:
+  ///   station (cook/bartender): New → «Start», Cooking → «Ready»; once the
+  ///     order is ready their part is done — no way to complete or cancel,
+  ///     so a second tap can never make the order vanish;
+  ///   waiter: sees progress read-only until the order is READY, then gets
+  ///     «Delivered to guest» — that (and only that) moves it to the table
+  ///     history, where it stays until the table is cleared;
+  ///   manager/admin: can do both.
+  Widget _actionFor(
+      CafeState state, FeedType effectiveZone, List<CartLine> visibleItems) {
+    final role = state.currentRole;
+    final actsAsStation = role == UserRole.cook ||
+        role == UserRole.bartender ||
+        role == UserRole.manager ||
+        role == UserRole.admin;
+    final canDeliver = state.canDeliverOrders;
+    final stationReady =
+        visibleItems.isNotEmpty && visibleItems.every((line) => line.ready);
+    final stationDelivered =
+        visibleItems.isNotEmpty && visibleItems.every((line) => line.done);
+    final hasReadyToDeliver =
+        visibleItems.any((line) => line.ready && !line.done);
+
+    if (stationDelivered) {
+      return _StatusStrip(label: L.osCompleted, color: AppTheme.success);
+    }
+    if (canDeliver) {
+      if (hasReadyToDeliver) {
+        return _StatusStrip(
+            label: L.deliverReadyItems, color: AppTheme.success);
+      }
+      return _StatusStrip(
+          label: stationReady ? L.waitingWaiter : L.waitingStation,
+          color: stationReady ? AppTheme.success : AppTheme.ink2);
+    }
+    if (!actsAsStation) {
+      return _StatusStrip(label: L.waitingStation, color: AppTheme.ink2);
+    }
+    if (stationReady) {
+      return _StatusStrip(label: L.waitingWaiter, color: AppTheme.success);
+    }
+    if (order.status == OrderStatus.accepted) {
+      return AppButton(
+          label: L.startCooking,
+          onPressed: () => state.advanceStationStatus(order));
+    }
+    return AppButton(
+        label: L.markReady,
+        onPressed: () {
+          state.markStationItemsReady(order, effectiveZone);
+        });
+  }
+}
+
+class _ItemStateLine extends StatelessWidget {
+  const _ItemStateLine({
+    required this.order,
+    required this.line,
+    required this.state,
+    required this.zoneColor,
+  });
+
+  final CafeOrder order;
+  final CartLine line;
+  final CafeState state;
+  final Color zoneColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = line.done
+        ? L.itemDelivered
+        : line.ready
+            ? L.itemReady
+            : L.inPreparation;
+    final color = line.done
+        ? AppTheme.success
+        : line.ready
+            ? AppTheme.success
+            : zoneColor;
+    return Row(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(label,
+            style: T.label.copyWith(color: color, fontWeight: FontWeight.w800)),
+      ),
+      if (state.canDeliverOrders && line.ready && !line.done) ...[
+        const SizedBox(width: 8),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.success,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () {
+            state.toggleOrderItemDelivered(order, line);
+          },
+          child: Text(L.markDelivered,
+              style: T.label.copyWith(fontWeight: FontWeight.w900)),
+        ),
+      ],
+    ]);
+  }
+}
+
+/// Non-interactive status pill shown where a role has no action to take.
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(label,
+          style: T.bodySemi.copyWith(color: color, fontSize: 14),
+          overflow: TextOverflow.ellipsis),
+    );
+  }
 }
 
 void _showDiscussModal(BuildContext context, CafeOrder order) {
@@ -272,9 +413,9 @@ void _showDiscussModal(BuildContext context, CafeOrder order) {
             padding: EdgeInsets.fromLTRB(
                 20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Обсудить заказ', style: T.h2),
+              Text(L.discussOrder, style: T.h2),
               const SizedBox(height: 16),
-              AppTextField(controller: comment, label: 'Комментарий...'),
+              AppTextField(controller: comment, label: L.comment),
               const SizedBox(height: 20),
               Wrap(
                   spacing: 8,
@@ -282,7 +423,11 @@ void _showDiscussModal(BuildContext context, CafeOrder order) {
                       .read<CafeState>()
                       .groups
                       .map((g) => AppButton(
-                          label: g.name,
+                          label: switch (g.type) {
+                            FeedType.kitchen => L.kitchen,
+                            FeedType.bar => L.bar,
+                            _ => L.generalChat,
+                          },
                           kind: ButtonKind.secondary,
                           onPressed: () {
                             context

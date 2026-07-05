@@ -1,9 +1,23 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 
+import '../core/i18n.dart';
 import '../core/theme/app_theme.dart';
 
 enum UserRole { waiter, cook, bartender, manager, admin }
+
+/// Maps the hub's Employee.Role wire value to the app's UserRole.
+/// Unknown roles fall back to waiter — the most restricted role that can
+/// still run a shift (never silently grant manager screens).
+UserRole roleFromWire(String wire) => switch (wire) {
+      'waiter' => UserRole.waiter,
+      'kitchen' => UserRole.cook,
+      'bar' => UserRole.bartender,
+      'manager' => UserRole.manager,
+      'accountant' => UserRole.manager,
+      'admin' => UserRole.admin,
+      _ => UserRole.waiter,
+    };
 
 /// Deliberately just three states (product decision, 2026-07-02): a table is
 /// either free, taken, or the guests are waiting for a waiter. Must stay in
@@ -59,7 +73,7 @@ class CafeTable {
   List<String> notes;
   DateTime? openedAt;
   String waiterName = '—';
-  // Guest attention signal: 'call' (вызов), 'bill' (счёт), 'arrived' (гость сел), or null.
+  // Guest attention signal: 'call', 'bill', 'arrived', or null.
   String? attention;
   // Server id of the newest unacked attention signal — needed to POST the ack
   // back to the hub. Transient (not persisted): after a restart the bootstrap
@@ -136,12 +150,27 @@ class MenuItem {
     this.composition = '',
     this.allergens = const [],
     this.station = '',
+    this.nameIt = '',
+    this.descriptionIt = '',
+    this.categoryIt = '',
   });
   final String id;
   String name;
   String description;
   double price;
   String category;
+
+  /// Italian display labels from the hub (menu_i18n). Empty for locally
+  /// created items — display falls back to the primary (English) field.
+  String nameIt;
+  String descriptionIt;
+  String categoryIt;
+
+  String get displayName => L.isIt && nameIt.isNotEmpty ? nameIt : name;
+  String get displayDescription =>
+      L.isIt && descriptionIt.isNotEmpty ? descriptionIt : description;
+  String get displayCategory =>
+      L.isIt && categoryIt.isNotEmpty ? categoryIt : category;
   final String imageUrl;
   List<String> tags;
   int prepTime;
@@ -153,12 +182,20 @@ class MenuItem {
   /// Station routing: 'kitchen' | 'bar'. The hub is the source of truth
   /// (MenuItem.station in Django); category is only a fallback for legacy
   /// Hive data and the offline seed. Guessing by category alone was the bug
-  /// that sent beer to the kitchen: only 'Напитки'/'Кофе' counted as bar.
+  /// that sent beer to the kitchen: only 'Drinks'/'Coffee' counted as bar.
   String station;
 
   static const _barCategories = {
-    'Напитки', 'Кофе', 'Чай', 'Бар', 'Пиво', 'Вино',
-    'Коктейли', 'Алкоголь', 'Лимонады', 'Смузи',
+    'Drinks',
+    'Coffee',
+    'Tea',
+    'Bar',
+    'Beer',
+    'Wine',
+    'Cocktails',
+    'Alcohol',
+    'Lemonades',
+    'Smoothies',
   };
 
   bool get isBar =>
@@ -178,6 +215,9 @@ class MenuItem {
         'composition': composition,
         'allergens': allergens,
         'station': station,
+        'nameIt': nameIt,
+        'descriptionIt': descriptionIt,
+        'categoryIt': categoryIt,
       };
   static MenuItem fromJson(Map<String, dynamic> j) => MenuItem(
         id: j['id'],
@@ -193,6 +233,9 @@ class MenuItem {
         composition: j['composition'],
         allergens: List<String>.from(j['allergens']),
         station: j['station'] as String? ?? '',
+        nameIt: j['nameIt'] as String? ?? '',
+        descriptionIt: j['descriptionIt'] as String? ?? '',
+        categoryIt: j['categoryIt'] as String? ?? '',
       );
 }
 
@@ -204,6 +247,7 @@ class CartLine {
       this.sent = false,
       this.ready = false,
       this.done = false,
+      this.orderItemId,
       double? lockedPrice})
       // lockedPrice survives persistence: a menu price change must not
       // silently reprice an already-open check.
@@ -215,6 +259,7 @@ class CartLine {
   bool sent;
   bool ready; // station (kitchen/bar) marked it ready
   bool done; // waiter delivered it to the guest
+  String? orderItemId; // backend OrderItem.id for item-level ready/delivery
   bool get isBar => item.isBar;
   double get total => lockedPrice * quantity;
 
@@ -225,6 +270,7 @@ class CartLine {
         'sent': sent,
         'ready': ready,
         'done': done,
+        'orderItemId': orderItemId,
         'lockedPrice': lockedPrice,
       };
 }
@@ -251,7 +297,8 @@ class CafeOrder {
   /// otherwise the bar half of a mixed order is never shown to the bartender.
   List<CartLine> itemsFor(FeedType zone) =>
       items.where((l) => (zone == FeedType.bar) == l.isBar).toList();
-  bool hasZone(FeedType zone) => items.any((l) => (zone == FeedType.bar) == l.isBar);
+  bool hasZone(FeedType zone) =>
+      items.any((l) => (zone == FeedType.bar) == l.isBar);
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -270,10 +317,10 @@ class CafeOrder {
           final item = menu.firstWhereOrNull((mi) => mi.id == m['itemId']) ??
               MenuItem(
                 id: m['itemId'] as String? ?? '?',
-                name: 'Позиция из меню',
+                name: 'Menu item',
                 description: '',
                 price: (m['lockedPrice'] as num?)?.toDouble() ?? 0,
-                category: 'Кухня',
+                category: 'Kitchen',
                 imageUrl: '',
                 tags: const [],
                 prepTime: 5,
@@ -282,7 +329,10 @@ class CafeOrder {
               item: item,
               quantity: m['quantity'] as int,
               modifiers: m['modifiers'] as String,
-              sent: m['sent'] as bool,
+              sent: m['sent'] as bool? ?? false,
+              ready: m['ready'] as bool? ?? false,
+              done: m['done'] as bool? ?? false,
+              orderItemId: m['orderItemId'] as String?,
               lockedPrice: (m['lockedPrice'] as num?)?.toDouble());
         }).toList(),
         status: OrderStatus.values[j['status'] as int],
@@ -348,8 +398,7 @@ class ChatMessage {
         senderId: j['senderId'] as String,
         text: j['text'] as String,
         tags: List<String>.from(j['tags'] as List? ?? const []),
-        timestamp:
-            DateTime.fromMillisecondsSinceEpoch(j['timestamp'] as int),
+        timestamp: DateTime.fromMillisecondsSinceEpoch(j['timestamp'] as int),
         own: j['own'] as bool? ?? false,
         voice: j['voice'] as bool? ?? false,
         reactions: List<String>.from(j['reactions'] as List? ?? const []),
@@ -359,18 +408,25 @@ class ChatMessage {
 }
 
 String attentionLabel(String attention) => switch (attention) {
-      'call' => 'ЗОВУТ',
-      'bill' => 'СЧЁТ',
-      'arrived' => 'ГОСТЬ',
-      _ => 'СИГНАЛ',
+      'call' => L.attCall,
+      'bill' => L.attBill,
+      'arrived' => L.attGuest,
+      _ => L.attSignal,
     };
 
 String roleLabel(UserRole role) => switch (role) {
-      UserRole.admin => 'Админ',
-      UserRole.manager => 'Менеджер',
-      UserRole.waiter => 'Официант',
-      UserRole.cook => 'Повар',
-      UserRole.bartender => 'Бармен',
+      UserRole.admin => L.roleAdmin,
+      UserRole.manager => L.roleManager,
+      UserRole.waiter => L.roleWaiter,
+      UserRole.cook => L.roleCook,
+      UserRole.bartender => L.roleBartender,
+    };
+
+String orderStatusLabel(OrderStatus status) => switch (status) {
+      OrderStatus.accepted => L.osAccepted,
+      OrderStatus.cooking => L.osCooking,
+      OrderStatus.ready => L.osReady,
+      OrderStatus.completed => L.osCompleted,
     };
 
 Color attentionColor(String attention) => switch (attention) {
@@ -387,7 +443,7 @@ Color statusColor(TableStatus status) => switch (status) {
     };
 
 String statusLabel(TableStatus status) => switch (status) {
-      TableStatus.free => 'Свободен',
-      TableStatus.occupied => 'Занят',
-      TableStatus.waiting => 'Ждёт официанта',
+      TableStatus.free => L.stFree,
+      TableStatus.occupied => L.stOccupied,
+      TableStatus.waiting => L.stWaiting,
     };

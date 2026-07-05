@@ -64,7 +64,9 @@ class AppTypography {
       letterSpacing: 0.5,
       color: color ?? AppColors.ink);
   static TextStyle mono(
-          {Color? color, double size = 14, FontWeight weight = FontWeight.w600}) =>
+          {Color? color,
+          double size = 14,
+          FontWeight weight = FontWeight.w600}) =>
       TextStyle(
           fontFamily: fontMono,
           fontFamilyFallback: _monoFallback,

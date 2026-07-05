@@ -20,7 +20,7 @@ def dashboard(request):
     )
     context = {
         "orders_total": orders.count(),
-        "orders_pending": orders.filter(status=Order.Status.PENDING).count(),
+        "orders_pending": orders.filter(status=Order.Status.NEW).count(),
         "orders_ready": orders.filter(status=Order.Status.READY).count(),
         "active_tables": Table.objects.exclude(status=Table.Status.FREE).count(),
         "menu_items": MenuItem.objects.count(),
@@ -48,13 +48,13 @@ def update_order_status(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
     next_status = request.POST.get("status")
     if next_status not in Order.Status.values:
-        messages.error(request, "Неизвестный статус заказа.")
+        messages.error(request, "Unknown order status.")
         return redirect("admin_web:dashboard")
 
     order.status = next_status
     order.save(update_fields=["status", "updated_at"])
     broadcast_order_event("updated", order)
-    messages.success(request, f"Заказ #{order.id} обновлен.")
+    messages.success(request, f"Order #{order.id} updated.")
     return redirect("admin_web:dashboard")
 
 
@@ -64,7 +64,7 @@ def toggle_menu_item(request, item_id):
     item = get_object_or_404(MenuItem, pk=item_id)
     item.is_available = not item.is_available
     item.save(update_fields=["is_available", "updated_at"])
-    messages.success(request, f"{item.name}: {'в наличии' if item.is_available else 'стоп-лист'}.")
+    messages.success(request, f"{item.name}: {'available' if item.is_available else 'stop-listed'}.")
     return redirect("admin_web:dashboard")
 
 
@@ -76,11 +76,11 @@ def create_menu_item(request):
         description=request.POST.get("description", "").strip(),
         composition=request.POST.get("composition", "").strip(),
         price=request.POST.get("price") or 0,
-        category=request.POST.get("category", "Меню").strip() or "Меню",
+        category=request.POST.get("category", "Menu").strip() or "Menu",
         station=request.POST.get("station") or "kitchen",
         is_available=request.POST.get("is_available") == "on",
     )
-    messages.success(request, f"Позиция {item.name} добавлена.")
+    messages.success(request, f"Item {item.name} added.")
     return redirect("admin_web:dashboard")
 
 
@@ -96,5 +96,5 @@ def ack_attention_signal(request, signal_id):
     table = acknowledge_signal_on_table(signal.table)
     broadcast_attention_event("acked", signal)
     broadcast_table_event(table)
-    messages.success(request, f"Сигнал по {signal.table} принят.")
+    messages.success(request, f"Signal for {signal.table} acknowledged.")
     return redirect("admin_web:dashboard")

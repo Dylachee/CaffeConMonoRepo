@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_typography.dart';
@@ -19,20 +20,20 @@ class WaiterOrderScreen extends StatefulWidget {
   State<WaiterOrderScreen> createState() => _WaiterOrderScreenState();
 }
 
-/// Unified order-taking screen ("приём заказа").
+/// Unified order-taking screen.
 ///
 /// One and the same flow whether it's the FIRST order of a table or an
 /// addition to an open one: search + always-visible category chips + compact
 /// photo-less cards. Tap adds a dish (multi-category selection just works —
 /// the selection is independent of the current filter), the stepper adjusts
-/// quantity, long-press shows dish info. «Пречек» reviews and sends.
+/// quantity, long-press shows dish info. Precheck reviews and sends.
 class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   /// Selection lives here (not in the table cart) until the precheck is
   /// confirmed — cancelling leaves no trace on the table's check.
   final Map<MenuItem, int> _selQty = {};
   final _searchCtrl = TextEditingController();
   String _search = '';
-  String _category = 'Все';
+  String _category = 'All';
 
   @override
   void dispose() {
@@ -43,10 +44,12 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
-      final okCat = _category == 'Все' || m.category == _category;
+      final okCat = _category == 'All' || m.category == _category;
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
-          m.category.toLowerCase().contains(q);
+          m.nameIt.toLowerCase().contains(q) ||
+          m.category.toLowerCase().contains(q) ||
+          m.categoryIt.toLowerCase().contains(q);
       return okCat && okSearch;
     }).toList();
   }
@@ -54,7 +57,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   void _add(BuildContext context, MenuItem item) {
     if (!item.available) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('«${item.name}» в стоп-листе'),
+          content: Text(L.stopListed(item.displayName)),
           backgroundColor: AppTheme.danger));
       return;
     }
@@ -97,11 +100,11 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     final state = context.watch<CafeState>();
     final table = state.currentTable ?? state.tables.firstOrNull;
     if (table == null) {
-      return const AppScaffold(
+      return AppScaffold(
           child: EmptyState(
               icon: Icons.table_restaurant_outlined,
-              title: 'Нет столов',
-              sub: 'Сначала добавьте стол'));
+              title: L.noTables,
+              sub: L.addTableFirst));
     }
     final items = _filtered(state);
     final count = _selQty.values.fold(0, (s, v) => s + v);
@@ -122,10 +125,9 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Стол ${table.number} · заказ',
+                      Text(L.tableOrder(table.number),
                           style: T.screenTitle.copyWith(fontSize: 24)),
-                      Text('Нажмите на блюдо, чтобы добавить',
-                          style: T.subtitle),
+                      Text(L.tapToAdd, style: T.subtitle),
                     ]),
               ),
             ]),
@@ -136,7 +138,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               controller: _searchCtrl,
               onChanged: (v) => setState(() => _search = v),
               decoration: InputDecoration(
-                hintText: 'Поиск по меню...',
+                hintText: L.searchMenu,
                 prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
                 suffixIcon: _search.isEmpty
                     ? null
@@ -163,7 +165,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               scrollDirection: Axis.horizontal,
               children: state.categories
                   .map((c) => CategoryChip(
-                        label: c,
+                        label: state.categoryDisplay(c),
                         active: _category == c,
                         onTap: () => setState(() => _category = c),
                       ))
@@ -173,10 +175,10 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           const SizedBox(height: 6),
           Expanded(
             child: items.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.search_off,
-                    title: 'Ничего не найдено',
-                    sub: 'Поменяйте запрос или категорию')
+                    title: L.nothingFound,
+                    sub: L.changeSearch)
                 : ListView.builder(
                     padding:
                         EdgeInsets.only(top: 6, bottom: count > 0 ? 130 : 40),
@@ -244,9 +246,8 @@ class _OrderComposerTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.fromLTRB(0, 0, 10, 0),
         decoration: BoxDecoration(
-          color: selected
-              ? AppTheme.cta.withValues(alpha: 0.04)
-              : AppTheme.card,
+          color:
+              selected ? AppTheme.cta.withValues(alpha: 0.04) : AppTheme.card,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
               color: selected ? AppTheme.cta : const Color(0xFFF0EBE1),
@@ -262,8 +263,8 @@ class _OrderComposerTile extends StatelessWidget {
               height: 62,
               decoration: BoxDecoration(
                 color: zoneColor,
-                borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(13)),
+                borderRadius:
+                    const BorderRadius.horizontal(left: Radius.circular(13)),
               ),
             ),
             const SizedBox(width: 12),
@@ -273,13 +274,14 @@ class _OrderComposerTile extends StatelessWidget {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.name,
+                      Text(item.displayName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: T.bodySemi.copyWith(fontSize: 15)),
                       const SizedBox(height: 3),
                       Row(children: [
-                        Text('${item.prepTime} мин · ${item.category}',
+                        Text(
+                            '${L.minutes(item.prepTime)} · ${item.displayCategory}',
                             style: T.label.copyWith(color: AppTheme.ink3)),
                         if (!item.available) ...[
                           const SizedBox(width: 6),
@@ -289,7 +291,7 @@ class _OrderComposerTile extends StatelessWidget {
                             decoration: BoxDecoration(
                                 color: AppTheme.danger,
                                 borderRadius: BorderRadius.circular(5)),
-                            child: Text('СТОП',
+                            child: Text(L.stop,
                                 style: T.label.copyWith(
                                     color: Colors.white, fontSize: 8.5)),
                           ),
@@ -310,8 +312,7 @@ class _OrderComposerTile extends StatelessWidget {
                 height: 32,
                 decoration: const BoxDecoration(
                     color: AppTheme.cta, shape: BoxShape.circle),
-                child:
-                    const Icon(Icons.add, color: Colors.white, size: 18),
+                child: const Icon(Icons.add, color: Colors.white, size: 18),
               )
             else
               Row(mainAxisSize: MainAxisSize.min, children: [
@@ -322,8 +323,7 @@ class _OrderComposerTile extends StatelessWidget {
                     width: 32,
                     height: 32,
                     decoration: const BoxDecoration(
-                        color: AppTheme.surfaceSunken,
-                        shape: BoxShape.circle),
+                        color: AppTheme.surfaceSunken, shape: BoxShape.circle),
                     child: const Icon(Icons.remove, size: 18),
                   ),
                 ),
@@ -341,8 +341,7 @@ class _OrderComposerTile extends StatelessWidget {
                   height: 32,
                   decoration: const BoxDecoration(
                       color: AppTheme.cta, shape: BoxShape.circle),
-                  child: const Icon(Icons.add,
-                      color: Colors.white, size: 18),
+                  child: const Icon(Icons.add, color: Colors.white, size: 18),
                 ),
               ]),
           ]),
@@ -360,18 +359,20 @@ class _CompactStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      _btn(Icons.remove, () { if (value > 1) onChanged(value - 1); }),
+      _btn(Icons.remove, () {
+        if (value > 1) onChanged(value - 1);
+      }),
       SizedBox(
-          width: 30,
-          child: Center(
-              child: Text('$value',
-                  style: T.bodySemi))),
+          width: 30, child: Center(child: Text('$value', style: T.bodySemi))),
       _btn(Icons.add, () => onChanged(value + 1)),
     ]);
   }
 
   Widget _btn(IconData icon, VoidCallback action) => GestureDetector(
-        onTap: () { HapticFeedback.selectionClick(); action(); },
+        onTap: () {
+          HapticFeedback.selectionClick();
+          action();
+        },
         child: Container(
           width: 26,
           height: 26,
@@ -411,12 +412,12 @@ class _ComposerBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('$count поз.', style: T.smallSemi),
+                Text(L.itemsCount(count), style: T.smallSemi),
                 Text(total.rub, style: T.h2),
               ]),
         ),
         GhostButton(
-          label: 'Очистить',
+          label: L.clear,
           onTap: onClear,
           height: 44,
         ),
@@ -424,7 +425,7 @@ class _ComposerBar extends StatelessWidget {
         SizedBox(
           width: 132,
           child: PrimaryButton(
-            label: 'Пречек →',
+            label: L.precheck,
             height: 44,
             onTap: onNext,
           ),
@@ -481,9 +482,8 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     final kitchenCount = _items.entries
         .where((e) => !e.key.isBar)
         .fold(0, (s, e) => s + e.value);
-    final barCount = _items.entries
-        .where((e) => e.key.isBar)
-        .fold(0, (s, e) => s + e.value);
+    final barCount =
+        _items.entries.where((e) => e.key.isBar).fold(0, (s, e) => s + e.value);
     final selectedTable = _tableId != null
         ? state.tables.firstWhereOrNull((t) => t.id == _tableId)
         : null;
@@ -501,7 +501,8 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-                color: AppTheme.separator, borderRadius: BorderRadius.circular(2)),
+                color: AppTheme.separator,
+                borderRadius: BorderRadius.circular(2)),
           ),
         ),
         Padding(
@@ -511,17 +512,17 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                 icon: const Icon(Icons.arrow_back, color: AppTheme.ink),
                 onPressed: () => Navigator.pop(context)),
             Expanded(
-                child: Text('Новый заказ',
-                    style: T.h1.copyWith(fontSize: 20))),
+                child: Text(L.newOrder, style: T.h1.copyWith(fontSize: 20))),
           ]),
         ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // Table section
               if (widget.fixedTableId == null) ...[
-                const Text('СТОЛ', style: T.label),
+                Text(L.tableU, style: T.label),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 40,
@@ -539,9 +540,10 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                             color: active ? AppTheme.cta : AppTheme.card,
                             borderRadius: BorderRadius.circular(11),
                             border: Border.all(
-                                color: active ? AppTheme.cta : AppTheme.separator),
+                                color:
+                                    active ? AppTheme.cta : AppTheme.separator),
                           ),
-                          child: Text('Стол ${t.number}',
+                          child: Text(L.tableN(t.number),
                               style: T.priceSmall.copyWith(
                                   fontWeight: FontWeight.w700,
                                   color: active ? Colors.white : AppTheme.ink)),
@@ -562,7 +564,7 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                     const Icon(Icons.table_restaurant,
                         size: 16, color: AppTheme.ink2),
                     const SizedBox(width: 8),
-                    Text('Стол ${selectedTable.number}',
+                    Text(L.tableN(selectedTable.number),
                         style: T.bodySemi),
                   ]),
                 ),
@@ -570,13 +572,13 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
               ],
 
               // Items
-              const Text('ПОЗИЦИИ', style: T.label),
+              Text(L.itemsU, style: T.label),
               const SizedBox(height: 12),
               if (_items.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                      child: Text('Все позиции удалены',
+                      child: Text(L.allItemsRemoved,
                           style: T.body.copyWith(color: AppTheme.ink2))),
                 ),
               ..._items.entries.map((entry) => _PrecheckItemRow(
@@ -585,8 +587,8 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                     noteController: _noteCtrl[entry.key]!,
                     expanded: _noteExp[entry.key] ?? false,
                     onQtyChanged: (v) => setState(() => _items[entry.key] = v),
-                    onToggleNote: () => setState(
-                        () => _noteExp[entry.key] = !(_noteExp[entry.key] ?? false)),
+                    onToggleNote: () => setState(() =>
+                        _noteExp[entry.key] = !(_noteExp[entry.key] ?? false)),
                     onPreset: (p) {
                       final c = _noteCtrl[entry.key]!;
                       c.text = c.text.isEmpty ? p : '${c.text}, $p';
@@ -602,9 +604,10 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(children: [
-                    const Icon(Icons.restaurant, size: 16, color: AppTheme.warning),
+                    const Icon(Icons.restaurant,
+                        size: 16, color: AppTheme.warning),
                     const SizedBox(width: 8),
-                    Text('На кухню: $kitchenCount',
+                    Text(L.toKitchen(kitchenCount),
                         style: T.bodySemi.copyWith(color: AppTheme.warning)),
                   ]),
                 ),
@@ -612,12 +615,12 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                 Row(children: [
                   const Icon(Icons.local_bar, size: 16, color: AppTheme.bar),
                   const SizedBox(width: 8),
-                  Text('В бар: $barCount',
+                  Text(L.toBar(barCount),
                       style: T.bodySemi.copyWith(color: AppTheme.bar)),
                 ]),
               const Divider(height: 32),
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text('ИТОГО', style: T.h2),
+                Text(L.total, style: T.h2),
                 Text(total.rub, style: T.h2.copyWith(color: AppTheme.cta)),
               ]),
               const SizedBox(height: 24),
@@ -628,7 +631,7 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
           padding: EdgeInsets.fromLTRB(
               20, 0, 20, MediaQuery.viewPaddingOf(context).bottom + 16),
           child: PrimaryButton(
-            label: 'ОТПРАВИТЬ ЗАКАЗ',
+            label: L.sendOrder,
             icon: Icons.send,
             height: 52,
             enabled: _items.isNotEmpty && _tableId != null,
@@ -647,9 +650,8 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     final kitchenCount = _items.entries
         .where((e) => !e.key.isBar)
         .fold(0, (s, e) => s + e.value);
-    final barCount = _items.entries
-        .where((e) => e.key.isBar)
-        .fold(0, (s, e) => s + e.value);
+    final barCount =
+        _items.entries.where((e) => e.key.isBar).fold(0, (s, e) => s + e.value);
     final messenger = ScaffoldMessenger.of(context);
 
     for (final entry in _items.entries) {
@@ -662,19 +664,18 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     Navigator.pop(context);
     widget.onConfirmed?.call();
 
-    // Explicit feedback in BOTH outcomes — «отправил в бар и ничего не
-    // произошло» must never happen again.
+    // Explicit feedback in both outcomes: sending to bar must never look idle.
     if (order != null) {
       messenger.showSnackBar(SnackBar(
-        content: Text(
-            'Заказ на Стол ${table.number} отправлен · Кухня $kitchenCount · Бар $barCount'),
+        content:
+            Text(L.orderSent(table.number, kitchenCount, barCount)),
         backgroundColor: AppTheme.success,
       ));
     } else {
       messenger.showSnackBar(SnackBar(
         content: Text(state.backendError == null
-            ? 'Нечего отправлять'
-            : 'Не отправлено: ${state.backendError}. Позиции сохранены в чеке стола.'),
+            ? L.nothingToSend
+            : L.notSentSaved(state.backendError!)),
         backgroundColor: AppTheme.danger,
       ));
     }
@@ -701,14 +702,7 @@ class _PrecheckItemRow extends StatelessWidget {
   final ValueChanged<String> onPreset;
   final VoidCallback onDelete;
 
-  static const _presets = [
-    'Без лука',
-    'Без льда',
-    'Остро',
-    'Навынос',
-    'Без сахара',
-    'Хорошо прожарить',
-  ];
+  static List<String> get _presets => L.notePresetsShort;
 
   @override
   Widget build(BuildContext context) {
@@ -729,9 +723,7 @@ class _PrecheckItemRow extends StatelessWidget {
               decoration: BoxDecoration(
                   color: item.isBar ? AppTheme.bar : AppTheme.warning,
                   shape: BoxShape.circle)),
-          Expanded(
-              child: Text(item.name,
-                  style: T.price)),
+          Expanded(child: Text(item.displayName, style: T.price)),
           Text((item.price * qty).rub,
               style: T.bodySemi.copyWith(color: AppTheme.cta)),
         ]),
@@ -741,7 +733,7 @@ class _PrecheckItemRow extends StatelessWidget {
           const SizedBox(width: 12),
           GestureDetector(
             onTap: onToggleNote,
-            child: Text(expanded ? '− заметка' : '+ примечание',
+            child: Text(expanded ? L.minusNote : L.plusNote,
                 style: T.priceSmall.copyWith(color: AppTheme.bar)),
           ),
           const Spacer(),
@@ -784,7 +776,7 @@ class _PrecheckItemRow extends StatelessWidget {
                 .toList(),
           ),
           const SizedBox(height: 10),
-          AppTextField(controller: noteController, label: 'Примечание...'),
+          AppTextField(controller: noteController, label: L.addNote),
         ],
       ]),
     );

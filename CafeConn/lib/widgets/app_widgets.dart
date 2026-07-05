@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../core/i18n.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/app_typography.dart';
@@ -104,7 +105,8 @@ class _AppButtonState extends State<AppButton> {
                     Flexible(
                         child: Text(widget.label,
                             overflow: TextOverflow.ellipsis,
-                            style: T.bodySemi.copyWith(color: fg, fontSize: 16))),
+                            style:
+                                T.bodySemi.copyWith(color: fg, fontSize: 16))),
                   ],
                 ),
         ),
@@ -157,8 +159,8 @@ class PrimaryButton extends StatelessWidget {
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           if (icon != null) ...[
-            Icon(icon, size: 19,
-                color: on ? Colors.white : const Color(0xFF8A8275)),
+            Icon(icon,
+                size: 19, color: on ? Colors.white : const Color(0xFF8A8275)),
             const SizedBox(width: 9),
           ],
           Text(label,
@@ -173,7 +175,7 @@ class PrimaryButton extends StatelessWidget {
   }
 }
 
-// Ghost button: cream bg, ink label — for "Отмена" and secondary actions.
+// Ghost button: cream bg, ink label — for "Cancel" and secondary actions.
 class GhostButton extends StatelessWidget {
   const GhostButton({
     super.key,
@@ -329,7 +331,8 @@ class StatusBadge extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             statusLabel(status).toUpperCase(),
-            style: T.label.copyWith(color: color, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+            style: T.label.copyWith(
+                color: color, fontWeight: FontWeight.w800, letterSpacing: 0.5),
           ),
         ],
       ),
@@ -474,12 +477,12 @@ class MetricCard extends StatelessWidget {
                       BoxDecoration(color: color, shape: BoxShape.circle)),
               const SizedBox(width: 8),
               Text(label,
-                  style: T.priceSmall.copyWith(color: AppTheme.ink2, fontWeight: FontWeight.w500)),
+                  style: T.priceSmall.copyWith(
+                      color: AppTheme.ink2, fontWeight: FontWeight.w500)),
             ],
           ),
           const Spacer(),
-          Text(value,
-              style: T.h2.copyWith(fontSize: 22)),
+          Text(value, style: T.h2.copyWith(fontSize: 22)),
           const SizedBox(height: 4),
           Row(
             children: [
@@ -543,7 +546,7 @@ class AppScaffold extends StatelessWidget {
                     const Icon(Icons.wifi_off, color: Colors.white, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
-                        child: Text('Нет сети · заказы сохранятся локально',
+                        child: Text(L.offlineBanner,
                             style: T.bodySemi.copyWith(color: Colors.white))),
                     IconButton(
                         onPressed: () {
@@ -567,7 +570,8 @@ class AppScaffold extends StatelessWidget {
 }
 
 class AttentionBanner extends StatelessWidget {
-  const AttentionBanner({super.key, required this.attention, required this.onAck});
+  const AttentionBanner(
+      {super.key, required this.attention, required this.onAck});
   final String attention;
   final VoidCallback onAck;
 
@@ -575,10 +579,10 @@ class AttentionBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = attentionColor(attention);
     final (label, icon) = switch (attention) {
-      'call' => ('Гость зовёт официанта', Icons.pan_tool_rounded),
-      'bill' => ('Гость просит счёт', Icons.receipt_long_rounded),
-      'arrived' => ('Гость сел за стол', Icons.chair_rounded),
-      _ => ('Сигнал от гостя', Icons.notifications_active_rounded),
+      'call' => (L.guestCalling, Icons.pan_tool_rounded),
+      'bill' => (L.guestBill, Icons.receipt_long_rounded),
+      'arrived' => (L.guestSeated, Icons.chair_rounded),
+      _ => (L.guestSignal, Icons.notifications_active_rounded),
     };
     return Container(
       padding: const EdgeInsets.all(14),
@@ -601,7 +605,7 @@ class AttentionBanner extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.hairline),
               ),
-              child: Text('Принял',
+              child: Text(L.acknowledge,
                   style: AppTypography.bodySemi().copyWith(fontSize: 13)),
             ),
           ),
@@ -627,8 +631,7 @@ class Header extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title, style: T.screenTitle),
-          if (subtitle != null)
-            Text(subtitle!, style: T.subtitle),
+          if (subtitle != null) Text(subtitle!, style: T.subtitle),
         ])),
         ...actions,
       ]));
@@ -644,7 +647,7 @@ class SectionTitle extends StatelessWidget {
       child: Row(children: [
         Expanded(child: Text(title, style: T.sectionTitle)),
         if (action != null)
-          AppButton(label: 'Все', kind: ButtonKind.ghost, onPressed: action),
+          AppButton(label: L.all, kind: ButtonKind.ghost, onPressed: action),
       ]));
 }
 
@@ -670,7 +673,8 @@ class Avatar extends StatelessWidget {
           borderRadius: BorderRadius.circular(14)),
       child: Center(
           child: Text(initials,
-              style: T.bodySemi.copyWith(color: color ?? AppTheme.cta, fontWeight: FontWeight.w800))),
+              style: T.bodySemi.copyWith(
+                  color: color ?? AppTheme.cta, fontWeight: FontWeight.w800))),
     );
   }
 }
@@ -734,18 +738,26 @@ void showForwardSheet(BuildContext context, CafeTable table) {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Переслать',
-                      style: T.h2.copyWith(fontSize: 20)),
+                  Text(L.forward, style: T.h2.copyWith(fontSize: 20)),
                   const SizedBox(height: 16),
-                  AppTextField(
-                      controller: comment, label: 'Добавить комментарий...'),
+                  AppTextField(controller: comment, label: L.addComment),
                   const SizedBox(height: 24),
-                  const Text('КУДА ОТПРАВИТЬ', style: T.label),
+                  Text(L.sendTo, style: T.label),
                   const SizedBox(height: 12),
                   ...context.read<CafeState>().groups.map((g) => ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: Avatar(label: g.name),
-                        title: Text(g.name,
+                        leading: Avatar(
+                            label: switch (g.type) {
+                          FeedType.kitchen => L.kitchen,
+                          FeedType.bar => L.bar,
+                          _ => L.generalChat,
+                        }),
+                        title: Text(
+                            switch (g.type) {
+                              FeedType.kitchen => L.kitchen,
+                              FeedType.bar => L.bar,
+                              _ => L.generalChat,
+                            },
                             style: T.bodySemi),
                         trailing:
                             const Icon(Icons.send_rounded, color: AppTheme.cta),
@@ -755,8 +767,7 @@ void showForwardSheet(BuildContext context, CafeTable table) {
                               .forwardTable(table, g, comment.text);
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Отправлено в чат')));
+                              SnackBar(content: Text(L.sentToChat)));
                         },
                       )),
                 ]),
