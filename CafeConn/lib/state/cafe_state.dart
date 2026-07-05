@@ -24,6 +24,14 @@ class CafeState extends ChangeNotifier {
   bool backendConnected = false;
   bool backendConnecting = false;
   String? backendError;
+
+  /// Manager dashboard analytics from the hub (aggregated over the full order
+  /// history). Null when not yet loaded, offline, or the backend predates the
+  /// stats endpoint — the panel then falls back to live client-side numbers.
+  StatsDto? stats;
+  bool statsLoading = false;
+  List<OrderHistoryDto> orderHistory = [];
+  bool orderHistoryLoading = false;
   String? _lastUser;
   String? _lastPass;
   Box get _box => Hive.box('cafeconnect');
@@ -50,7 +58,7 @@ class CafeState extends ChangeNotifier {
   UserRole currentRole = UserRole.admin;
 
   /// UI language (EN/IT). Mirrored into [L.lang]; every mutation notifies.
-  AppLang appLang = AppLang.en;
+  AppLang appLang = AppLang.it;
 
   bool online = true;
   bool noConnectionDismissed = false;
@@ -563,9 +571,8 @@ class CafeState extends ChangeNotifier {
   /// order (e.g. a realtime echo) does not duplicate the card.
   void addSystemMessage(CafeOrder order) {
     // General chat (type == null) + this order's station chat.
-    final targets = groups
-        .where((g) => g.type == null || g.type == order.splitTo)
-        .toList();
+    final targets =
+        groups.where((g) => g.type == null || g.type == order.splitTo).toList();
     if (targets.isEmpty) return;
     final summary =
         order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ');
@@ -1176,6 +1183,47 @@ class CafeState extends ChangeNotifier {
       debugPrint('createRemoteOrder failed: $e');
       notifyListeners();
       return null;
+    }
+  }
+
+  /// Pull the manager dashboard analytics. Safe to call from the panel's
+  /// initState: no-ops offline, and a missing endpoint (older backend) just
+  /// leaves [stats] null so the panel shows its live client-side numbers.
+  Future<void> refreshStats() async {
+    if (!backendConnected) {
+      stats = null;
+      notifyListeners();
+      return;
+    }
+    statsLoading = true;
+    notifyListeners();
+    try {
+      stats = await _remoteApi.stats();
+    } on ApiException catch (e) {
+      stats = null;
+      debugPrint('refreshStats failed: $e');
+    } finally {
+      statsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshOrderHistory() async {
+    if (!backendConnected) {
+      orderHistory = [];
+      notifyListeners();
+      return;
+    }
+    orderHistoryLoading = true;
+    notifyListeners();
+    try {
+      orderHistory = await _remoteApi.orderHistory();
+    } on ApiException catch (e) {
+      orderHistory = [];
+      debugPrint('refreshOrderHistory failed: $e');
+    } finally {
+      orderHistoryLoading = false;
+      notifyListeners();
     }
   }
 

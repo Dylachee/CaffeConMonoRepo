@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils.dart';
+import '../../data/dtos.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
@@ -24,7 +25,7 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() => setState(() {}));
   }
 
@@ -39,7 +40,7 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
                 icon: const Icon(Icons.settings_outlined),
                 onPressed: () => GoRouter.of(context).push('/settings')),
           ]),
-          Container(
+          SizedBox(
             height: 38,
             child: TabBar(
               controller: _tabController,
@@ -49,6 +50,7 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
               unselectedLabelColor: AppTheme.ink2,
               tabs: [
                 Tab(text: L.overview),
+                Tab(text: L.history),
                 Tab(text: L.team),
                 Tab(text: L.menu),
                 Tab(text: L.access)
@@ -62,6 +64,7 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 _OverviewTab(),
+                const _OrderHistoryTab(),
                 const TeamManagementScreen(),
                 const MenuManagementScreen(),
                 _AccessTab(),
@@ -74,106 +77,583 @@ class _StaffPanelScreenState extends State<StaffPanelScreen>
   }
 }
 
-class _OverviewTab extends StatelessWidget {
+class _OverviewTab extends StatefulWidget {
+  @override
+  State<_OverviewTab> createState() => _OverviewTabState();
+}
+
+class _OverviewTabState extends State<_OverviewTab> {
+  @override
+  void initState() {
+    super.initState();
+    // Pull the hub's aggregated analytics once mounted. No-op offline; on an
+    // older backend (no stats endpoint) it leaves state.stats null and the
+    // panel shows the live client-side fallback below.
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => context.read<CafeState>().refreshStats());
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Live numbers from the actual state — the tab used to show hardcoded
-    // demo values (fake revenue, fake deltas), which read as "simulated"
-    // activity even on a clean install.
     final state = context.watch<CafeState>();
+    final s = state.stats; // server aggregate (full history) when available
     final now = DateTime.now();
+
+    // --- Live client-side fallback: today's orders currently in memory. Used
+    // when the hub aggregate isn't available (offline/demo or old backend). ---
     final todayOrders = state.orders
         .where((o) =>
             o.createdAt.year == now.year &&
             o.createdAt.month == now.month &&
             o.createdAt.day == now.day)
         .toList();
-    final revenue = todayOrders.fold(0.0, (s, o) => s + o.total);
-    final servedTables = todayOrders.map((o) => o.tableId).toSet().length;
-    final avgCheck = servedTables == 0 ? 0.0 : revenue / servedTables;
-    final activeTables =
+    final localRevenue = todayOrders.fold(0.0, (sum, o) => sum + o.total);
+    final localServed = todayOrders.map((o) => o.tableId).toSet().length;
+    final localAvgCheck = localServed == 0 ? 0.0 : localRevenue / localServed;
+    final localActiveTables =
         state.tables.where((t) => t.status != TableStatus.free).length;
     final activeOrders =
         state.orders.where((o) => o.status != OrderStatus.completed).toList();
-    final oldestMin = activeOrders.isEmpty
+    final localOldestMin = activeOrders.isEmpty
         ? 0
         : activeOrders
             .map((o) => now.difference(o.createdAt).inMinutes)
             .reduce(max);
-
-    // Revenue by hour (today, 08:00–23:00).
-    final byHour = List<double>.filled(16, 0);
+    final localByHour = List<double>.filled(24, 0);
     for (final o in todayOrders) {
-      final h = o.createdAt.hour;
-      if (h >= 8 && h <= 23) byHour[h - 8] += o.total;
+      localByHour[o.createdAt.hour] += o.total;
     }
-    final maxHour = byHour.fold(0.0, max);
 
-    return ListView(
+    // --- Unified values: prefer the hub aggregate, else the live fallback. ---
+    final revenue = s?.revenueToday ?? localRevenue;
+    final ordersToday = s?.ordersToday ?? todayOrders.length;
+    final avgCheck = s?.avgCheck ?? localAvgCheck;
+    final servedTables = s?.servedTables ?? localServed;
+    final activeTables = s?.activeTables ?? localActiveTables;
+    final totalTables = s?.totalTables ?? state.tables.length;
+    final freeTables = s?.freeTables ?? (totalTables - activeTables);
+    final delayed = s?.delayedOrders ??
+        activeOrders
+            .where((o) => now.difference(o.createdAt).inMinutes > 20)
+            .length;
+    final byHour = s?.revenueByHour ?? localByHour;
+    // Show the hours that actually have activity (fall back to midday hours),
+    // so revenue never hides just because the shift isn't 08:00–23:00.
+    final activeHours = [
+      for (var h = 0; h < 24; h++)
+        if (byHour[h] > 0) h
+    ];
+    var startH = activeHours.isEmpty ? 10 : activeHours.first;
+    var endH = activeHours.isEmpty ? 21 : activeHours.last;
+    if (endH - startH < 5) endH = (startH + 5).clamp(0, 23);
+    final window = [
+      for (var h = startH; h <= endH; h++) (hour: h, value: byHour[h])
+    ];
+    final maxHour = window.fold(0.0, (m, e) => max(m, e.value));
+    final bestHour =
+        window.reduce((best, e) => e.value > best.value ? e : best);
+    final occupancy = totalTables == 0 ? 0.0 : activeTables / totalTables;
+
+    return RefreshIndicator(
+      onRefresh: () => context.read<CafeState>().refreshStats(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          if (state.statsLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.3,
+            children: [
+              MetricCard(
+                  label: L.revenue,
+                  value: revenue.rub,
+                  delta: s?.revenueDeltaPct != null
+                      ? L.vsYesterday(s!.revenueDeltaPct!)
+                      : L.todayOrders(ordersToday),
+                  isPositive: (s?.revenueDeltaPct ?? 0) >= 0,
+                  color: AppTheme.success,
+                  detail: _MetricDetail(rows: [
+                    _MetricRow(L.orders, '$ordersToday'),
+                    _MetricRow(L.bestHour, '${bestHour.hour}:00'),
+                  ])),
+              MetricCard(
+                  label: L.avgCheck,
+                  value: avgCheck.rub,
+                  delta: s?.avgCheckDeltaPct != null
+                      ? L.deltaPct(s!.avgCheckDeltaPct!)
+                      : L.acrossTables(servedTables),
+                  isPositive: (s?.avgCheckDeltaPct ?? 0) >= 0,
+                  color: AppTheme.gold,
+                  detail: _MetricDetail(rows: [
+                    _MetricRow(L.tables, '$servedTables'),
+                    _MetricRow(
+                        L.avgPrepTime, L.minutesShort(s?.avgPrepMinutes ?? 0)),
+                  ]),
+                  index: 1),
+              MetricCard(
+                  label: L.tables,
+                  value: '$activeTables / $totalTables',
+                  delta: L.freeCount(freeTables),
+                  isPositive: true,
+                  color: AppTheme.tOccupied,
+                  detail: _OccupancyDetail(
+                      occupancy: occupancy,
+                      activeTables: activeTables,
+                      freeTables: freeTables),
+                  index: 2),
+              _fourthCard(s, activeOrders.length, localOldestMin, delayed),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SectionTitle(L.revenueByHour),
+          AppCard(
+            height: 170,
+            child: maxHour == 0
+                ? Center(
+                    child: Text(L.noOrdersToday,
+                        style: T.body.copyWith(color: AppTheme.ink2)))
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: window
+                        .map((e) => Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 3),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      height: e.value == 0
+                                          ? 4
+                                          : 8 + 104 * (e.value / maxHour),
+                                      decoration: BoxDecoration(
+                                          color: e.value == maxHour
+                                              ? AppTheme.cta
+                                              : const Color(0xFFE4D7C2),
+                                          borderRadius:
+                                              BorderRadius.circular(4)),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text('${e.hour}',
+                                        style: T.label.copyWith(
+                                            color: AppTheme.ink3, fontSize: 9)),
+                                  ],
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Fourth metric card: with the hub aggregate it mirrors the design's
+  /// "Avg prep time" (real timing from the DB); on the local fallback it shows
+  /// the live "In progress" queue instead.
+  Widget _fourthCard(StatsDto? s, int inProgress, int oldestMin, int delayed) {
+    if (s != null) {
+      return MetricCard(
+          label: L.avgPrepTime,
+          value: L.minutesShort(s.avgPrepMinutes),
+          delta: delayed > 0 ? L.delayedCount(delayed) : L.onTime,
+          isPositive: delayed == 0,
+          color: AppTheme.warning,
+          detail: _MetricDetail(rows: [
+            _MetricRow(L.inProgress, '$inProgress'),
+            _MetricRow(
+                L.delayedCount(delayed), delayed == 0 ? L.onTime : '$delayed'),
+          ]),
+          index: 3);
+    }
+    return MetricCard(
+        label: L.inProgress,
+        value: '$inProgress',
+        delta: oldestMin > 0 ? L.oldestMin(oldestMin) : L.noQueue,
+        isPositive: oldestMin <= 20,
+        color: AppTheme.warning,
+        detail: _MetricDetail(rows: [
+          _MetricRow(L.oldestMin(oldestMin),
+              oldestMin > 0 ? L.minutesShort(oldestMin) : L.noQueue),
+          _MetricRow(L.delayedCount(delayed), '$delayed'),
+        ]),
+        index: 3);
+  }
+}
+
+class _MetricRow {
+  const _MetricRow(this.label, this.value);
+  final String label;
+  final String value;
+}
+
+class _MetricDetail extends StatelessWidget {
+  const _MetricDetail({required this.rows});
+  final List<_MetricRow> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: rows
+          .map((row) => Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(row.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: T.small.copyWith(color: AppTheme.ink3)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(row.value,
+                      style: T.smallSemi.copyWith(
+                          color: AppTheme.ink, fontWeight: FontWeight.w800)),
+                ]),
+              ))
+          .toList(),
+    );
+  }
+}
+
+class _OccupancyDetail extends StatelessWidget {
+  const _OccupancyDetail({
+    required this.occupancy,
+    required this.activeTables,
+    required this.freeTables,
+  });
+  final double occupancy;
+  final int activeTables;
+  final int freeTables;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.3,
-          children: [
-            MetricCard(
-                label: L.revenue,
-                value: revenue.rub,
-                delta: L.todayOrders(todayOrders.length),
-                isPositive: true,
-                color: AppTheme.success),
-            MetricCard(
-                label: L.avgCheck,
-                value: avgCheck.rub,
-                delta: L.acrossTables(servedTables),
-                isPositive: true,
-                color: AppTheme.gold,
-                index: 1),
-            MetricCard(
-                label: L.tables,
-                value: '$activeTables / ${state.tables.length}',
-                delta: L.occupiedNow,
-                isPositive: true,
-                color: AppTheme.tOccupied,
-                index: 2),
-            MetricCard(
-                label: L.inProgress,
-                value: '${activeOrders.length}',
-                delta: oldestMin > 0 ? L.oldestMin(oldestMin) : L.noQueue,
-                isPositive: oldestMin <= 20,
-                color: AppTheme.warning,
-                index: 3),
-          ],
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            minHeight: 8,
+            value: occupancy.clamp(0.0, 1.0),
+            backgroundColor: AppTheme.surfaceSunken,
+            valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.tOccupied),
+          ),
         ),
-        const SizedBox(height: 20),
-        SectionTitle(L.revenueByHour),
-        AppCard(
-          height: 160,
-          child: maxHour == 0
-              ? Center(
-                  child: Text(L.noOrdersToday,
-                      style: T.body.copyWith(color: AppTheme.ink2)))
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: byHour
-                      .map((v) => Container(
-                          width: 12,
-                          height: v == 0 ? 4 : 8 + 110 * (v / maxHour),
-                          decoration: BoxDecoration(
-                              color: v == maxHour
-                                  ? AppTheme.cta
-                                  : const Color(0xFFE4D7C2),
-                              borderRadius: BorderRadius.circular(4))))
-                      .toList(),
-                ),
-        ),
+        const SizedBox(height: 10),
+        _MetricDetail(rows: [
+          _MetricRow(L.active, '$activeTables'),
+          _MetricRow(L.free, '$freeTables'),
+        ]),
       ],
     );
   }
+}
+
+class _OrderHistoryTab extends StatefulWidget {
+  const _OrderHistoryTab();
+
+  @override
+  State<_OrderHistoryTab> createState() => _OrderHistoryTabState();
+}
+
+class _OrderHistoryTabState extends State<_OrderHistoryTab> {
+  String _query = '';
+  String _dateFilter = 'today';
+  String _stationFilter = 'all';
+  String _statusFilter = 'all';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshOrderHistory());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final history = state.orderHistory;
+    final filtered = history.where(_matchesFilters).toList();
+    return RefreshIndicator(
+      onRefresh: () => context.read<CafeState>().refreshOrderHistory(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          Row(children: [
+            Expanded(child: SectionTitle(L.orderHistory)),
+            if (state.orderHistoryLoading)
+              const CupertinoActivityIndicator()
+            else
+              Text(L.pullToRefresh,
+                  style: T.smallSemi.copyWith(color: AppTheme.ink3)),
+          ]),
+          _HistoryFilters(
+            dateFilter: _dateFilter,
+            stationFilter: _stationFilter,
+            statusFilter: _statusFilter,
+            onQuery: (value) => setState(() => _query = value),
+            onDate: (value) => setState(() => _dateFilter = value),
+            onStation: (value) => setState(() => _stationFilter = value),
+            onStatus: (value) => setState(() => _statusFilter = value),
+          ),
+          const SizedBox(height: 12),
+          if (history.isEmpty)
+            EmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: L.noOrderHistory,
+              sub: state.backendConnected ? L.pullToRefresh : L.localMode,
+            )
+          else if (filtered.isEmpty)
+            EmptyState(
+              icon: Icons.filter_alt_off_outlined,
+              title: L.nothingFound,
+              sub: L.changeSearch,
+            )
+          else
+            ...filtered.map((order) => _OrderHistoryCard(order: order)),
+        ],
+      ),
+    );
+  }
+
+  bool _matchesFilters(OrderHistoryDto order) {
+    final now = DateTime.now();
+    final localCreated = order.createdAt.toLocal();
+    if (_dateFilter == 'today' &&
+        (localCreated.year != now.year ||
+            localCreated.month != now.month ||
+            localCreated.day != now.day)) {
+      return false;
+    }
+    if (_dateFilter == 'week' && now.difference(localCreated).inDays >= 7) {
+      return false;
+    }
+    if (_stationFilter != 'all' && order.station != _stationFilter) {
+      return false;
+    }
+    if (_statusFilter != 'all' && order.status != _statusFilter) {
+      return false;
+    }
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final haystack = [
+      order.id,
+      '${order.tableNumber}',
+      order.status,
+      order.source,
+      order.station,
+      order.employee,
+      order.guestName,
+      ...order.items.map((item) => item.name),
+    ].join(' ').toLowerCase();
+    return haystack.contains(q);
+  }
+}
+
+class _HistoryFilters extends StatelessWidget {
+  const _HistoryFilters({
+    required this.dateFilter,
+    required this.stationFilter,
+    required this.statusFilter,
+    required this.onQuery,
+    required this.onDate,
+    required this.onStation,
+    required this.onStatus,
+  });
+  final String dateFilter;
+  final String stationFilter;
+  final String statusFilter;
+  final ValueChanged<String> onQuery;
+  final ValueChanged<String> onDate;
+  final ValueChanged<String> onStation;
+  final ValueChanged<String> onStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      elevation: false,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        CupertinoSearchTextField(
+          placeholder: L.searchOrders,
+          onChanged: onQuery,
+          style: T.body,
+        ),
+        const SizedBox(height: 10),
+        _FilterRow(options: [
+          _FilterOption('today', L.today),
+          _FilterOption('week', L.last7Days),
+          _FilterOption('all', L.all),
+        ], selected: dateFilter, onSelected: onDate),
+        const SizedBox(height: 8),
+        _FilterRow(options: [
+          _FilterOption('all', L.all),
+          _FilterOption('kitchen', L.kitchen),
+          _FilterOption('bar', L.bar),
+          _FilterOption('mixed', L.mixed),
+        ], selected: stationFilter, onSelected: onStation),
+        const SizedBox(height: 8),
+        _FilterRow(options: [
+          _FilterOption('all', L.status),
+          _FilterOption('paid', L.done),
+          _FilterOption('completed', L.osCompleted),
+          _FilterOption('cancelled', L.cancel),
+        ], selected: statusFilter, onSelected: onStatus),
+      ]),
+    );
+  }
+}
+
+class _FilterOption {
+  const _FilterOption(this.value, this.label);
+  final String value;
+  final String label;
+}
+
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+  final List<_FilterOption> options;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: options
+            .map((option) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(option.label),
+                    selected: selected == option.value,
+                    onSelected: (_) => onSelected(option.value),
+                    showCheckmark: false,
+                    selectedColor: AppTheme.cta,
+                    backgroundColor: AppTheme.card,
+                    labelStyle: T.smallSemi.copyWith(
+                      color: selected == option.value
+                          ? Colors.white
+                          : AppTheme.ink2,
+                    ),
+                    side: BorderSide(
+                      color: selected == option.value
+                          ? AppTheme.cta
+                          : AppTheme.separator,
+                    ),
+                  ),
+                ))
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _OrderHistoryCard extends StatelessWidget {
+  const _OrderHistoryCard({required this.order});
+  final OrderHistoryDto order;
+
+  @override
+  Widget build(BuildContext context) {
+    final created = order.createdAt.toLocal();
+    final hhmm =
+        '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}';
+    final date =
+        '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}';
+    final subtitle = [
+      '$date $hhmm',
+      '${L.source}: ${_sourceLabel(order.source)}',
+      if (order.employee.isNotEmpty) order.employee,
+      if (order.guestName.isNotEmpty) '${L.guest}: ${order.guestName}',
+    ].join(' · ');
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(
+              '${L.table} ${order.tableNumber} · #${order.id}',
+              style: T.h3.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+          ),
+          Text(order.total.rub, style: T.h2.copyWith(color: AppTheme.cta)),
+        ]),
+        const SizedBox(height: 4),
+        Text(subtitle, style: T.smallSemi.copyWith(color: AppTheme.ink2)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _historyChip(_statusLabel(order.status), AppTheme.tOccupied),
+            _historyChip(_stationLabel(order.station), AppTheme.warning),
+          ],
+        ),
+        const Divider(height: 24),
+        ...order.items.map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                Text('${item.qty}×',
+                    style: T.timer.copyWith(color: AppTheme.ink2)),
+                const SizedBox(width: 10),
+                Expanded(child: Text(item.name, style: T.body)),
+                Text(_stationLabel(item.station),
+                    style: T.smallSemi.copyWith(color: AppTheme.ink3)),
+              ]),
+            )),
+      ]),
+    );
+  }
+
+  Widget _historyChip(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Text(label,
+            style: T.smallSemi
+                .copyWith(color: color, fontWeight: FontWeight.w800)),
+      );
+
+  String _sourceLabel(String source) => switch (source) {
+        'guest_web' => 'QR',
+        'staff_app' => L.staff,
+        'admin_web' => L.panel,
+        _ => source,
+      };
+
+  String _stationLabel(String station) => switch (station) {
+        'kitchen' => L.kitchen,
+        'bar' => L.bar,
+        'mixed' => L.all,
+        _ => station,
+      };
+
+  String _statusLabel(String status) => switch (status) {
+        'new' => L.osAccepted,
+        'cooking' => L.osCooking,
+        'ready' => L.osReady,
+        'completed' => L.osCompleted,
+        'paid' => L.done,
+        'cancelled' => L.cancel,
+        _ => status,
+      };
 }
 
 class TeamManagementScreen extends StatelessWidget {
@@ -236,7 +716,7 @@ class MenuManagementScreen extends StatelessWidget {
                 ),
                 CupertinoSwitch(
                     value: item.available,
-                    activeColor: AppTheme.success,
+                    activeTrackColor: AppTheme.success,
                     onChanged: (v) => state.toggleAvailability(item)),
               ],
             ),
@@ -468,13 +948,12 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                 padding: EdgeInsets.fromLTRB(
                     20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(user == null ? L.newStaffMember : L.edit,
-                      style: T.h2),
+                  Text(user == null ? L.newStaffMember : L.edit, style: T.h2),
                   const SizedBox(height: 20),
                   AppTextField(controller: name, label: L.name),
                   const SizedBox(height: 12),
                   DropdownButtonFormField(
-                      value: role,
+                      initialValue: role,
                       items: UserRole.values
                           .map((r) => DropdownMenuItem(
                               value: r, child: Text(roleLabel(r))))

@@ -584,8 +584,7 @@ class QuickCheckOverlay extends StatelessWidget {
                                 child: Padding(
                                     padding: const EdgeInsets.symmetric(
                                         vertical: 32),
-                                    child:
-                                        Text(L.checkEmpty, style: T.body)))
+                                    child: Text(L.checkEmpty, style: T.body)))
                           else
                             ...items.map((l) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
@@ -633,6 +632,17 @@ class QuickCheckOverlay extends StatelessWidget {
                                       })),
                             ],
                           ),
+                          if (table.status != TableStatus.free) ...[
+                            const SizedBox(height: 10),
+                            AppButton(
+                              label: L.clearTable,
+                              icon: Icons.cleaning_services,
+                              kind: ButtonKind.primary,
+                              color: AppTheme.danger,
+                              onPressed: () =>
+                                  _confirmAndClearTable(context, state, table),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -646,5 +656,38 @@ class QuickCheckOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+Future<void> _confirmAndClearTable(
+    BuildContext context, CafeState state, CafeTable table) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppTheme.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(L.clearTableQ(table.number), style: T.h2),
+      content: Text(L.clearTableWarn, style: T.body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(L.cancel),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.danger,
+            foregroundColor: Colors.white,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(L.yesClear, style: T.bodySemi),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true && context.mounted) {
+    state.closeTable(table);
+    Navigator.pop(context);
   }
 }

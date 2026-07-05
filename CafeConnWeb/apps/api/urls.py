@@ -17,6 +17,8 @@ urlpatterns = [
     path("", include(router.urls)),
     path("auth/token/", views.ThrottledObtainAuthToken.as_view(), name="auth-token"),
     path("staff/bootstrap/", views.StaffBootstrapView.as_view(), name="staff-bootstrap"),
+    path("staff/stats/", views.StaffStatsView.as_view(), name="staff-stats"),
+    path("staff/order-history/", views.StaffOrderHistoryView.as_view(), name="staff-order-history"),
     path("staff/preferences/", views.StaffPreferenceView.as_view(), name="staff-preferences"),
     path("health/", views.HealthCheckView.as_view(), name="health"),
 ]

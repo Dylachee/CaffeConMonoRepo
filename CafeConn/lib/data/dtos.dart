@@ -397,3 +397,132 @@ class AttentionDto {
     );
   }
 }
+
+/// Manager dashboard analytics from GET /api/staff/stats/ — aggregated over
+/// the whole order history server-side (see StaffStatsView).
+class StatsDto {
+  final double revenueToday;
+  final int? revenueDeltaPct; // vs yesterday; null when yesterday had none
+  final int ordersToday;
+  final double avgCheck;
+  final int? avgCheckDeltaPct;
+  final int servedTables;
+  final int activeTables;
+  final int totalTables;
+  final int freeTables;
+  final int avgPrepMinutes;
+  final int delayedOrders;
+  final List<double> revenueByHour; // length 24, indexed by hour of day
+
+  const StatsDto({
+    required this.revenueToday,
+    required this.revenueDeltaPct,
+    required this.ordersToday,
+    required this.avgCheck,
+    required this.avgCheckDeltaPct,
+    required this.servedTables,
+    required this.activeTables,
+    required this.totalTables,
+    required this.freeTables,
+    required this.avgPrepMinutes,
+    required this.delayedOrders,
+    required this.revenueByHour,
+  });
+
+  factory StatsDto.fromJson(Map<String, dynamic> j) {
+    final raw = (j['revenueByHour'] as List?) ?? const [];
+    final hours = List<double>.generate(
+        24, (i) => i < raw.length ? _asDouble(raw[i]) : 0.0);
+    int? asIntOrNull(dynamic v) => v == null ? null : _asInt(v);
+    return StatsDto(
+      revenueToday: _asDouble(j['revenueToday']),
+      revenueDeltaPct: asIntOrNull(j['revenueDeltaPct']),
+      ordersToday: _asInt(j['ordersToday']),
+      avgCheck: _asDouble(j['avgCheck']),
+      avgCheckDeltaPct: asIntOrNull(j['avgCheckDeltaPct']),
+      servedTables: _asInt(j['servedTables']),
+      activeTables: _asInt(j['activeTables']),
+      totalTables: _asInt(j['totalTables']),
+      freeTables: _asInt(j['freeTables']),
+      avgPrepMinutes: _asInt(j['avgPrepMinutes']),
+      delayedOrders: _asInt(j['delayedOrders']),
+      revenueByHour: hours,
+    );
+  }
+}
+
+class OrderHistoryItemDto {
+  final String name;
+  final int qty;
+  final String station;
+  final bool ready;
+  final bool done;
+
+  const OrderHistoryItemDto({
+    required this.name,
+    required this.qty,
+    required this.station,
+    required this.ready,
+    required this.done,
+  });
+
+  factory OrderHistoryItemDto.fromJson(Map<String, dynamic> j) {
+    return OrderHistoryItemDto(
+      name: _asString(j['name']),
+      qty: _asInt(j['qty']),
+      station: _asString(j['station']),
+      ready: _asBool(j['ready']),
+      done: _asBool(j['done']),
+    );
+  }
+}
+
+class OrderHistoryDto {
+  final String id;
+  final int tableNumber;
+  final String status;
+  final String source;
+  final String station;
+  final String guestName;
+  final String employee;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final double total;
+  final List<OrderHistoryItemDto> items;
+
+  const OrderHistoryDto({
+    required this.id,
+    required this.tableNumber,
+    required this.status,
+    required this.source,
+    required this.station,
+    required this.guestName,
+    required this.employee,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.total,
+    required this.items,
+  });
+
+  factory OrderHistoryDto.fromJson(Map<String, dynamic> j) {
+    final rawItems = (j['items'] as List?) ?? const [];
+    return OrderHistoryDto(
+      id: _asString(j['id']),
+      tableNumber: _asInt(j['tableNumber']),
+      status: _asString(j['status']),
+      source: _asString(j['source']),
+      station: _asString(j['station']),
+      guestName: _asString(j['guestName']),
+      employee: _asString(j['employee']),
+      createdAt: DateTime.tryParse(_asString(j['createdAt'])) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      updatedAt: DateTime.tryParse(_asString(j['updatedAt'])) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      total: _asDouble(j['total']),
+      items: rawItems
+          .whereType<Map>()
+          .map((e) => OrderHistoryItemDto.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+}

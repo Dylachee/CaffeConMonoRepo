@@ -50,6 +50,8 @@ class ApiConfig {
   // REST endpoints.
   static Uri authToken() => Uri.parse('$apiRoot/auth/token/');
   static Uri bootstrap() => Uri.parse('$apiRoot/staff/bootstrap/');
+  static Uri stats() => Uri.parse('$apiRoot/staff/stats/');
+  static Uri orderHistory() => Uri.parse('$apiRoot/staff/order-history/');
   static Uri orders() => Uri.parse('$apiRoot/orders/');
   static Uri order(String id) => Uri.parse('$apiRoot/orders/$id/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');

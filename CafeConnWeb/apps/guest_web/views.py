@@ -1,4 +1,5 @@
 import mimetypes
+from datetime import date
 
 from django.conf import settings
 from django.contrib import messages
@@ -54,6 +55,8 @@ ORDER_STATUS_LABELS = {
     Order.Status.CANCELLED: "Order cancelled",
 }
 
+VALID_UNTIL_TAG = "valid_until:"
+
 
 MENU_VISUALS = {
     "aperitivi": ("drink", "🍹"),
@@ -65,6 +68,7 @@ MENU_VISUALS = {
     "cucina": ("hot", "🍽"),
     "dolci": ("dessert", "🍰"),
     "gelati": ("dessert", "🍨"),
+    "menu del giorno": ("hot", "🍽"),
     "panini": ("hot", "🍔"),
     "vino": ("drink", "🍷"),
 }
@@ -84,18 +88,25 @@ def menu_page(request, table_id=None, table_number=None):
 
     # menu_items is ordered by (category, name), so grouping is a single pass.
     sections = []
+    sections_by_name = {}
     menu_payload = []
+    visible_items = []
     for item in menu_items:
+        if _menu_item_expired(item):
+            continue
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
-        item.visual_key, item.visual_icon = _menu_visual(item.category)
+        display_category = "Menu del giorno" if _menu_item_is_daily(item) else item.category
+        item.menu_category = display_category
+        item.visual_key, item.visual_icon = _menu_visual(display_category)
         labels = menu_item_labels(item)
         item.name_en = labels["name_en"]
         item.name_it = labels["name_it"]
         item.description_en = labels["description_en"]
         item.description_it = labels["description_it"]
-        item.category_en = labels["category_en"]
-        item.category_it = labels["category_it"]
+        cat_labels = category_labels(display_category)
+        item.category_en = cat_labels["en"]
+        item.category_it = cat_labels["it"]
         menu_payload.append(
             {
                 "id": item.pk,
@@ -107,7 +118,7 @@ def menu_page(request, table_id=None, table_number=None):
                 "descriptionIt": item.description_it,
                 "price": float(item.price),
                 "priceText": item.price_str,
-                "category": item.category,
+                "category": display_category,
                 "categoryEn": item.category_en,
                 "categoryIt": item.category_it,
                 "imageUrl": item.image_url,
@@ -123,24 +134,45 @@ def menu_page(request, table_id=None, table_number=None):
                 "visualIcon": item.visual_icon,
             }
         )
-        if not sections or sections[-1]["name"] != item.category:
-            cat_labels = category_labels(item.category)
-            sections.append(
+        visible_items.append(item)
+        section = sections_by_name.get(display_category)
+        if section is None:
+            section = (
                 {
-                    "name": item.category,
+                    "name": display_category,
                     "name_en": cat_labels["en"],
                     "name_it": cat_labels["it"],
                     "items": [],
                 }
             )
-        sections[-1]["items"].append(item)
+            sections.append(section)
+            sections_by_name[display_category] = section
+        section["items"].append(item)
     for section in sections:
         section["items"].sort(key=lambda i: not i.is_available)  # stable
+    sections.sort(key=lambda s: (s["name"] != "Menu del giorno", s["name_it"]))
+    featured_items = [
+        item
+        for item in visible_items
+        if item.is_available and (item.menu_category == "Menu del giorno")
+    ]
+    if not featured_items:
+        featured_items = [
+            item
+            for item in visible_items
+            if item.is_available and "popular" in (item.tags or [])
+        ]
 
     return render(
         request,
         "guest_web/menu.html",
-        {"menu_sections": sections, "menu_payload": menu_payload, "table": table, "venue": VENUE},
+        {
+            "featured_items": featured_items,
+            "menu_sections": sections,
+            "menu_payload": menu_payload,
+            "table": table,
+            "venue": VENUE,
+        },
     )
 
 
@@ -215,7 +247,11 @@ def create_guest_order(request):
             messages.error(request, "Table not found. Please scan the QR code again.")
             return _redirect_menu(None)
 
-        menu_items = MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
+        menu_items = [
+            item
+            for item in MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
+            if not _menu_item_expired(item)
+        ]
         order_items = []
         for item in menu_items:
             try:
@@ -357,6 +393,24 @@ def _redirect_menu(table_id):
 
 def _menu_visual(category):
     return MENU_VISUALS.get((category or "").strip().lower(), ("default", "🍽"))
+
+
+def _menu_item_expired(item, today=None):
+    today = today or timezone.localdate()
+    for tag in item.tags or []:
+        if not isinstance(tag, str) or not tag.startswith(VALID_UNTIL_TAG):
+            continue
+        try:
+            valid_until = date.fromisoformat(tag.removeprefix(VALID_UNTIL_TAG))
+        except ValueError:
+            continue
+        if today > valid_until:
+            return True
+    return False
+
+
+def _menu_item_is_daily(item):
+    return item.category == "Menu del giorno" or "daily" in (item.tags or [])
 
 
 def _remember_guest_order(request, order_id):

@@ -452,12 +452,14 @@ class MetricCard extends StatelessWidget {
       required this.delta,
       required this.isPositive,
       required this.color,
+      this.detail,
       this.index = 0});
   final String label;
   final String value;
   final String delta;
   final bool isPositive;
   final Color color;
+  final Widget? detail;
   final int index;
 
   @override
@@ -481,7 +483,13 @@ class MetricCard extends StatelessWidget {
                       color: AppTheme.ink2, fontWeight: FontWeight.w500)),
             ],
           ),
-          const Spacer(),
+          if (detail == null)
+            const Spacer()
+          else ...[
+            const SizedBox(height: 14),
+            Expanded(child: detail!),
+            const SizedBox(height: 10),
+          ],
           Text(value, style: T.h2.copyWith(fontSize: 22)),
           const SizedBox(height: 4),
           Row(
@@ -627,6 +635,21 @@ class Header extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 16),
       child: Row(children: [
+        Container(
+          width: 42,
+          height: 42,
+          margin: const EdgeInsets.only(right: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.separator),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.asset(
+            'assets/images/cafeconnect-logo.png',
+            fit: BoxFit.cover,
+          ),
+        ),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

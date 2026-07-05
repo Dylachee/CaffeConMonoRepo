@@ -66,6 +66,25 @@ class CafeApiClient {
     return BootstrapDto.fromJson(_decodeMap(res));
   }
 
+  /// Manager dashboard analytics, aggregated from the full order history.
+  Future<StatsDto> stats() async {
+    final res =
+        await _send(() => _http.get(ApiConfig.stats(), headers: _headers()));
+    return StatsDto.fromJson(_decodeMap(res));
+  }
+
+  /// Manager order history, including closed/paid orders.
+  Future<List<OrderHistoryDto>> orderHistory() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.orderHistory(), headers: _headers()));
+    final body = _decodeMap(res);
+    final raw = (body['orders'] as List?) ?? const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => OrderHistoryDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
   /// Create an order. `items` = [{menu_item_id:int, quantity:int, notes:[...]}].
   /// The server auto-splits kitchen/bar by each item's station and broadcasts
   /// `order.created` on the realtime feed.

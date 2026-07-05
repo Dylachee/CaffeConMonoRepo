@@ -10,19 +10,27 @@ CATEGORY_TRANSLATIONS = {
     "Cucina": {"en": "Kitchen", "it": "Cucina"},
     "Dolci": {"en": "Desserts", "it": "Dolci"},
     "Gelati": {"en": "Ice cream", "it": "Gelati"},
+    "Menu del giorno": {"en": "Daily menu", "it": "Menu del giorno"},
     "Panini": {"en": "Sandwiches", "it": "Panini"},
     "Vino": {"en": "Wine", "it": "Vino"},
 }
 
 MENU_ITEM_TRANSLATIONS = {
     "Caffè espresso": {"en": "Espresso", "description_en": "Classic Italian espresso."},
+    "Caffè macchiato": {"en": "Macchiato", "description_en": "Espresso with a spot of milk."},
+    "Americano": {"en": "Americano", "description_en": "Long black coffee."},
+    "Decaffeinato": {"en": "Decaf coffee", "description_en": "Decaffeinated coffee."},
+    "Caffè con panna": {"en": "Espresso with cream", "description_en": "Espresso with whipped cream."},
     "Cappuccino": {"en": "Cappuccino", "description_en": "Espresso with velvety milk foam."},
     "Cappuccino miele e cannella": {"en": "Honey and cinnamon cappuccino", "description_en": "Cappuccino with honey and cinnamon."},
     "Flat White": {"en": "Flat white", "description_en": "Double espresso with creamy milk."},
     "Latte Macchiato": {"en": "Latte macchiato", "description_en": "Warm milk with a touch of espresso."},
+    "Babycino": {"en": "Babycino", "description_en": "Foamed milk for children."},
+    "Punch": {"en": "Punch", "description_en": "Hot punch."},
     "Cioccolata calda": {"en": "Hot chocolate", "description_en": "Thick, creamy hot chocolate."},
     "Bombardino": {"en": "Bombardino", "description_en": "Classic warm winter alcoholic drink."},
     "Tè / Tisana": {"en": "Tea / herbal tea", "description_en": "Selection of artisanal teas and herbal infusions."},
+    "Tè freddo": {"en": "Iced tea", "description_en": "Bottled iced tea."},
     "Acqua naturale 0,5l": {"en": "Still water 0.5l", "description_en": "Pejo still mineral water."},
     "Acqua frizzante 0,5l": {"en": "Sparkling water 0.5l", "description_en": "Pejo sparkling mineral water."},
     "Coca Cola": {"en": "Coca-Cola", "description_en": "Bottled Coca-Cola."},
@@ -79,6 +87,11 @@ MENU_ITEM_TRANSLATIONS = {
     "Coppa gelato": {"en": "Ice cream sundae", "description_en": "Ice cream cup with three flavors and whipped cream."},
     "Affogato al caffè": {"en": "Coffee affogato", "description_en": "Vanilla ice cream with hot espresso."},
     "Frappè": {"en": "Milkshake", "description_en": "Ice cream blended with milk."},
+    "Spiedino di pollo con patatine fritte": {"en": "Chicken skewer with fries", "description_en": "Chicken skewer served with French fries."},
+    "Caprese": {"en": "Caprese", "description_en": "Tomato, mozzarella and basil."},
+    "Cestino di insalata verde rucola e pomodoro": {"en": "Green salad basket", "description_en": "Green salad with arugula and tomato."},
+    "Nuggets di pollo": {"en": "Chicken nuggets", "description_en": "Chicken nuggets."},
+    "Piadina tacchino pomodoro insalata": {"en": "Turkey piadina", "description_en": "Flatbread with turkey, tomato and salad."},
 }
 
 

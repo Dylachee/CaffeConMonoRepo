@@ -1,5 +1,16 @@
+from datetime import timedelta
+
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import (
+    Avg,
+    DecimalField,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    Prefetch,
+    Sum,
+)
+from django.db.models.functions import ExtractHour
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
@@ -206,6 +217,169 @@ class StaffBootstrapView(APIView):
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "preferences": StaffPreferenceSerializer(preferences).data,
                 "websocketPath": "/ws/staff/?token=<token>",
+            }
+        )
+
+
+class StaffStatsView(APIView):
+    """Manager/admin dashboard analytics, aggregated from the whole order
+    history in the DB (not just the live orders a device happens to hold).
+
+    The staff app computed these client-side from its in-memory order list,
+    which only ever contains *active* orders — so once tables were cleared the
+    numbers collapsed to ~0. The source of truth for a day's revenue is the
+    database, hence this endpoint.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    # Line revenue = unit_price * quantity, summed across items.
+    _MONEY = DecimalField(max_digits=12, decimal_places=2)
+
+    def get(self, request):
+        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+            raise PermissionDenied("Only a manager or admin can view analytics.")
+
+        now = timezone.localtime()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        line_total = ExpressionWrapper(F("unit_price") * F("quantity"), output_field=self._MONEY)
+
+        def revenue_on(day):
+            value = (
+                OrderItem.objects.filter(order__created_at__date=day)
+                .exclude(order__status=Order.Status.CANCELLED)
+                .aggregate(total=Sum(line_total))["total"]
+            )
+            return float(value or 0)
+
+        def served_tables_on(day):
+            return (
+                Order.objects.filter(created_at__date=day)
+                .exclude(status=Order.Status.CANCELLED)
+                .values("table")
+                .distinct()
+                .count()
+            )
+
+        revenue_today = revenue_on(today)
+        revenue_yesterday = revenue_on(yesterday)
+        orders_today = (
+            Order.objects.filter(created_at__date=today)
+            .exclude(status=Order.Status.CANCELLED)
+            .count()
+        )
+        served_today = served_tables_on(today)
+        served_yesterday = served_tables_on(yesterday)
+        avg_check_today = revenue_today / served_today if served_today else 0.0
+        avg_check_yesterday = (
+            revenue_yesterday / served_yesterday if served_yesterday else 0.0
+        )
+
+        # Revenue by hour (0..23), today.
+        by_hour = [0.0] * 24
+        rows = (
+            OrderItem.objects.filter(order__created_at__date=today)
+            .exclude(order__status=Order.Status.CANCELLED)
+            .annotate(hour=ExtractHour("order__created_at"))
+            .values("hour")
+            .annotate(value=Sum(line_total))
+        )
+        for row in rows:
+            if row["hour"] is not None:
+                by_hour[int(row["hour"])] = float(row["value"] or 0)
+
+        # Average prep time: how long ready items took (updated_at - created_at).
+        prep = OrderItem.objects.filter(
+            order__created_at__date=today, ready=True
+        ).aggregate(
+            avg=Avg(
+                ExpressionWrapper(
+                    F("updated_at") - F("created_at"), output_field=DurationField()
+                )
+            )
+        )["avg"]
+        avg_prep_min = int(prep.total_seconds() // 60) if prep else 0
+
+        # Orders still open longer than 20 minutes = running late.
+        late_threshold = now - timedelta(minutes=20)
+        delayed = (
+            Order.objects.exclude(
+                status__in=[Order.Status.PAID, Order.Status.CANCELLED]
+            )
+            .filter(created_at__lt=late_threshold)
+            .count()
+        )
+
+        total_tables = Table.objects.count()
+        active_tables = Table.objects.exclude(status=Table.Status.FREE).count()
+
+        def pct(today_value, prev_value):
+            if not prev_value:
+                return None
+            return round((today_value - prev_value) / prev_value * 100)
+
+        return Response(
+            {
+                "revenueToday": round(revenue_today, 2),
+                "revenueYesterday": round(revenue_yesterday, 2),
+                "revenueDeltaPct": pct(revenue_today, revenue_yesterday),
+                "ordersToday": orders_today,
+                "avgCheck": round(avg_check_today, 2),
+                "avgCheckDeltaPct": pct(avg_check_today, avg_check_yesterday),
+                "servedTables": served_today,
+                "activeTables": active_tables,
+                "totalTables": total_tables,
+                "freeTables": max(total_tables - active_tables, 0),
+                "avgPrepMinutes": avg_prep_min,
+                "delayedOrders": delayed,
+                "revenueByHour": by_hour,
+                "generatedAt": now.isoformat(),
+            }
+        )
+
+
+class StaffOrderHistoryView(APIView):
+    """Manager/admin order history, including closed/paid orders."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+            raise PermissionDenied("Only a manager or admin can view order history.")
+
+        orders = (
+            Order.objects.select_related("table", "employee")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")
+        )
+        return Response(
+            {
+                "orders": [
+                    {
+                        "id": str(order.id),
+                        "tableNumber": order.table.number,
+                        "status": order.status,
+                        "source": order.source,
+                        "station": order.station_scope,
+                        "guestName": order.guest_name,
+                        "employee": order.employee.name if order.employee else "",
+                        "createdAt": order.created_at.isoformat(),
+                        "updatedAt": order.updated_at.isoformat(),
+                        "total": float(order.total),
+                        "items": [
+                            {
+                                "name": menu_item_labels(item.menu_item)["name_en"],
+                                "qty": item.quantity,
+                                "station": item.station,
+                                "ready": item.ready,
+                                "done": item.done,
+                            }
+                            for item in order.items.all()
+                        ],
+                    }
+                    for order in orders
+                ]
             }
         )
 

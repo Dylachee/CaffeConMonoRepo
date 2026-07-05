@@ -10,7 +10,7 @@ library;
 enum AppLang { en, it }
 
 class L {
-  static AppLang lang = AppLang.en;
+  static AppLang lang = AppLang.it;
   static bool get isIt => lang == AppLang.it;
   static String t(String en, String it) => isIt ? it : en;
 
@@ -130,6 +130,7 @@ class L {
   static String get barU => t('BAR', 'BAR');
   static String get kitchen => t('Kitchen', 'Cucina');
   static String get bar => t('Bar', 'Bar');
+  static String get mixed => t('Mixed', 'Misto');
   static String get allDone => t('All done', 'Tutto fatto');
   static String get noActiveKitchen =>
       t('No active kitchen orders', 'Nessun ordine attivo in cucina');
@@ -256,6 +257,29 @@ class L {
   static String get revenueByHour => t('Revenue by hour', 'Incasso per ora');
   static String get noOrdersToday =>
       t('No orders yet today', 'Nessun ordine oggi');
+  static String get bestHour => t('Best hour', 'Ora migliore');
+  static String get avgPrepTime => t('Avg prep time', 'Tempo medio prep.');
+  static String minutesShort(int n) => t('$n min', '$n min');
+  static String vsYesterday(int pct) => pct >= 0
+      ? t('▲ $pct% vs yesterday', '▲ $pct% rispetto a ieri')
+      : t('▼ ${-pct}% vs yesterday', '▼ ${-pct}% rispetto a ieri');
+  static String deltaPct(int pct) => pct >= 0 ? '▲ $pct%' : '▼ ${-pct}%';
+  static String freeCount(int n) => t('$n free', '$n liberi');
+  static String delayedCount(int n) => t('$n delayed', '$n in ritardo');
+  static String get onTime => t('all on time', 'tutto in orario');
+  static String get today => t('today', 'oggi');
+  static String get last7Days => t('Last 7 days', 'Ultimi 7 giorni');
+  static String get searchOrders =>
+      t('Search table, item, staff...', 'Cerca tavolo, piatto, staff...');
+  static String get status => t('Status', 'Stato');
+  static String get history => t('History', 'Storico');
+  static String get noOrderHistory =>
+      t('No orders in history', 'Nessun ordine nello storico');
+  static String get pullToRefresh =>
+      t('Pull to refresh', 'Trascina per aggiornare');
+  static String get table => t('Table', 'Tavolo');
+  static String get source => t('Source', 'Origine');
+  static String get guest => t('Guest', 'Ospite');
   static String get staff => t('Staff', 'Personale');
   static String get items => t('Items', 'Articoli');
   static String get rolePermissions =>

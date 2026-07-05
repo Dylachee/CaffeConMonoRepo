@@ -75,11 +75,40 @@ class Command(BaseCommand):
                 "station": Station.BAR,
             },
             {
+                "name": "Caffè macchiato",
+                "description": "Espresso con una macchia di latte.",
+                "price": Decimal("2.00"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
+                "name": "Americano",
+                "description": "Caffè americano lungo.",
+                "price": Decimal("2.00"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
+                "name": "Decaffeinato",
+                "description": "Caffè decaffeinato.",
+                "price": Decimal("2.00"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
+                "name": "Caffè con panna",
+                "description": "Espresso con panna.",
+                "price": Decimal("2.50"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
                 "name": "Cappuccino",
                 "description": "Espresso con schiuma di latte vellutata.",
                 "price": Decimal("3.00"),
                 "category": "Caffetteria",
                 "station": Station.BAR,
+                "tags": ["popular"],
             },
             {
                 "name": "Cappuccino miele e cannella",
@@ -103,6 +132,20 @@ class Command(BaseCommand):
                 "station": Station.BAR,
             },
             {
+                "name": "Babycino",
+                "description": "Latte montato per bambini.",
+                "price": Decimal("3.50"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
+                "name": "Punch",
+                "description": "Punch caldo.",
+                "price": Decimal("5.00"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
                 "name": "Cioccolata calda",
                 "description": "Cioccolata calda densa e cremosa.",
                 "price": Decimal("5.50"),
@@ -120,6 +163,13 @@ class Command(BaseCommand):
                 "name": "Tè / Tisana",
                 "description": "Selezione di tè e tisane artigianali.",
                 "price": Decimal("3.50"),
+                "category": "Caffetteria",
+                "station": Station.BAR,
+            },
+            {
+                "name": "Tè freddo",
+                "description": "Tè freddo in bottiglia.",
+                "price": Decimal("4.50"),
                 "category": "Caffetteria",
                 "station": Station.BAR,
             },
@@ -216,6 +266,7 @@ class Command(BaseCommand):
                 "price": Decimal("8.00"),
                 "category": "Aperitivi",
                 "station": Station.BAR,
+                "tags": ["popular"],
             },
             {
                 "name": "Hugo",
@@ -294,7 +345,6 @@ class Command(BaseCommand):
                 "price": Decimal("14.00"),
                 "category": "Cocktails",
                 "station": Station.BAR,
-                "is_promoted": True,
             },
             # ── VINO (bar) ────────────────────────────────────────────────────
             {
@@ -389,6 +439,7 @@ class Command(BaseCommand):
                 "price": Decimal("16.00"),
                 "category": "Cucina",
                 "station": Station.KITCHEN,
+                "tags": ["popular"],
             },
             {
                 "name": "Patatine fritte",
@@ -397,6 +448,52 @@ class Command(BaseCommand):
                 "category": "Cucina",
                 "station": Station.KITCHEN,
             },
+            # ── MENU DEL GIORNO — 05/07, hidden after 2026-07-05 ──────────────
+            {
+                "name": "Spiedino di pollo con patatine fritte",
+                "description": "Spiedino di pollo servito con patatine fritte.",
+                "price": Decimal("14.00"),
+                "category": "Menu del giorno",
+                "station": Station.KITCHEN,
+                "tags": ["daily", "valid_until:2026-07-05"],
+                "is_promoted": True,
+            },
+            {
+                "name": "Caprese",
+                "description": "Pomodoro, mozzarella e basilico.",
+                "price": Decimal("12.00"),
+                "category": "Menu del giorno",
+                "station": Station.KITCHEN,
+                "tags": ["daily", "valid_until:2026-07-05"],
+                "is_promoted": True,
+            },
+            {
+                "name": "Cestino di insalata verde rucola e pomodoro",
+                "description": "Insalata verde con rucola e pomodoro.",
+                "price": Decimal("12.00"),
+                "category": "Menu del giorno",
+                "station": Station.KITCHEN,
+                "tags": ["daily", "valid_until:2026-07-05"],
+                "is_promoted": True,
+            },
+            {
+                "name": "Nuggets di pollo",
+                "description": "Nuggets di pollo.",
+                "price": Decimal("6.00"),
+                "category": "Menu del giorno",
+                "station": Station.KITCHEN,
+                "tags": ["daily", "valid_until:2026-07-05"],
+                "is_promoted": True,
+            },
+            {
+                "name": "Piadina tacchino pomodoro insalata",
+                "description": "Piadina con tacchino, pomodoro e insalata.",
+                "price": Decimal("8.50"),
+                "category": "Menu del giorno",
+                "station": Station.KITCHEN,
+                "tags": ["daily", "valid_until:2026-07-05"],
+                "is_promoted": True,
+            },
             # ── PANINI (kitchen) ──────────────────────────────────────────────
             {
                 "name": "Hamburger Sissi",
@@ -404,7 +501,6 @@ class Command(BaseCommand):
                 "price": Decimal("14.00"),
                 "category": "Panini",
                 "station": Station.KITCHEN,
-                "is_promoted": True,
             },
             {
                 "name": "Hamburger vegetariano",
@@ -455,6 +551,7 @@ class Command(BaseCommand):
                 "price": Decimal("6.50"),
                 "category": "Dolci",
                 "station": Station.BAR,
+                "tags": ["popular"],
             },
             {
                 "name": "Cheesecake Sissi",
@@ -530,11 +627,76 @@ class Command(BaseCommand):
         ]
 
         for item in items:
+            self._enrich_menu_item(item)
             obj, created = MenuItem.objects.update_or_create(
                 name=item["name"], defaults=item
             )
             status = "created" if created else "updated"
             self.stdout.write(f"  [{item['category']}] {item['name']} — {status}")
+
+    def _enrich_menu_item(self, item):
+        item.setdefault("is_promoted", False)
+        item.setdefault("composition", item.get("description", ""))
+        item.setdefault("allergens", self._infer_allergens(item))
+        item.setdefault("portion_weight", self._default_portion(item))
+        item.setdefault("calories", self._default_calories(item))
+        item.setdefault("preparation_minutes", self._default_prep(item))
+
+    def _infer_allergens(self, item):
+        text = f"{item['name']} {item.get('description', '')}".lower()
+        allergens = []
+        if any(word in text for word in ["latte", "cappuccino", "milk", "formaggio", "mozzarella", "panna", "gelato", "cheesecake", "cioccolata", "bombardino", "frappè"]):
+            allergens.append("Milk")
+        if any(word in text for word in ["croissant", "toast", "cotoletta", "hamburger", "burger", "club sandwich", "panino", "piadina", "nuggets", "strudel", "sacher", "crostata", "crepes", "torta", "birra"]):
+            allergens.append("Gluten")
+        if any(word in text for word in ["uova", "omelette", "crema", "maionese", "crepes", "sacher", "torta"]):
+            allergens.append("Eggs")
+        if any(word in text for word in ["noci", "nutella"]):
+            allergens.append("Nuts")
+        if "senape" in text:
+            allergens.append("Mustard")
+        if item["category"] == "Vino":
+            allergens.append("Sulphites")
+        return allergens
+
+    def _default_portion(self, item):
+        category = item["category"]
+        name = item["name"].lower()
+        if "0,5l" in name or "media" in name:
+            return "500 ml"
+        if "piccola" in name or "0,25l" in name:
+            return "250 ml"
+        if category in {"Caffetteria", "Bevande", "Birra", "Aperitivi", "Cocktails", "Vino"}:
+            return "150-250 ml"
+        if category in {"Colazione", "Dolci", "Gelati"}:
+            return "1 portion"
+        return "1 plate"
+
+    def _default_calories(self, item):
+        category = item["category"]
+        text = f"{item['name']} {item.get('description', '')}".lower()
+        if category == "Caffetteria":
+            if "espresso" in text or "tè" in text or "tisana" in text:
+                return 5
+            if "cioccolata" in text or "bombardino" in text:
+                return 260
+            return 130
+        if category in {"Bevande", "Aperitivi", "Cocktails", "Vino", "Birra"}:
+            if "acqua" in text:
+                return 0
+            return 160
+        if category == "Colazione":
+            return 320
+        if category in {"Cucina", "Panini", "Menu del giorno"}:
+            return 650
+        return 360
+
+    def _default_prep(self, item):
+        if item["category"] in {"Cucina", "Panini", "Menu del giorno"}:
+            return 12
+        if item["category"] in {"Colazione", "Dolci", "Gelati"}:
+            return 7
+        return 5
 
     def _cleanup_demo_items(self):
         """Remove seed_demo placeholder items that don't belong to Sissi Bistro Bar."""
