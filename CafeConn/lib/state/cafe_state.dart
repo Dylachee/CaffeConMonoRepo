@@ -810,6 +810,16 @@ class CafeState extends ChangeNotifier {
     return n;
   }
 
+  /// Waiter/manager action: deliver the ready-but-undelivered items in [lines]
+  /// (a single order, optionally narrowed to one station's items in the feed).
+  /// Runs per item so each goes through the item-level path.
+  Future<void> deliverReadyLines(CafeOrder order, List<CartLine> lines) async {
+    final pending = lines.where((l) => l.ready && !l.done).toList();
+    for (final line in pending) {
+      await toggleOrderItemDelivered(order, line);
+    }
+  }
+
   /// Waiter/manager action: deliver every ready item on this table at once.
   /// Runs one-by-one (per item) so each delivery goes through the same
   /// item-level path — the order only completes once its last item is served.

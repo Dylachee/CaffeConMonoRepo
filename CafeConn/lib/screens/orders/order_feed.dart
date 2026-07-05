@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
@@ -172,8 +173,11 @@ class OrderCard extends StatelessWidget {
     final zoneColor =
         effectiveZone == FeedType.kitchen ? AppTheme.warning : AppTheme.bar;
     final visibleItems = zone == null ? order.items : order.itemsFor(zone!);
+    // Waiter/manager/admin can jump straight from an order card to its table
+    // (station roles have no table screen, so no navigation for them).
+    final canOpenTable = state.canSeeTables && table != null;
 
-    return AppCard(
+    final card = AppCard(
       index: index,
       padding: EdgeInsets.zero,
       borderColor: late ? AppTheme.danger : null,
@@ -266,6 +270,18 @@ class OrderCard extends StatelessWidget {
         color:
             late ? AppTheme.danger.withValues(alpha: .05) : Colors.transparent,
         duration: 500.ms);
+
+    if (!canOpenTable) return card;
+    // Tapping the card body opens the table; taps on the inner buttons
+    // (deliver / chat) win the gesture arena, so they still act as before.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        state.currentTable = table;
+        GoRouter.of(context).push('/table-details');
+      },
+      child: card,
+    );
   }
 
   /// Role-aware primary action:
@@ -296,8 +312,15 @@ class OrderCard extends StatelessWidget {
     }
     if (canDeliver) {
       if (hasReadyToDeliver) {
-        return _StatusStrip(
-            label: L.deliverReadyItems, color: AppTheme.success);
+        // Real action now (was a passive label): deliver every ready item in
+        // this order. Per-item "Delivered to guest" buttons still sit on each
+        // line for delivering them individually.
+        final readyN = visibleItems.where((l) => l.ready && !l.done).length;
+        return AppButton(
+            label: L.deliverAllReadyN(readyN),
+            icon: Icons.done_all,
+            color: AppTheme.success,
+            onPressed: () => state.deliverReadyLines(order, visibleItems));
       }
       return _StatusStrip(
           label: stationReady ? L.waitingWaiter : L.waitingStation,
