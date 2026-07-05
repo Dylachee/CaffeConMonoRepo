@@ -141,6 +141,12 @@ class L {
       t('Delivered to guest', 'Servito al tavolo');
   static String get deliverReadyItems =>
       t('Deliver ready items below', 'Servi gli elementi pronti qui sotto');
+  static String get deliverAllReady =>
+      t('Deliver all ready', 'Servi tutti i pronti');
+  static String deliverAllReadyN(int n) =>
+      t('Deliver all ready ($n)', 'Servi tutti i pronti ($n)');
+  static String get nothingReadyYet =>
+      t('Nothing ready to deliver yet', 'Niente di pronto da servire');
   static String get itemReady => t('Ready', 'Pronto');
   static String get itemDelivered => t('Delivered', 'Servito');
   static String get waitingWaiter =>
@@ -271,6 +277,10 @@ class L {
 
   // ---- settings ----
   static String get settings => t('Settings', 'Impostazioni');
+  static String get logout => t('Log out', 'Esci');
+  static String get logoutConfirm => t(
+      'Sign out and return to the login screen?',
+      "Disconnettersi e tornare alla schermata di accesso?");
   static String get account => t('Account', 'Account');
   static String get currentStaff =>
       t('Current staff member', 'Membro del personale attuale');

@@ -30,6 +30,12 @@ class SettingsScreen extends StatelessWidget {
             _SettingsRow(label: L.currentStaff, value: state.activeUserName),
             if (state.backendConnected)
               _SettingsRow(label: L.role, value: roleLabel(state.currentRole)),
+            if (state.backendConnected)
+              _SettingsRow(
+                label: L.logout,
+                trailing: const Icon(Icons.logout, color: AppTheme.danger),
+                onTap: () => _confirmLogout(context, state),
+              ),
           ]),
           _SettingsSection(L.appearance, [
             // EN/IT toggle: flips every label in the app and the menu
@@ -146,6 +152,29 @@ class SettingsScreen extends StatelessWidget {
           _SettingsSection(L.aboutApp, [
             _SettingsRow(label: L.version, value: 'v0.2.0'),
           ]),
+        ],
+      ),
+    );
+  }
+
+  void _confirmLogout(BuildContext context, CafeState state) {
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(L.logout),
+        content: Text(L.logoutConfirm),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
+          TextButton(
+              onPressed: () async {
+                Navigator.pop(c);
+                await state.disconnectBackend();
+                // Back on the settings screen the login form now shows; pop
+                // to the shell so the (now local/demo) app is usable again.
+                if (context.mounted) Navigator.of(context).maybePop();
+              },
+              child: Text(L.logout, style: T.bodySemi)),
         ],
       ),
     );

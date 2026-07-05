@@ -273,13 +273,6 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleItemDone(CafeTable table, CartLine line) {
-    line.done = !line.done;
-    HapticFeedback.selectionClick();
-    _saveTables();
-    notifyListeners();
-  }
-
   void addItemNote(CartLine line, String note) {
     final notes = line.modifiers
         .split(',')
@@ -564,21 +557,39 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Post a "new order" receipt card into the chats. It lands in the General
+  /// chat (everyone) AND the relevant station chat (kitchen or bar), so the
+  /// team sees every order come in. Idempotent: calling it again for the same
+  /// order (e.g. a realtime echo) does not duplicate the card.
   void addSystemMessage(CafeOrder order) {
-    final group = groups.firstWhereOrNull((g) => g.type == order.splitTo);
-    if (group == null) return;
-    messages.add(ChatMessage(
-      id: _nextMessageId(),
-      groupId: group.id,
-      senderId: 'system',
-      text:
-          '#orders New order #${order.id}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}',
-      tags: const ['#orders'],
-      timestamp: DateTime.now(),
-      kind: MessageKind.orderCard,
-      refId: order.id,
-    ));
-    _saveMessages();
+    // General chat (type == null) + this order's station chat.
+    final targets = groups
+        .where((g) => g.type == null || g.type == order.splitTo)
+        .toList();
+    if (targets.isEmpty) return;
+    final summary =
+        order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ');
+    var added = false;
+    for (final group in targets) {
+      // Skip if this order already has a card in this group.
+      final already = messages.any((m) =>
+          m.groupId == group.id &&
+          m.kind == MessageKind.orderCard &&
+          m.refId == order.id);
+      if (already) continue;
+      messages.add(ChatMessage(
+        id: _nextMessageId(),
+        groupId: group.id,
+        senderId: 'system',
+        text: '#orders New order #${order.id}:$summary',
+        tags: const ['#orders'],
+        timestamp: DateTime.now(),
+        kind: MessageKind.orderCard,
+        refId: order.id,
+      ));
+      added = true;
+    }
+    if (added) _saveMessages();
   }
 
   void toggleOnline() {
@@ -784,6 +795,34 @@ class CafeState extends ChangeNotifier {
     if (backendConnected && line.orderItemId != null) {
       await _pushItemDone(
           order, line, previousDone, previousReady, previousStatus);
+    }
+  }
+
+  /// Count of items across a table's active orders that are ready but not yet
+  /// delivered — drives the "Deliver all ready (n)" button.
+  int readyToDeliverCount(String tableId) {
+    var n = 0;
+    for (final order in orders.where((o) => o.tableId == tableId)) {
+      for (final line in order.items) {
+        if (line.ready && !line.done) n++;
+      }
+    }
+    return n;
+  }
+
+  /// Waiter/manager action: deliver every ready item on this table at once.
+  /// Runs one-by-one (per item) so each delivery goes through the same
+  /// item-level path — the order only completes once its last item is served.
+  Future<void> deliverAllReadyForTable(String tableId) async {
+    // Snapshot first: toggleOrderItemDelivered mutates state as it goes.
+    final pending = <(CafeOrder, CartLine)>[];
+    for (final order in orders.where((o) => o.tableId == tableId)) {
+      for (final line in order.items) {
+        if (line.ready && !line.done) pending.add((order, line));
+      }
+    }
+    for (final (order, line) in pending) {
+      await toggleOrderItemDelivered(order, line);
     }
   }
 
@@ -1061,6 +1100,11 @@ class CafeState extends ChangeNotifier {
       orders[index] = order;
     } else {
       orders.add(order);
+      // A brand-new order (created here, echoed from the hub, or replayed from
+      // the offline queue) drops a receipt card into General + its station
+      // chat. addSystemMessage is idempotent, so the realtime echo of an order
+      // we just created locally won't post it twice.
+      addSystemMessage(order);
     }
     // Note: no local table-status inference here — the hub broadcasts
     // `table.updated` alongside every order event, so guessing locally would

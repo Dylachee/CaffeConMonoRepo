@@ -26,8 +26,22 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final table = state.currentTable ?? state.tables.first;
+    // The check has two parts: unsent DRAFT lines (still being composed) and
+    // the real orders already sent to the kitchen/bar (live ready/delivered
+    // state). Delivery acts on the real orders, never on the draft copies —
+    // that disconnect was why "Delivered to guest" did nothing.
     final lines = state.tableCart(table.id);
-    final total = lines.fold(0.0, (sum, l) => sum + l.total);
+    final drafts = lines.where((l) => !l.sent).toList();
+    final tableOrders =
+        state.orders.where((o) => o.tableId == table.id).toList();
+    final activeOrders = tableOrders
+        .where((o) => o.status != OrderStatus.completed)
+        .toList();
+    final orderItems = tableOrders.expand((o) => o.items).toList();
+    final deliveredCount = orderItems.where((l) => l.done).length;
+    final totalItems = orderItems.length;
+    final total = orderItems.fold(0.0, (sum, l) => sum + l.total) +
+        drafts.fold(0.0, (sum, l) => sum + l.total);
 
     return AppScaffold(
       child: Column(
@@ -65,7 +79,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   children: [
                     Text(L.order, style: T.sectionTitle),
                     const SizedBox(width: 10),
-                    if (lines.isNotEmpty)
+                    if (totalItems > 0)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
@@ -74,8 +88,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           borderRadius: BorderRadius.circular(7),
                         ),
                         child: Text(
-                          L.served(
-                              lines.where((l) => l.done).length, lines.length),
+                          L.served(deliveredCount, totalItems),
                           style: const TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 11,
@@ -88,7 +101,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                 const SizedBox(height: 12),
                 _guestStepper(context, state, table),
                 const SizedBox(height: 16),
-                if (lines.isEmpty)
+                if (drafts.isEmpty && tableOrders.isEmpty)
                   AppCard(
                     padding: const EdgeInsets.all(32),
                     child: Center(
@@ -108,13 +121,16 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       ),
                     ),
                   )
-                else
-                  // Unsent (draft) lines can be swiped away or deleted with
-                  // the explicit button; sent lines are already on the
-                  // kitchen/bar screens and can only be marked as delivered.
-                  ...lines.map((l) => l.sent
-                      ? _orderItemRow(context, state, table, l)
-                      : Dismissible(
+                else ...[
+                  // Live orders (sent to kitchen/bar): per-item delivery +
+                  // "deliver all ready". This is the waiter's real delivery
+                  // surface, driven by server state, not by the draft copies.
+                  if (activeOrders.isNotEmpty) _ActiveDeliverySection(table: table),
+                  // Draft (not-yet-sent) lines: still editable — swipe or the
+                  // delete button removes them, tap opens note presets.
+                  if (drafts.isNotEmpty) ...[
+                    if (activeOrders.isNotEmpty) const SizedBox(height: 6),
+                    ...drafts.map((l) => Dismissible(
                           key: ValueKey(l.hashCode),
                           direction: DismissDirection.endToStart,
                           background: Container(
@@ -131,7 +147,9 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                               state.deleteLine(l, tableId: table.id),
                           child: _orderItemRow(context, state, table, l),
                         )),
-                if (lines.isNotEmpty) ...[
+                  ],
+                ],
+                if (totalItems > 0 || drafts.isNotEmpty) ...[
                   const Divider(height: 32),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -383,28 +401,23 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: GestureDetector(
-        onLongPress: () => state.toggleItemDone(table, line),
         onTap: () => _showNotePresets(context, state, line),
         behavior: HitTestBehavior.opaque,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              onTap: () => state.toggleItemDone(table, line),
-              child: Container(
-                width: 23,
-                height: 23,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: line.done ? AppColors.ok : Colors.white,
-                  border: Border.all(
-                      color: line.done ? AppColors.ok : const Color(0xFFD8D3C7),
-                      width: 2),
-                ),
-                child: line.done
-                    ? const Icon(Icons.check, size: 12, color: Colors.white)
-                    : null,
+            // Draft marker: unsent lines can't be delivered — they're still
+            // being composed. Delivery lives on the live-order rows above.
+            Container(
+              width: 23,
+              height: 23,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFD8D3C7), width: 2),
               ),
+              child: const Icon(Icons.edit_outlined,
+                  size: 11, color: AppColors.ink40),
             ),
             const SizedBox(width: 9),
             Text('${line.quantity}×',
@@ -731,6 +744,166 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Live delivery surface for the waiter: every active (not-yet-completed)
+/// order on the table, with a per-item "Delivered" action and a "Deliver all
+/// ready" button. Every action goes through the item-level backend path
+/// (toggleOrderItemDelivered), so the kitchen/bar and the guest tracker stay
+/// in sync — a bar-only delivery no longer flips the kitchen items.
+class _ActiveDeliverySection extends StatelessWidget {
+  const _ActiveDeliverySection({required this.table});
+  final CafeTable table;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final orders = state.orders
+        .where((o) =>
+            o.tableId == table.id && o.status != OrderStatus.completed)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (orders.isEmpty) return const SizedBox.shrink();
+    final readyN = state.readyToDeliverCount(table.id);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...orders.map((o) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _orderCard(context, state, o),
+            )),
+        AppButton(
+          label: readyN > 0 ? L.deliverAllReadyN(readyN) : L.nothingReadyYet,
+          icon: readyN > 0 ? Icons.done_all : null,
+          kind: readyN > 0 ? ButtonKind.primary : ButtonKind.secondary,
+          color: readyN > 0 ? AppColors.ok : null,
+          onPressed: readyN > 0
+              ? () => state.deliverAllReadyForTable(table.id)
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _orderCard(BuildContext context, CafeState state, CafeOrder order) {
+    final isKitchen = order.splitTo == FeedType.kitchen;
+    final zoneColor = isKitchen ? AppTheme.warning : AppTheme.bar;
+    final statusColor = switch (order.status) {
+      OrderStatus.completed => AppTheme.success,
+      OrderStatus.ready => AppTheme.success,
+      OrderStatus.cooking => AppTheme.warning,
+      OrderStatus.accepted => AppTheme.ink2,
+    };
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: zoneColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(isKitchen ? L.kitchen : L.bar,
+                style: T.label
+                    .copyWith(color: zoneColor, fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('#${order.id}',
+                style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(orderStatusLabel(order.status),
+                style: T.label
+                    .copyWith(color: statusColor, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        ...order.items.map((l) => _deliverRow(state, order, l)),
+      ]),
+    );
+  }
+
+  Widget _deliverRow(CafeState state, CafeOrder order, CartLine l) {
+    final canDeliver = l.ready && !l.done;
+    final statusText = l.done
+        ? L.itemDelivered
+        : l.ready
+            ? L.itemReady
+            : L.inPreparation;
+    final statusColor = l.done || l.ready ? AppColors.ok : AppTheme.ink2;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        GestureDetector(
+          onTap: (canDeliver || l.done)
+              ? () => state.toggleOrderItemDelivered(order, l)
+              : null,
+          child: Container(
+            width: 23,
+            height: 23,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: l.done ? AppColors.ok : Colors.white,
+              border: Border.all(
+                  color: l.done ? AppColors.ok : const Color(0xFFD8D3C7),
+                  width: 2),
+            ),
+            child: l.done
+                ? const Icon(Icons.check, size: 12, color: Colors.white)
+                : null,
+          ),
+        ),
+        const SizedBox(width: 9),
+        Text('${l.quantity}×',
+            style: AppTypography.mono(
+                size: 14,
+                weight: FontWeight.w700,
+                color: l.done ? AppColors.ink40 : AppColors.ink)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l.item.displayName,
+                  style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: l.done ? AppColors.ink40 : AppColors.ink,
+                      decoration:
+                          l.done ? TextDecoration.lineThrough : null)),
+              if (l.modifiers.isNotEmpty)
+                Text(l.modifiers,
+                    style: T.label.copyWith(color: AppTheme.warning)),
+              Text(statusText,
+                  style: T.label.copyWith(
+                      color: statusColor, fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+        if (canDeliver)
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.ok,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => state.toggleOrderItemDelivered(order, l),
+            child: Text(L.markDelivered,
+                style: T.label.copyWith(fontWeight: FontWeight.w900)),
+          ),
+      ]),
     );
   }
 }

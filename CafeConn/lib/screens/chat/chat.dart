@@ -19,7 +19,13 @@ class StaffChatListScreen extends StatelessWidget {
     return AppScaffold(
       bottomNav: null,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Header(title: L.chats, subtitle: L.teamOnline),
+        Header(title: L.chats, subtitle: L.teamOnline, actions: [
+          IconButton(
+            tooltip: L.settings,
+            icon: const Icon(Icons.settings_outlined, color: AppTheme.ink),
+            onPressed: () => GoRouter.of(context).push('/settings'),
+          ),
+        ]),
         Expanded(
             child: ListView.builder(
                 itemCount: groups.length,
