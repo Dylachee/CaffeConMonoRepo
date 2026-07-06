@@ -762,7 +762,10 @@ class _ActiveDeliverySection extends StatelessWidget {
     final state = context.watch<CafeState>();
     final orders = state.orders
         .where((o) =>
-            o.tableId == table.id && o.status != OrderStatus.completed)
+            o.tableId == table.id &&
+            o.status != OrderStatus.completed &&
+            // Pending guest orders live in the approval section, not here.
+            o.status != OrderStatus.awaiting)
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     if (orders.isEmpty) return const SizedBox.shrink();
@@ -796,6 +799,7 @@ class _ActiveDeliverySection extends StatelessWidget {
       OrderStatus.ready => AppTheme.success,
       OrderStatus.cooking => AppTheme.warning,
       OrderStatus.accepted => AppTheme.ink2,
+      OrderStatus.awaiting => AppTheme.warning,
     };
     return AppCard(
       padding: const EdgeInsets.all(12),
@@ -997,6 +1001,7 @@ class _OrderHistorySection extends StatelessWidget {
       OrderStatus.ready => AppTheme.success,
       OrderStatus.cooking => AppTheme.warning,
       OrderStatus.accepted => AppTheme.ink2,
+      OrderStatus.awaiting => AppTheme.warning,
     };
     final ts = order.createdAt;
     final hhmm =

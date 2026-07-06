@@ -34,7 +34,10 @@ String roleToWire(UserRole role) => switch (role) {
 /// sync with Table.Status on the Django side (free / occupied / waiting).
 enum TableStatus { free, occupied, waiting }
 
-enum OrderStatus { accepted, cooking, ready, completed }
+// `awaiting` = a guest order placed from the guest web, pending a waiter's
+// approval before it reaches the kitchen/bar. Kept last so existing persisted
+// status indices don't shift.
+enum OrderStatus { accepted, cooking, ready, completed, awaiting }
 
 enum FeedType { kitchen, bar }
 
@@ -433,6 +436,7 @@ String roleLabel(UserRole role) => switch (role) {
     };
 
 String orderStatusLabel(OrderStatus status) => switch (status) {
+      OrderStatus.awaiting => L.osAwaiting,
       OrderStatus.accepted => L.osAccepted,
       OrderStatus.cooking => L.osCooking,
       OrderStatus.ready => L.osReady,

@@ -55,6 +55,9 @@ class ApiConfig {
   static Uri staffAccounts() => Uri.parse('$apiRoot/staff/accounts/');
   static Uri orders() => Uri.parse('$apiRoot/orders/');
   static Uri order(String id) => Uri.parse('$apiRoot/orders/$id/');
+  static Uri confirmOrder(String id) =>
+      Uri.parse('$apiRoot/orders/$id/confirm/');
+  static Uri rejectOrder(String id) => Uri.parse('$apiRoot/orders/$id/reject/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
   static Uri orderItem(String itemId) =>

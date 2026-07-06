@@ -33,7 +33,11 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
     // a mixed order (e.g. from the guest web) has to appear in BOTH feeds,
     // each showing only its own positions. splitTo alone hid the bar half.
     final active = state.orders
-        .where((o) => o.status != OrderStatus.completed)
+        // `awaiting` orders are still pending a waiter's approval — the
+        // kitchen/bar must not see them until they're confirmed.
+        .where((o) =>
+            o.status != OrderStatus.completed &&
+            o.status != OrderStatus.awaiting)
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     bool visibleInZone(CafeOrder order, FeedType feed) {

@@ -47,6 +47,7 @@ VENUE = {
 
 
 ORDER_STATUS_LABELS = {
+    Order.Status.AWAITING: "Sent — waiting for staff to confirm",
     Order.Status.NEW: "Order accepted",
     Order.Status.COOKING: "Preparing your order",
     Order.Status.READY: "Order is ready",
@@ -275,8 +276,12 @@ def create_guest_order(request):
             messages.error(request, "The selected items are no longer available.")
             return _redirect_menu(table_id)
 
+        # Guest-web orders wait for a waiter to approve them before the
+        # kitchen/bar ever see them (source stays guest_web via the model
+        # default). A waiter confirms via POST /api/orders/<id>/confirm/.
         order = Order.objects.create(
             table=table,
+            status=Order.Status.AWAITING,
             guest_name=request.POST.get("guest_name", "").strip()[:120],
             notes=request.POST.get("notes", "").strip()[:2000],
         )

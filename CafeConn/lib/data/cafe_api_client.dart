@@ -139,6 +139,18 @@ class CafeApiClient {
     return OrderDto.fromDrf(_decodeMap(res));
   }
 
+  /// Waiter/manager approves a pending guest order: awaiting -> new, and the
+  /// kitchen/bar see it for the first time.
+  Future<OrderDto> confirmOrder(String orderId) async {
+    final res = await _send(() =>
+        _http.post(ApiConfig.confirmOrder(orderId), headers: _headers()));
+    return OrderDto.fromDrf(_decodeMap(res));
+  }
+
+  /// Waiter/manager declines a pending guest order (cancels it).
+  Future<void> rejectOrder(String orderId) => _send(
+      () => _http.post(ApiConfig.rejectOrder(orderId), headers: _headers()));
+
   /// Mark a single order item ready (kitchen/bar -> waiter).
   Future<void> markItemReady(String itemId) => _send(
       () => _http.post(ApiConfig.markItemReady(itemId), headers: _headers()));

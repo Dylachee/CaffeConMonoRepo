@@ -866,6 +866,59 @@ class CafeState extends ChangeNotifier {
     }
   }
 
+  // --- guest-order approval -------------------------------------------------
+
+  /// Guest orders waiting for a waiter to approve them, newest first. Drives
+  /// the "Pending approval" inbox. Station roles never approve, so it's empty
+  /// for them.
+  List<CafeOrder> get pendingApprovalOrders {
+    if (isStationRole) return const [];
+    final pending =
+        orders.where((o) => o.status == OrderStatus.awaiting).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return pending;
+  }
+
+  /// Waiter/manager approves a pending guest order: it moves into the normal
+  /// kitchen/bar pipeline (awaiting -> accepted). Optimistic, with rollback.
+  Future<String?> confirmGuestOrder(CafeOrder order) async {
+    if (order.status != OrderStatus.awaiting) return null;
+    order.status = OrderStatus.accepted;
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (!backendConnected) return null;
+    try {
+      await _remoteApi.confirmOrder(order.id);
+      return null;
+    } on ApiException catch (e) {
+      order.status = OrderStatus.awaiting;
+      backendError = e.message;
+      debugPrint('confirmGuestOrder failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  /// Waiter/manager rejects a pending guest order: it is cancelled and dropped
+  /// from the local list. Optimistic, with rollback.
+  Future<String?> rejectGuestOrder(CafeOrder order) async {
+    if (order.status != OrderStatus.awaiting) return null;
+    orders.remove(order);
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (!backendConnected) return null;
+    try {
+      await _remoteApi.rejectOrder(order.id);
+      return null;
+    } on ApiException catch (e) {
+      if (!orders.contains(order)) orders.add(order);
+      backendError = e.message;
+      debugPrint('rejectGuestOrder failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
   /// Count of items across a table's active orders that are ready but not yet
   /// delivered — drives the "Deliver all ready (n)" button.
   int readyToDeliverCount(String tableId) {
@@ -906,6 +959,9 @@ class CafeState extends ChangeNotifier {
 
   void _syncLocalOrderStatus(CafeOrder order) {
     if (order.items.isEmpty) return;
+    // A pending guest order stays awaiting until a waiter confirms it — item
+    // readiness must never silently push it into the kitchen/bar pipeline.
+    if (order.status == OrderStatus.awaiting) return;
     if (order.items.every((line) => line.done)) {
       order.status = OrderStatus.completed;
     } else if (order.items.every((line) => line.ready)) {
@@ -956,6 +1012,8 @@ class CafeState extends ChangeNotifier {
       OrderStatus.completed => 'completed',
       OrderStatus.cooking => 'cooking',
       OrderStatus.accepted => 'new',
+      // Awaiting orders are moved via confirm/reject, never this status push.
+      OrderStatus.awaiting => 'awaiting',
     };
     try {
       await _remoteApi.updateOrderStatus(order.id, wire);
@@ -1405,6 +1463,8 @@ class CafeState extends ChangeNotifier {
 
   OrderStatus _orderStatusFromName(String name) {
     switch (name) {
+      case 'awaiting':
+        return OrderStatus.awaiting;
       case 'cooking':
         return OrderStatus.cooking;
       case 'ready':

@@ -479,7 +479,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         orders = (
             self.get_queryset()
             .filter(items__station=station)
-            .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
+            # AWAITING orders are still pending a waiter's approval — the
+            # station must not see them until they are confirmed.
+            .exclude(status__in=[Order.Status.AWAITING, Order.Status.PAID, Order.Status.CANCELLED])
             .distinct()
         )
         data = []
@@ -488,6 +490,44 @@ class OrderViewSet(viewsets.ModelViewSet):
             payload["items"] = [item for item in payload["items"] if item["station"] == station]
             data.append(payload)
         return Response(data)
+
+    @decorators.action(detail=True, methods=["post"], url_path="confirm")
+    def confirm(self, request, pk=None):
+        """Waiter/manager approves a pending guest order: it enters the
+        kitchen/bar pipeline (awaiting → new) and the stations see it for the
+        first time. Stations themselves can't confirm."""
+        if role_for_user(request.user) in STATION_ROLES:
+            raise PermissionDenied("Only a waiter or manager can confirm an order.")
+        order = self.get_object()
+        if order.status != Order.Status.AWAITING:
+            raise PermissionDenied("Only a pending order can be confirmed.")
+        order.status = Order.Status.NEW
+        order.employee = employee_for_user(request.user) or order.employee
+        order.save(update_fields=["status", "employee", "updated_at"])
+
+        table = order.table
+        if table.status == Table.Status.WAITING:
+            table.status = Table.Status.OCCUPIED
+            table.save(update_fields=["status", "updated_at"])
+
+        broadcast_order_event("updated", order)
+        broadcast_table_event(table)
+        return Response(OrderSerializer(order).data)
+
+    @decorators.action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        """Waiter/manager declines a pending guest order (wrong/duplicate): it
+        is cancelled and never reaches the kitchen/bar."""
+        if role_for_user(request.user) in STATION_ROLES:
+            raise PermissionDenied("Only a waiter or manager can reject an order.")
+        order = self.get_object()
+        if order.status != Order.Status.AWAITING:
+            raise PermissionDenied("Only a pending order can be rejected.")
+        order.status = Order.Status.CANCELLED
+        order.save(update_fields=["status", "updated_at"])
+        broadcast_order_event("updated", order)
+        broadcast_table_event(order.table)
+        return Response(OrderSerializer(order).data)
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):

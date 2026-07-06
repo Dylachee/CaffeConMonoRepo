@@ -117,6 +117,11 @@ class Order(models.Model):
         # plus CANCELLED. The former synonyms (pending≈new, preparing≈cooking,
         # delivered≈completed) were collapsed in migration 0006; the API still
         # accepts them on write for older clients (see LEGACY_STATUS_ALIASES).
+        #
+        # AWAITING sits *before* NEW: a guest-web order lands here first and is
+        # invisible to the kitchen/bar until a waiter confirms it (→ NEW). Staff
+        # orders skip it — the waiter placing the order is the confirmation.
+        AWAITING = "awaiting", "Awaiting waiter"
         NEW = "new", "New"
         COOKING = "cooking", "Cooking"
         READY = "ready", "Ready"

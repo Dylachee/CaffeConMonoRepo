@@ -39,10 +39,32 @@ class L {
   static String get roleBartender => t('Bartender', 'Barista');
 
   // ---- order statuses (staff wording) ----
+  static String get osAwaiting => t('Awaiting approval', 'Da approvare');
   static String get osAccepted => t('New', 'Nuovo');
   static String get osCooking => t('In preparation', 'In preparazione');
   static String get osReady => t('Ready', 'Pronto');
   static String get osCompleted => t('Delivered', 'Servito');
+  // ---- guest-order approval ----
+  static String get pendingApproval =>
+      t('Pending approval', 'In attesa di approvazione');
+  static String pendingApprovalN(int n) => t(
+      '$n guest ${n == 1 ? 'order' : 'orders'} to approve',
+      '$n ${n == 1 ? 'ordine ospite' : 'ordini ospite'} da approvare');
+  static String get guestOrder => t('Guest order', 'Ordine ospite');
+  static String get reviewOrder => t('Review', 'Rivedi');
+  static String get sendToKitchenBar =>
+      t('Send to kitchen & bar', 'Invia a cucina e bar');
+  static String get rejectOrder => t('Reject', 'Rifiuta');
+  static String get rejectOrderQ =>
+      t('Reject this order?', 'Rifiutare questo ordine?');
+  static String get rejectOrderWarn => t(
+      'The guest order is cancelled and never reaches the kitchen or bar.',
+      "L'ordine dell'ospite viene annullato e non raggiunge cucina o bar.");
+  static String get orderApproved =>
+      t('Sent to kitchen & bar', 'Inviato a cucina e bar');
+  static String get orderRejected => t('Order rejected', 'Ordine rifiutato');
+  static String get noPendingOrders =>
+      t('No guest orders waiting', 'Nessun ordine ospite in attesa');
 
   // ---- tables screen ----
   static String get hall => t('Hall', 'Sala');
