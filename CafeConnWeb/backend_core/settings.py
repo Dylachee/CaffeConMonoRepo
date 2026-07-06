@@ -104,9 +104,14 @@ CHANNEL_LAYERS = {
 }
 
 REST_FRAMEWORK = {
+    # Token-only. The staff app authenticates with `Authorization: Token ...`;
+    # it never uses the session. SessionAuthentication was removed because it
+    # enforces CSRF whenever the browser carries a Django `sessionid` cookie —
+    # and the app is served same-origin (/staff/) with the API (/api/), so a
+    # stray admin session (from /system-admin/) rode along on the login POST
+    # and 403'd every login with "CSRF Failed". Django admin uses its own auth.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
