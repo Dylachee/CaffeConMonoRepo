@@ -150,6 +150,13 @@ class L {
       t('Nothing ready to deliver yet', 'Niente di pronto da servire');
   static String get itemReady => t('Ready', 'Pronto');
   static String get itemDelivered => t('Delivered', 'Servito');
+  static String get deleteItem => t('Delete item', 'Elimina elemento');
+  static String deleteItemQ(String name) =>
+      t('Delete "$name"?', 'Eliminare "$name"?');
+  static String get deleteItemWarn => t(
+      'This removes the item from the order. The kitchen/bar feed updates for everyone.',
+      "Rimuove l'elemento dall'ordine. Il feed cucina/bar si aggiorna per tutti.");
+  static String get yesDelete => t('Yes, delete', 'Sì, elimina');
   static String get waitingWaiter =>
       t('Ready — waiting for waiter', 'Pronto — in attesa del cameriere');
   static String get waitingStation =>
@@ -269,6 +276,7 @@ class L {
   static String get onTime => t('all on time', 'tutto in orario');
   static String get today => t('today', 'oggi');
   static String get last7Days => t('Last 7 days', 'Ultimi 7 giorni');
+  static String get custom => t('Custom', 'Personalizzato');
   static String get searchOrders =>
       t('Search table, item, staff...', 'Cerca tavolo, piatto, staff...');
   static String get status => t('Status', 'Stato');
@@ -296,6 +304,15 @@ class L {
   static String get station => t('STATION', 'POSTAZIONE');
   static String get newStaffMember =>
       t('New staff member', 'Nuovo membro del personale');
+  static String get username => t('Username', 'Nome utente');
+  static String get createAccount => t('Create account', 'Crea account');
+  static String get accountCreated =>
+      t('Account created', 'Account creato');
+  static String get accountNeedsConnection => t(
+      'Connect to the hub to create an account.',
+      "Connettiti all'hub per creare un account.");
+  static String get fillAllFields =>
+      t('Fill in all fields.', 'Compila tutti i campi.');
   static String get edit => t('Edit', 'Modifica');
   static String get bill => t('Bill', 'Conto');
 

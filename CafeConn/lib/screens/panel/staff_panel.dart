@@ -372,12 +372,36 @@ class _OrderHistoryTabState extends State<_OrderHistoryTab> {
   String _dateFilter = 'today';
   String _stationFilter = 'all';
   String _statusFilter = 'all';
+  DateTimeRange? _customRange;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback(
         (_) => context.read<CafeState>().refreshOrderHistory());
+  }
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year, now.month, now.day),
+      initialDateRange: _customRange,
+    );
+    if (picked != null) {
+      setState(() {
+        _customRange = picked;
+        _dateFilter = 'custom';
+      });
+    }
+  }
+
+  String get _customRangeLabel {
+    final r = _customRange;
+    if (r == null) return L.custom;
+    String d(DateTime x) => '${x.day}/${x.month}';
+    return '${d(r.start)} – ${d(r.end)}';
   }
 
   @override
@@ -402,8 +426,15 @@ class _OrderHistoryTabState extends State<_OrderHistoryTab> {
             dateFilter: _dateFilter,
             stationFilter: _stationFilter,
             statusFilter: _statusFilter,
+            customRangeLabel: _customRangeLabel,
             onQuery: (value) => setState(() => _query = value),
-            onDate: (value) => setState(() => _dateFilter = value),
+            onDate: (value) {
+              if (value == 'custom') {
+                _pickCustomRange();
+              } else {
+                setState(() => _dateFilter = value);
+              }
+            },
             onStation: (value) => setState(() => _stationFilter = value),
             onStatus: (value) => setState(() => _statusFilter = value),
           ),
@@ -439,6 +470,15 @@ class _OrderHistoryTabState extends State<_OrderHistoryTab> {
     if (_dateFilter == 'week' && now.difference(localCreated).inDays >= 7) {
       return false;
     }
+    if (_dateFilter == 'custom' && _customRange != null) {
+      final start = DateTime(_customRange!.start.year,
+          _customRange!.start.month, _customRange!.start.day);
+      final end = DateTime(_customRange!.end.year, _customRange!.end.month,
+          _customRange!.end.day, 23, 59, 59);
+      if (localCreated.isBefore(start) || localCreated.isAfter(end)) {
+        return false;
+      }
+    }
     if (_stationFilter != 'all' && order.station != _stationFilter) {
       return false;
     }
@@ -466,6 +506,7 @@ class _HistoryFilters extends StatelessWidget {
     required this.dateFilter,
     required this.stationFilter,
     required this.statusFilter,
+    required this.customRangeLabel,
     required this.onQuery,
     required this.onDate,
     required this.onStation,
@@ -474,6 +515,7 @@ class _HistoryFilters extends StatelessWidget {
   final String dateFilter;
   final String stationFilter;
   final String statusFilter;
+  final String customRangeLabel;
   final ValueChanged<String> onQuery;
   final ValueChanged<String> onDate;
   final ValueChanged<String> onStation;
@@ -495,6 +537,7 @@ class _HistoryFilters extends StatelessWidget {
           _FilterOption('today', L.today),
           _FilterOption('week', L.last7Days),
           _FilterOption('all', L.all),
+          _FilterOption('custom', customRangeLabel),
         ], selected: dateFilter, onSelected: onDate),
         const SizedBox(height: 8),
         _FilterRow(options: [
@@ -933,8 +976,17 @@ class StaffMemberRow extends StatelessWidget {
 }
 
 void _showStaffForm(BuildContext context, {AppUser? user}) {
+  final isNew = user == null;
   final name = TextEditingController(text: user?.name ?? '');
+  final username = TextEditingController();
+  final password = TextEditingController();
   var role = user?.role ?? UserRole.waiter;
+  var busy = false;
+  // A manager can create floor/station staff and other managers, but not
+  // admins — mirrors the hub's StaffAccountCreateView.CREATABLE_ROLES.
+  final roleOptions = isNew
+      ? UserRole.values.where((r) => r != UserRole.admin).toList()
+      : UserRole.values.toList();
   showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -948,32 +1000,69 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                 padding: EdgeInsets.fromLTRB(
                     20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(user == null ? L.newStaffMember : L.edit, style: T.h2),
+                  Text(isNew ? L.newStaffMember : L.edit, style: T.h2),
                   const SizedBox(height: 20),
                   AppTextField(controller: name, label: L.name),
+                  if (isNew) ...[
+                    const SizedBox(height: 12),
+                    AppTextField(
+                        controller: username,
+                        label: L.username,
+                        keyboardType: TextInputType.visiblePassword),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                        controller: password,
+                        label: L.password,
+                        obscure: true),
+                  ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField(
                       initialValue: role,
-                      items: UserRole.values
+                      items: roleOptions
                           .map((r) => DropdownMenuItem(
                               value: r, child: Text(roleLabel(r))))
                           .toList(),
                       onChanged: (v) => set(() => role = v!)),
                   const SizedBox(height: 20),
                   AppButton(
-                      label: L.save,
-                      onPressed: () {
-                        if (user == null) {
-                          context
-                              .read<CafeState>()
-                              .createStaff(name.text, role);
-                        } else {
-                          user.name = name.text;
-                          user.role = role;
-                          context.read<CafeState>().refresh();
-                        }
-                        Navigator.pop(context);
-                      }),
+                      label: isNew ? L.createAccount : L.save,
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              if (!isNew) {
+                                user.name = name.text;
+                                user.role = role;
+                                context.read<CafeState>().refresh();
+                                Navigator.pop(context);
+                                return;
+                              }
+                              final nm = name.text.trim();
+                              final un = username.text.trim();
+                              final pw = password.text;
+                              if (nm.isEmpty || un.isEmpty || pw.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(L.fillAllFields)));
+                                return;
+                              }
+                              set(() => busy = true);
+                              final err = await context
+                                  .read<CafeState>()
+                                  .createStaffAccount(
+                                      name: nm,
+                                      username: un,
+                                      password: pw,
+                                      role: role);
+                              if (!context.mounted) return;
+                              if (err != null) {
+                                set(() => busy = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(err)));
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(L.accountCreated)));
+                              Navigator.pop(context);
+                            }),
                 ]),
               )));
 }

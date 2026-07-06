@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import (
     Avg,
@@ -37,6 +38,8 @@ from apps.api.serializers import (
 )
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
+
+User = get_user_model()
 
 
 class HealthCheckView(APIView):
@@ -567,6 +570,58 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     filterset_fields = ["role", "is_on_shift"]
     search_fields = ["name", "user__username", "user__email"]
     ordering_fields = ["name", "role", "updated_at"]
+
+
+class StaffAccountCreateView(APIView):
+    """Manager/admin: create a login account (Django user + Employee profile)
+    for a staff member. The password is set here; the auth token is issued
+    lazily on the member's first login (POST /api/auth/token/)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    # A manager may staff the floor and stations, and add other managers, but
+    # not mint admins/superusers — that stays a deliberate back-office action.
+    CREATABLE_ROLES = {
+        Employee.Role.WAITER,
+        Employee.Role.KITCHEN,
+        Employee.Role.BAR,
+        Employee.Role.MANAGER,
+    }
+
+    def post(self, request):
+        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+            raise PermissionDenied("Only a manager or admin can create accounts.")
+
+        username = (request.data.get("username") or "").strip()
+        password = request.data.get("password") or ""
+        name = (request.data.get("name") or "").strip()
+        role = request.data.get("role") or Employee.Role.WAITER
+
+        errors = {}
+        if not username:
+            errors["username"] = "Username is required."
+        if len(password) < 6:
+            errors["password"] = "Password must be at least 6 characters."
+        if not name:
+            errors["name"] = "Name is required."
+        if role not in self.CREATABLE_ROLES:
+            errors["role"] = "Unsupported role."
+        if not errors and User.objects.filter(username__iexact=username).exists():
+            errors["username"] = "That username is already taken."
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username,
+                password=password,
+                first_name=name,
+                is_staff=(role == Employee.Role.MANAGER),
+            )
+            employee = Employee.objects.create(
+                user=user, name=name, role=role, is_on_shift=False
+            )
+        return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
 
 
 class StaffPreferenceView(APIView):

@@ -107,6 +107,28 @@ class CafeApiClient {
     return OrderDto.fromDrf(_decodeMap(res));
   }
 
+  /// Manager/admin action: create a staff login account. `role` is the hub
+  /// wire value ('waiter' | 'kitchen' | 'bar' | 'manager'). Returns the created
+  /// employee payload.
+  Future<Map<String, dynamic>> createStaffAccount({
+    required String name,
+    required String username,
+    required String password,
+    required String role,
+  }) async {
+    final res = await _send(() => _http.post(
+          ApiConfig.staffAccounts(),
+          headers: _headers(),
+          body: jsonEncode({
+            'name': name,
+            'username': username,
+            'password': password,
+            'role': role,
+          }),
+        ));
+    return _decodeMap(res);
+  }
+
   /// Patch an order's status (e.g. 'ready', 'completed').
   Future<OrderDto> updateOrderStatus(String orderId, String status) async {
     final res = await _send(() => _http.patch(
@@ -124,6 +146,12 @@ class CafeApiClient {
   /// Toggle "delivered to guest" for an item.
   Future<void> toggleItemDone(String itemId) => _send(
       () => _http.post(ApiConfig.toggleItemDone(itemId), headers: _headers()));
+
+  /// Delete a single order item (waiter/manager only). The server recalculates
+  /// the order (cancelling it if this was the last item) and broadcasts
+  /// `order.updated` on the realtime feed.
+  Future<void> deleteOrderItem(String itemId) => _send(
+      () => _http.delete(ApiConfig.orderItem(itemId), headers: _headers()));
 
   /// Acknowledge a guest attention signal ("Acknowledge"). Server-side this also
   /// flips a waiting table to occupied and broadcasts `table.updated`.

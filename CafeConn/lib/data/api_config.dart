@@ -52,10 +52,13 @@ class ApiConfig {
   static Uri bootstrap() => Uri.parse('$apiRoot/staff/bootstrap/');
   static Uri stats() => Uri.parse('$apiRoot/staff/stats/');
   static Uri orderHistory() => Uri.parse('$apiRoot/staff/order-history/');
+  static Uri staffAccounts() => Uri.parse('$apiRoot/staff/accounts/');
   static Uri orders() => Uri.parse('$apiRoot/orders/');
   static Uri order(String id) => Uri.parse('$apiRoot/orders/$id/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
+  static Uri orderItem(String itemId) =>
+      Uri.parse('$apiRoot/order-items/$itemId/');
   static Uri markItemReady(String itemId) =>
       Uri.parse('$apiRoot/order-items/$itemId/mark-ready/');
   static Uri toggleItemDone(String itemId) =>

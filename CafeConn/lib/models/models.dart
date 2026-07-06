@@ -19,6 +19,16 @@ UserRole roleFromWire(String wire) => switch (wire) {
       _ => UserRole.waiter,
     };
 
+/// Reverse of [roleFromWire]: the app's UserRole to the hub's Employee.Role
+/// wire value. Used when a manager creates a staff account.
+String roleToWire(UserRole role) => switch (role) {
+      UserRole.waiter => 'waiter',
+      UserRole.cook => 'kitchen',
+      UserRole.bartender => 'bar',
+      UserRole.manager => 'manager',
+      UserRole.admin => 'admin',
+    };
+
 /// Deliberately just three states (product decision, 2026-07-02): a table is
 /// either free, taken, or the guests are waiting for a waiter. Must stay in
 /// sync with Table.Status on the Django side (free / occupied / waiting).

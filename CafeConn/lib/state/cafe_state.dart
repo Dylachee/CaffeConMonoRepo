@@ -729,6 +729,36 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Manager/admin action: create a real login account on the hub (username +
+  /// password + role). Returns null on success, or an error message to show
+  /// the manager. Requires a live backend connection — a local-only account
+  /// couldn't actually log in.
+  Future<String?> createStaffAccount({
+    required String name,
+    required String username,
+    required String password,
+    required UserRole role,
+  }) async {
+    if (!backendConnected) {
+      return L.accountNeedsConnection;
+    }
+    try {
+      final created = await _remoteApi.createStaffAccount(
+        name: name,
+        username: username,
+        password: password,
+        role: roleToWire(role),
+      );
+      final id = created['id']?.toString() ?? 'u${users.length + 1}';
+      users.add(AppUser(id, name, role, 'Shift active', online: false));
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('createStaffAccount failed: $e');
+      return e.message;
+    }
+  }
+
   void sendMessage(String text, {bool voice = false}) {
     if (currentGroup == null || text.trim().isEmpty) return;
     final tags = RegExp(r'#[\wа-яА-Я]+')
@@ -802,6 +832,37 @@ class CafeState extends ChangeNotifier {
     if (backendConnected && line.orderItemId != null) {
       await _pushItemDone(
           order, line, previousDone, previousReady, previousStatus);
+    }
+  }
+
+  /// Waiter/manager action: delete one sent item from a live order.
+  /// Optimistic — removes it locally, then pushes the delete; the hub
+  /// recalculates the order (cancelling it if this was the last item) and
+  /// echoes the change back. Restores the item on backend failure.
+  Future<void> deleteOrderItem(CafeOrder order, CartLine line) async {
+    final index = order.items.indexOf(line);
+    if (index < 0) return;
+    final previousStatus = order.status;
+    order.items.removeAt(index);
+    final orderRemoved = order.items.isEmpty;
+    if (orderRemoved) {
+      orders.remove(order);
+    } else {
+      _syncLocalOrderStatus(order);
+    }
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (backendConnected && line.orderItemId != null) {
+      try {
+        await _remoteApi.deleteOrderItem(line.orderItemId!);
+      } on ApiException catch (e) {
+        if (orderRemoved && !orders.contains(order)) orders.add(order);
+        order.items.insert(index.clamp(0, order.items.length), line);
+        order.status = previousStatus;
+        backendError = e.message;
+        debugPrint('deleteOrderItem push failed: $e');
+        notifyListeners();
+      }
     }
   }
 

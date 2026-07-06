@@ -19,6 +19,7 @@ urlpatterns = [
     path("staff/bootstrap/", views.StaffBootstrapView.as_view(), name="staff-bootstrap"),
     path("staff/stats/", views.StaffStatsView.as_view(), name="staff-stats"),
     path("staff/order-history/", views.StaffOrderHistoryView.as_view(), name="staff-order-history"),
+    path("staff/accounts/", views.StaffAccountCreateView.as_view(), name="staff-account-create"),
     path("staff/preferences/", views.StaffPreferenceView.as_view(), name="staff-preferences"),
     path("health/", views.HealthCheckView.as_view(), name="health"),
 ]

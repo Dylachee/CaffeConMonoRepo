@@ -828,12 +828,13 @@ class _ActiveDeliverySection extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 10),
-        ...order.items.map((l) => _deliverRow(state, order, l)),
+        ...order.items.map((l) => _deliverRow(context, state, order, l)),
       ]),
     );
   }
 
-  Widget _deliverRow(CafeState state, CafeOrder order, CartLine l) {
+  Widget _deliverRow(
+      BuildContext context, CafeState state, CafeOrder order, CartLine l) {
     final canDeliver = l.ready && !l.done;
     final statusText = l.done
         ? L.itemDelivered
@@ -903,8 +904,53 @@ class _ActiveDeliverySection extends StatelessWidget {
             child: Text(L.markDelivered,
                 style: T.label.copyWith(fontWeight: FontWeight.w900)),
           ),
+        // Waiter/manager can remove a sent item (wrong order, guest changed
+        // their mind). Stations can't — matches the backend permission.
+        if (state.canDeliverOrders && !l.done)
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            color: AppTheme.danger,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: L.deleteItem,
+            onPressed: () => _confirmDeleteItem(context, state, order, l),
+          ),
       ]),
     );
+  }
+
+  Future<void> _confirmDeleteItem(
+      BuildContext context, CafeState state, CafeOrder order, CartLine l) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(L.deleteItemQ(l.item.displayName), style: T.h2),
+        content: Text(L.deleteItemWarn, style: T.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(L.cancel),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(L.yesDelete, style: T.bodySemi),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await state.deleteOrderItem(order, l);
+    }
   }
 }
 
