@@ -298,11 +298,11 @@ class OrderCard extends StatelessWidget {
   ///   manager/admin: can do both.
   Widget _actionFor(
       CafeState state, FeedType effectiveZone, List<CartLine> visibleItems) {
-    final role = state.currentRole;
-    final actsAsStation = role == UserRole.cook ||
-        role == UserRole.bartender ||
-        role == UserRole.manager ||
-        role == UserRole.admin;
+    // Who can act here is driven by capabilities, not the raw role: a waiter
+    // granted "bar" (or a manager) can finish the bar's items, and a waiter
+    // can deliver — the two aren't mutually exclusive.
+    final canWorkStation =
+        effectiveZone == FeedType.bar ? state.capBar : state.capKitchen;
     final canDeliver = state.canDeliverOrders;
     final stationReady =
         visibleItems.isNotEmpty && visibleItems.every((line) => line.ready);
@@ -314,38 +314,36 @@ class OrderCard extends StatelessWidget {
     if (stationDelivered) {
       return _StatusStrip(label: L.osCompleted, color: AppTheme.success);
     }
-    if (canDeliver) {
-      if (hasReadyToDeliver) {
-        // Real action now (was a passive label): deliver every ready item in
-        // this order. Per-item "Delivered to guest" buttons still sit on each
-        // line for delivering them individually.
-        final readyN = visibleItems.where((l) => l.ready && !l.done).length;
+
+    // Station work first: while anything is still in preparation, whoever
+    // covers this station can start it and mark it ready.
+    if (canWorkStation && !stationReady) {
+      if (order.status == OrderStatus.accepted) {
         return AppButton(
-            label: L.deliverAllReadyN(readyN),
-            icon: Icons.done_all,
-            color: AppTheme.success,
-            onPressed: () => state.deliverReadyLines(order, visibleItems));
+            label: L.startCooking,
+            onPressed: () => state.advanceStationStatus(order));
       }
-      return _StatusStrip(
-          label: stationReady ? L.waitingWaiter : L.waitingStation,
-          color: stationReady ? AppTheme.success : AppTheme.ink2);
+      return AppButton(
+          label: L.markReady,
+          onPressed: () => state.markStationItemsReady(order, effectiveZone));
     }
-    if (!actsAsStation) {
-      return _StatusStrip(label: L.waitingStation, color: AppTheme.ink2);
+
+    // Delivery: hand the ready items to the guest (whole-order shortcut; each
+    // line also has its own "Delivered to guest" button).
+    if (canDeliver && hasReadyToDeliver) {
+      final readyN = visibleItems.where((l) => l.ready && !l.done).length;
+      return AppButton(
+          label: L.deliverAllReadyN(readyN),
+          icon: Icons.done_all,
+          color: AppTheme.success,
+          onPressed: () => state.deliverReadyLines(order, visibleItems));
     }
+
+    // Passive waiting states.
     if (stationReady) {
       return _StatusStrip(label: L.waitingWaiter, color: AppTheme.success);
     }
-    if (order.status == OrderStatus.accepted) {
-      return AppButton(
-          label: L.startCooking,
-          onPressed: () => state.advanceStationStatus(order));
-    }
-    return AppButton(
-        label: L.markReady,
-        onPressed: () {
-          state.markStationItemsReady(order, effectiveZone);
-        });
+    return _StatusStrip(label: L.waitingStation, color: AppTheme.ink2);
   }
 }
 
