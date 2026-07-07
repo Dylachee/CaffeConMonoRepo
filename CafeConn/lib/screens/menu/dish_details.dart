@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
+import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
 
 void showStaffDishDetails(BuildContext context, MenuItem item) {
@@ -102,6 +104,25 @@ void showStaffDishDetails(BuildContext context, MenuItem item) {
                               .map((a) => NoteChip(label: a))
                               .toList()),
                   const SizedBox(height: 32),
+                  // Menu-capable staff (managers, or anyone a manager granted
+                  // the menu capability) can flip an item's stop-list state
+                  // straight from the dish sheet.
+                  Consumer<CafeState>(builder: (context, state, _) {
+                    if (!state.canManageMenu) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: AppButton(
+                        label: item.available
+                            ? L.markOutOfStock
+                            : L.markAvailable,
+                        kind: ButtonKind.ghost,
+                        color: item.available
+                            ? AppTheme.danger
+                            : AppTheme.success,
+                        onPressed: () => state.toggleAvailability(item),
+                      ),
+                    );
+                  }),
                   AppButton(
                       label: L.done, onPressed: () => Navigator.pop(context)),
                 ]),

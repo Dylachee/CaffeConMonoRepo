@@ -86,22 +86,56 @@ class CafeState extends ChangeNotifier {
 
   void refresh() => notifyListeners();
 
-  // ---- Role-based visibility -------------------------------------------
-  // cook/bartender: only their order feed, the menu and the chats.
-  // waiter: everything except the analytics panel. manager/admin: everything.
-  bool get isStationRole =>
-      currentRole == UserRole.cook || currentRole == UserRole.bartender;
-  bool get canSeeTables => !isStationRole;
-  bool get canSeePanel =>
-      currentRole == UserRole.manager || currentRole == UserRole.admin;
-  bool get canDeliverOrders => !isStationRole;
+  // ---- Capability-based visibility -------------------------------------
+  // Effective capabilities from the hub (currentUser.capabilities), so a
+  // manager can grant a waiter the bar (and vice-versa). Default all-true so
+  // local/demo mode and older hubs stay fully functional; refreshed on every
+  // bootstrap via [_applyCapabilities].
+  bool capWait = true;
+  bool capBar = true;
+  bool capKitchen = true;
+  bool capMenu = true;
+  bool capManage = true;
 
-  /// Station screens are locked to their own feed zone.
-  FeedType? get lockedZone => switch (currentRole) {
-        UserRole.cook => FeedType.kitchen,
-        UserRole.bartender => FeedType.bar,
-        _ => null,
-      };
+  // A "pure station" worker has no waiter capability — floor actions are
+  // hidden for them, exactly as before, but a waiter+bar person now keeps both.
+  bool get isStationRole => !capWait;
+  bool get canSeeTables => capWait;
+  bool get canSeePanel => capManage;
+  bool get canDeliverOrders => capWait;
+  bool get canManageMenu => capMenu;
+
+  /// Feed zone lock. Floor staff (waiter capability) see every zone; a person
+  /// who only covers one station is locked to it; someone covering both bar
+  /// and kitchen sees both (no lock).
+  FeedType? get lockedZone {
+    if (capWait) return null;
+    if (capBar && !capKitchen) return FeedType.bar;
+    if (capKitchen && !capBar) return FeedType.kitchen;
+    return null;
+  }
+
+  void _applyCapabilities(Map<String, dynamic> caps, UserRole role) {
+    if (caps.isNotEmpty) {
+      capWait = caps['wait'] == true;
+      capBar = caps['bar'] == true;
+      capKitchen = caps['kitchen'] == true;
+      capMenu = caps['menu'] == true;
+      capManage = caps['manage'] == true;
+      return;
+    }
+    // Older hub without capabilities: derive them from the role.
+    final boss = role == UserRole.manager || role == UserRole.admin;
+    capWait = boss || role == UserRole.waiter;
+    capBar = boss || role == UserRole.bartender;
+    capKitchen = boss || role == UserRole.cook;
+    capMenu = boss;
+    capManage = boss;
+  }
+
+  void _resetCapabilities() {
+    capWait = capBar = capKitchen = capMenu = capManage = true;
+  }
 
   void setLanguage(AppLang value) {
     appLang = value;
@@ -1149,6 +1183,7 @@ class CafeState extends ChangeNotifier {
         currentRole = roleFromWire(user.role);
         _box.put('currentRole', currentRole.index);
       }
+      _applyCapabilities(user.capabilities, currentRole);
       if (user.name.isNotEmpty) {
         activeUserName = user.name;
         _box.put('activeUserName', user.name);
@@ -1308,6 +1343,47 @@ class CafeState extends ChangeNotifier {
   /// Pull the manager dashboard analytics. Safe to call from the panel's
   /// initState: no-ops offline, and a missing endpoint (older backend) just
   /// leaves [stats] null so the panel shows its live client-side numbers.
+  // Real staff roster (manager access panel). Only fetched when connected.
+  List<EmployeeDto> staffAccounts = [];
+  bool staffAccountsLoading = false;
+
+  Future<void> refreshStaffAccounts() async {
+    if (!backendConnected) {
+      staffAccounts = [];
+      notifyListeners();
+      return;
+    }
+    staffAccountsLoading = true;
+    notifyListeners();
+    try {
+      staffAccounts = await _remoteApi.employees();
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('refreshStaffAccounts failed: $e');
+    } finally {
+      staffAccountsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Grant/revoke one capability for a staff member (manager action).
+  /// Returns null on success or an error message.
+  Future<String?> setEmployeeCapability(
+      String id, String field, bool value) async {
+    try {
+      final updated = await _remoteApi.updateEmployee(id, {field: value});
+      final i = staffAccounts.indexWhere((e) => e.id == id);
+      if (i >= 0) staffAccounts[i] = updated;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('setEmployeeCapability failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
   Future<void> refreshStats() async {
     if (!backendConnected) {
       stats = null;
@@ -1358,6 +1434,7 @@ class CafeState extends ChangeNotifier {
     _box.delete('apiUser');
     // Back to local demo — no logged-in employee, no role restrictions.
     currentRole = UserRole.admin;
+    _resetCapabilities();
     _box.delete('currentRole');
     notifyListeners();
   }

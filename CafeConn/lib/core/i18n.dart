@@ -314,6 +314,32 @@ class L {
   static String get items => t('Items', 'Articoli');
   static String get rolePermissions =>
       t('Role permissions', 'Permessi dei ruoli');
+  // ---- staff access / capabilities ----
+  static String get staffAccess => t('Staff access', 'Accessi personale');
+  static String get accessHint => t(
+      'Grant extra capabilities on top of each role.',
+      'Concedi capacità extra oltre al ruolo.');
+  static String get capWaiter =>
+      t('Waiter (floor & delivery)', 'Cameriere (sala e consegna)');
+  static String get capBar => t('Bar station', 'Postazione bar');
+  static String get capKitchen => t('Kitchen station', 'Postazione cucina');
+  static String get capMenu => t('Manage menu', 'Gestisci menu');
+  static String get includedWithRole =>
+      t('role', 'ruolo');
+  static String get fullAccess => t('Full access', 'Accesso completo');
+  static String get connectToManage => t(
+      'Connect to the hub to manage staff access.',
+      "Connettiti all'hub per gestire gli accessi.");
+  static String get noStaffFound =>
+      t('No staff found', 'Nessun membro trovato');
+  static String get byWaiter => t('By waiter', 'Per cameriere');
+  static String get markOutOfStock =>
+      t('Mark out of stock', 'Segna esaurito');
+  static String get markAvailable =>
+      t('Mark available', 'Segna disponibile');
+  static String waiterOrdersTables(int o, int t) => L.isIt
+      ? '$o ordini · $t tavoli'
+      : '$o orders · $t tables';
   static String get newItem => t('New item', 'Nuovo piatto');
   static String get editItem => t('Edit item', 'Modifica piatto');
   static String get name => t('Name', 'Nome');

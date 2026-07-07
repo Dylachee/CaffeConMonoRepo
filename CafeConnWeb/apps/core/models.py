@@ -100,6 +100,14 @@ class Employee(models.Model):
     role = models.CharField(max_length=32, choices=Role.choices, db_index=True)
     phone = models.CharField(max_length=32, blank=True)
     is_on_shift = models.BooleanField(default=False)
+    # Extra capabilities a manager can grant on top of the primary role, so
+    # one person can cover two stations (a waiter who also tends bar, a
+    # bartender who also works the floor, …). The role still implies its own
+    # base capability; these are purely additive. See `capabilities`.
+    can_wait = models.BooleanField(default=False)
+    can_bar = models.BooleanField(default=False)
+    can_kitchen = models.BooleanField(default=False)
+    can_manage_menu = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -109,6 +117,20 @@ class Employee(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_role_display()})"
+
+    @property
+    def capabilities(self) -> dict:
+        """Effective capabilities: what this employee may actually do, the
+        role's own base plus any manager-granted extras. `manage` (panel /
+        analytics / cancel / grant) stays tied to manager/admin."""
+        boss = self.role in (Employee.Role.MANAGER, Employee.Role.ADMIN)
+        return {
+            "wait": boss or self.role == Employee.Role.WAITER or self.can_wait,
+            "bar": boss or self.role == Employee.Role.BAR or self.can_bar,
+            "kitchen": boss or self.role == Employee.Role.KITCHEN or self.can_kitchen,
+            "menu": boss or self.can_manage_menu,
+            "manage": boss,
+        }
 
 
 class Order(models.Model):

@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import (
     Avg,
+    Count,
     DecimalField,
     DurationField,
     ExpressionWrapper,
@@ -82,6 +83,21 @@ def role_for_user(user):
     if user.is_superuser or user.is_staff:
         return Employee.Role.ADMIN
     return Employee.Role.WAITER
+
+
+def caps_for_user(user):
+    """Effective capabilities for a user: the role's base plus any extras a
+    manager granted. Drives every permission gate below so a waiter who was
+    given `bar` can work the bar and a bartender given `wait` can work tables.
+
+    No employee profile: a Django superuser/staff account gets everything; a
+    bare token falls back to a plain waiter."""
+    employee = employee_for_user(user)
+    if employee:
+        return employee.capabilities
+    if user and (user.is_superuser or user.is_staff):
+        return {"wait": True, "bar": True, "kitchen": True, "menu": True, "manage": True}
+    return {"wait": True, "bar": False, "kitchen": False, "menu": False, "manage": False}
 
 
 def flutter_table_status(status_value: str) -> str:
@@ -214,6 +230,7 @@ class StaffBootstrapView(APIView):
                     "username": request.user.username,
                     "name": employee_for_user(request.user).name if employee_for_user(request.user) else request.user.get_full_name(),
                     "role": role_for_user(request.user),
+                    "capabilities": caps_for_user(request.user),
                 },
                 "tables": [serialize_for_flutter_table(table) for table in tables_qs],
                 "menu": [serialize_for_flutter_menu(item) for item in MenuItem.objects.all()],
@@ -317,6 +334,39 @@ class StaffStatsView(APIView):
         total_tables = Table.objects.count()
         active_tables = Table.objects.exclude(status=Table.Status.FREE).count()
 
+        # Per-waiter breakdown for today: orders + tables from the Order rows,
+        # revenue from their items. Keyed by the order's employee (the waiter
+        # who placed or approved it); unattributed orders are skipped.
+        waiter_stats = {}
+        for row in (
+            Order.objects.filter(created_at__date=today)
+            .exclude(status=Order.Status.CANCELLED)
+            .values("employee", "employee__name")
+            .annotate(orders=Count("id"), tables=Count("table", distinct=True))
+        ):
+            emp = row["employee"]
+            if emp is None:
+                continue
+            waiter_stats[emp] = {
+                "id": str(emp),
+                "name": row["employee__name"] or "—",
+                "orders": row["orders"],
+                "tables": row["tables"],
+                "revenue": 0.0,
+            }
+        for row in (
+            OrderItem.objects.filter(order__created_at__date=today)
+            .exclude(order__status=Order.Status.CANCELLED)
+            .values("order__employee")
+            .annotate(revenue=Sum(line_total))
+        ):
+            emp = row["order__employee"]
+            if emp in waiter_stats:
+                waiter_stats[emp]["revenue"] = round(float(row["revenue"] or 0), 2)
+        by_waiter = sorted(
+            waiter_stats.values(), key=lambda w: w["revenue"], reverse=True
+        )
+
         def pct(today_value, prev_value):
             if not prev_value:
                 return None
@@ -337,6 +387,7 @@ class StaffStatsView(APIView):
                 "avgPrepMinutes": avg_prep_min,
                 "delayedOrders": delayed,
                 "revenueByHour": by_hour,
+                "byWaiter": by_waiter,
                 "generatedAt": now.isoformat(),
             }
         )
@@ -395,6 +446,24 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description", "category"]
     ordering_fields = ["name", "category", "price", "updated_at"]
 
+    def _require_menu_cap(self):
+        # Changing the menu (e.g. the in/out-of-stock toggle) is a granted
+        # capability now, not a free-for-all for anyone with a token.
+        if not caps_for_user(self.request.user)["menu"]:
+            raise PermissionDenied("You need the menu capability to change menu items.")
+
+    def perform_create(self, serializer):
+        self._require_menu_cap()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._require_menu_cap()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_menu_cap()
+        instance.delete()
+
 
 class TableViewSet(viewsets.ModelViewSet):
     queryset = Table.objects.all()
@@ -408,11 +477,10 @@ class TableViewSet(viewsets.ModelViewSet):
     ordering_fields = ["number", "updated_at"]
 
     def perform_update(self, serializer):
-        # Tables are the waiter's (and manager's) domain: the station screens
-        # only see their order feed, so a kitchen/bar token must not be able
-        # to clear or re-status a table.
-        if role_for_user(self.request.user) in STATION_ROLES:
-            raise PermissionDenied("Kitchen/bar staff cannot change tables.")
+        # Tables are the floor's domain: someone without the waiter capability
+        # (a pure station worker) must not be able to clear or re-status one.
+        if not caps_for_user(self.request.user)["wait"]:
+            raise PermissionDenied("You need the waiter capability to change tables.")
         table = serializer.save()
         if table.status == Table.Status.FREE:
             table = reset_free_table(table)
@@ -435,37 +503,43 @@ class OrderViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "updated_at", "status"]
 
     def perform_create(self, serializer):
-        order = serializer.save(employee=employee_for_user(self.request.user), source=Order.Source.STAFF_APP)
+        employee = employee_for_user(self.request.user)
+        order = serializer.save(employee=employee, source=Order.Source.STAFF_APP)
         # A waiter placed the order himself — the table is simply occupied
-        # (WAITING is reserved for "guests are waiting for a waiter").
+        # (WAITING is reserved for "guests are waiting for a waiter"), and it
+        # becomes *his* table so analytics attribute it to him.
         order.table.status = Table.Status.OCCUPIED
         order.table.opened_at = order.table.opened_at or timezone.now()
-        order.table.save(update_fields=["status", "opened_at", "updated_at"])
+        if employee is not None and order.table.waiter_id is None:
+            order.table.waiter = employee
+        order.table.save(update_fields=["status", "opened_at", "waiter", "updated_at"])
         broadcast_order_event("created", order)
         broadcast_table_event(order.table)
 
     def perform_update(self, serializer):
         new_status = serializer.validated_data.get("status")
         if new_status is not None:
-            role = role_for_user(self.request.user)
-            if role in STATION_ROLES and new_status not in STATION_ALLOWED_ORDER_STATUSES:
+            caps = caps_for_user(self.request.user)
+            # A pure station worker (no waiter capability) may only move an
+            # order through the cooking pipeline — completing (= delivery) is
+            # the waiter's call.
+            if not caps["wait"] and new_status not in STATION_ALLOWED_ORDER_STATUSES:
                 raise PermissionDenied(
-                    "Kitchen/bar staff can only move an order to cooking or ready. "
-                    "Completing (delivery) is the waiter's action."
+                    "Station staff can only move an order to cooking or ready. "
+                    "Completing (delivery) is a waiter action."
                 )
-            if role in STATION_ROLES and new_status == Order.Status.READY:
+            if not caps["wait"] and new_status == Order.Status.READY:
+                # Mark ready only the items for the station(s) this person
+                # actually covers — a bar+kitchen worker readies both.
                 order = serializer.instance
-                station = "bar" if role == Employee.Role.BAR else "kitchen"
-                order.items.filter(station=station).update(ready=True, updated_at=timezone.now())
+                stations = [s for s in ("kitchen", "bar") if caps[s]]
+                order.items.filter(station__in=stations).update(ready=True, updated_at=timezone.now())
                 order = sync_order_status_from_items(order)
                 broadcast_order_event("updated", order)
                 return
             if new_status == Order.Status.COMPLETED and serializer.instance.items.filter(done=False).exists():
                 raise PermissionDenied("Mark each item delivered before completing the order.")
-            if new_status == Order.Status.CANCELLED and role not in {
-                Employee.Role.MANAGER,
-                Employee.Role.ADMIN,
-            }:
+            if new_status == Order.Status.CANCELLED and not caps["manage"]:
                 raise PermissionDenied("Only a manager or admin can cancel an order.")
         order = serializer.save()
         broadcast_order_event("updated", order)
@@ -496,19 +570,27 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Waiter/manager approves a pending guest order: it enters the
         kitchen/bar pipeline (awaiting → new) and the stations see it for the
         first time. Stations themselves can't confirm."""
-        if role_for_user(request.user) in STATION_ROLES:
-            raise PermissionDenied("Only a waiter or manager can confirm an order.")
+        if not caps_for_user(request.user)["wait"]:
+            raise PermissionDenied("You need the waiter capability to confirm an order.")
         order = self.get_object()
         if order.status != Order.Status.AWAITING:
             raise PermissionDenied("Only a pending order can be confirmed.")
+        employee = employee_for_user(request.user)
         order.status = Order.Status.NEW
-        order.employee = employee_for_user(request.user) or order.employee
+        order.employee = employee or order.employee
         order.save(update_fields=["status", "employee", "updated_at"])
 
+        # The waiter who approved the guest order owns the table now, so its
+        # sales attribute to him in the analytics.
         table = order.table
+        table_fields = ["updated_at"]
         if table.status == Table.Status.WAITING:
             table.status = Table.Status.OCCUPIED
-            table.save(update_fields=["status", "updated_at"])
+            table_fields.append("status")
+        if employee is not None and table.waiter_id is None:
+            table.waiter = employee
+            table_fields.append("waiter")
+        table.save(update_fields=table_fields)
 
         broadcast_order_event("updated", order)
         broadcast_table_event(table)
@@ -518,8 +600,8 @@ class OrderViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         """Waiter/manager declines a pending guest order (wrong/duplicate): it
         is cancelled and never reaches the kitchen/bar."""
-        if role_for_user(request.user) in STATION_ROLES:
-            raise PermissionDenied("Only a waiter or manager can reject an order.")
+        if not caps_for_user(request.user)["wait"]:
+            raise PermissionDenied("You need the waiter capability to reject an order.")
         order = self.get_object()
         if order.status != Order.Status.AWAITING:
             raise PermissionDenied("Only a pending order can be rejected.")
@@ -553,9 +635,9 @@ class OrderItemViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="toggle-done")
     def toggle_done(self, request, pk=None):
         # "done" = delivered to the guest — that's the waiter's confirmation,
-        # not something a station can flip (and un-flip) from the pass.
-        if role_for_user(request.user) in STATION_ROLES:
-            raise PermissionDenied("Only a waiter or manager can mark an item as delivered.")
+        # not something a pure station worker flips (and un-flips) from the pass.
+        if not caps_for_user(request.user)["wait"]:
+            raise PermissionDenied("You need the waiter capability to mark an item as delivered.")
         item = self.get_object()
         item.done = not item.done
         if item.done:

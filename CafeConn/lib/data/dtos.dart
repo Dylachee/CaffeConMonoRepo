@@ -321,16 +321,58 @@ class CurrentUserDto {
   /// Employee.Role wire value: waiter | kitchen | bar | manager | accountant
   /// | admin. Empty when the hub predates role-aware bootstraps.
   final String role;
+
+  /// Effective capabilities from the hub: {wait, bar, kitchen, menu, manage}.
+  /// Empty when the hub predates capability-aware bootstraps (fall back to
+  /// deriving them from [role]).
+  final Map<String, dynamic> capabilities;
   const CurrentUserDto(
       {required this.id,
       required this.username,
       required this.name,
-      this.role = ''});
+      this.role = '',
+      this.capabilities = const {}});
   factory CurrentUserDto.fromJson(Map<String, dynamic> j) => CurrentUserDto(
         id: _asString(j['id']),
         username: _asString(j['username']),
         name: _asString(j['name']),
         role: _asString(j['role']),
+        capabilities: j['capabilities'] is Map
+            ? (j['capabilities'] as Map).cast<String, dynamic>()
+            : const {},
+      );
+}
+
+/// A staff member as the manager sees them in the access panel: identity,
+/// primary role and the four grantable capability flags.
+class EmployeeDto {
+  final String id;
+  final String username;
+  final String name;
+  final String role;
+  final bool canWait;
+  final bool canBar;
+  final bool canKitchen;
+  final bool canManageMenu;
+  const EmployeeDto({
+    required this.id,
+    required this.username,
+    required this.name,
+    required this.role,
+    required this.canWait,
+    required this.canBar,
+    required this.canKitchen,
+    required this.canManageMenu,
+  });
+  factory EmployeeDto.fromJson(Map<String, dynamic> j) => EmployeeDto(
+        id: _asString(j['id']),
+        username: _asString(j['username']),
+        name: _asString(j['name']),
+        role: _asString(j['role']),
+        canWait: _asBool(j['can_wait']),
+        canBar: _asBool(j['can_bar']),
+        canKitchen: _asBool(j['can_kitchen']),
+        canManageMenu: _asBool(j['can_manage_menu']),
       );
 }
 
@@ -413,6 +455,7 @@ class StatsDto {
   final int avgPrepMinutes;
   final int delayedOrders;
   final List<double> revenueByHour; // length 24, indexed by hour of day
+  final List<WaiterStatDto> byWaiter; // today's sales attributed per waiter
 
   const StatsDto({
     required this.revenueToday,
@@ -427,12 +470,17 @@ class StatsDto {
     required this.avgPrepMinutes,
     required this.delayedOrders,
     required this.revenueByHour,
+    required this.byWaiter,
   });
 
   factory StatsDto.fromJson(Map<String, dynamic> j) {
     final raw = (j['revenueByHour'] as List?) ?? const [];
     final hours = List<double>.generate(
         24, (i) => i < raw.length ? _asDouble(raw[i]) : 0.0);
+    final waiters = ((j['byWaiter'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => WaiterStatDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
     int? asIntOrNull(dynamic v) => v == null ? null : _asInt(v);
     return StatsDto(
       revenueToday: _asDouble(j['revenueToday']),
@@ -447,8 +495,32 @@ class StatsDto {
       avgPrepMinutes: _asInt(j['avgPrepMinutes']),
       delayedOrders: _asInt(j['delayedOrders']),
       revenueByHour: hours,
+      byWaiter: waiters,
     );
   }
+}
+
+/// One waiter's attributed sales for today (manager analytics breakdown).
+class WaiterStatDto {
+  final String id;
+  final String name;
+  final int orders;
+  final int tables;
+  final double revenue;
+  const WaiterStatDto({
+    required this.id,
+    required this.name,
+    required this.orders,
+    required this.tables,
+    required this.revenue,
+  });
+  factory WaiterStatDto.fromJson(Map<String, dynamic> j) => WaiterStatDto(
+        id: _asString(j['id']),
+        name: _asString(j['name'], '—'),
+        orders: _asInt(j['orders']),
+        tables: _asInt(j['tables']),
+        revenue: _asDouble(j['revenue']),
+      );
 }
 
 class OrderHistoryItemDto {

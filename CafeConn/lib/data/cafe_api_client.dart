@@ -129,6 +129,32 @@ class CafeApiClient {
     return _decodeMap(res);
   }
 
+  /// Manager/admin: the full staff roster with their capability flags.
+  Future<List<EmployeeDto>> employees() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.employees(), headers: _headers()));
+    final decoded = jsonDecode(res.body);
+    final list = decoded is List
+        ? decoded
+        : (decoded is Map ? (decoded['results'] as List? ?? const []) : const []);
+    return list
+        .whereType<Map>()
+        .map((e) => EmployeeDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Manager/admin: grant/revoke a staff member's capability flags.
+  /// `body` keys are any of can_wait / can_bar / can_kitchen / can_manage_menu.
+  Future<EmployeeDto> updateEmployee(
+      String id, Map<String, dynamic> body) async {
+    final res = await _send(() => _http.patch(
+          ApiConfig.employee(id),
+          headers: _headers(),
+          body: jsonEncode(body),
+        ));
+    return EmployeeDto.fromJson(_decodeMap(res));
+  }
+
   /// Patch an order's status (e.g. 'ready', 'completed').
   Future<OrderDto> updateOrderStatus(String orderId, String status) async {
     final res = await _send(() => _http.patch(

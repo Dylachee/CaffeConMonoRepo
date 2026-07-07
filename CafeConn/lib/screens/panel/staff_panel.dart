@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_typography.dart';
 import '../../core/utils.dart';
 import '../../data/dtos.dart';
 import '../../models/models.dart';
@@ -253,6 +255,11 @@ class _OverviewTabState extends State<_OverviewTab> {
                         .toList(),
                   ),
           ),
+          if (s != null && s.byWaiter.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            SectionTitle(L.byWaiter),
+            ...s.byWaiter.map((w) => _WaiterStatRow(waiter: w)),
+          ],
         ],
       ),
     );
@@ -356,6 +363,33 @@ class _OccupancyDetail extends StatelessWidget {
           _MetricRow(L.free, '$freeTables'),
         ]),
       ],
+    );
+  }
+}
+
+class _WaiterStatRow extends StatelessWidget {
+  const _WaiterStatRow({required this.waiter});
+  final WaiterStatDto waiter;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(children: [
+        Avatar(label: waiter.name),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(waiter.name,
+                style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 15)),
+            Text(L.waiterOrdersTables(waiter.orders, waiter.tables),
+                style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+          ]),
+        ),
+        Text(waiter.revenue.rub,
+            style: AppTypography.mono(
+                size: 15, weight: FontWeight.w800, color: AppColors.ink)),
+      ]),
     );
   }
 }
@@ -887,63 +921,150 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
   );
 }
 
-class _AccessTab extends StatelessWidget {
+class _AccessTab extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        SectionTitle(L.rolePermissions),
-        _roleAccessCard(L.roleWaiter, [
-          (L.orders, true),
-          (L.bill, true),
-          (L.menu, true),
-          (L.roleAdmin, false)
-        ]),
-        _roleAccessCard(L.roleCook, [
-          (L.orders, true),
-          (L.tables, false),
-          (L.menu, true),
-          (L.roleAdmin, false)
-        ]),
-        _roleAccessCard(L.roleBartender, [
-          (L.orders, true),
-          (L.tables, false),
-          (L.menu, true),
-          (L.roleAdmin, false)
-        ]),
-      ],
-    );
+  State<_AccessTab> createState() => _AccessTabState();
+}
+
+class _AccessTabState extends State<_AccessTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshStaffAccounts());
   }
 
-  Widget _roleAccessCard(String title, List<(String, bool)> perms) => AppCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          Wrap(
-              spacing: 8,
-              children: perms
-                  .map((p) => Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: p.$2
-                              ? AppTheme.success.withValues(alpha: 0.12)
-                              : AppTheme.separator,
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(p.$2 ? Icons.check_circle : Icons.circle,
-                            size: 12,
-                            color: p.$2 ? AppTheme.success : AppTheme.ink3),
-                        const SizedBox(width: 4),
-                        Text(p.$1,
-                            style: T.smallSemi.copyWith(
-                                color: p.$2 ? AppTheme.success : AppTheme.ink3,
-                                fontWeight: FontWeight.w700))
-                      ])))
-                  .toList()),
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    if (!state.backendConnected) {
+      return ListView(children: [
+        const SizedBox(height: 8),
+        EmptyState(
+          icon: Icons.lock_person_outlined,
+          title: L.staffAccess,
+          sub: L.connectToManage,
+        ),
+      ]);
+    }
+    final staff = state.staffAccounts;
+    return RefreshIndicator(
+      onRefresh: () => context.read<CafeState>().refreshStaffAccounts(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          Row(children: [
+            Expanded(child: SectionTitle(L.staffAccess)),
+            if (state.staffAccountsLoading) const CupertinoActivityIndicator(),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(L.accessHint,
+                style: T.smallSemi.copyWith(color: AppTheme.ink3)),
+          ),
+          if (staff.isEmpty && !state.staffAccountsLoading)
+            EmptyState(
+                icon: Icons.people_outline,
+                title: L.noStaffFound,
+                sub: L.pullToRefresh)
+          else
+            ...staff.map((e) => _StaffAccessCard(employee: e)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaffAccessCard extends StatelessWidget {
+  const _StaffAccessCard({required this.employee});
+  final EmployeeDto employee;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.read<CafeState>();
+    final role = employee.role;
+    final boss = role == 'manager' || role == 'admin';
+    // Which grant flag the role already provides — shown as a fixed chip.
+    final roleField = switch (role) {
+      'waiter' => 'can_wait',
+      'bar' => 'can_bar',
+      'kitchen' => 'can_kitchen',
+      _ => null,
+    };
+    final caps = <(String, String, bool)>[
+      ('can_wait', L.capWaiter, employee.canWait),
+      ('can_bar', L.capBar, employee.canBar),
+      ('can_kitchen', L.capKitchen, employee.canKitchen),
+      ('can_manage_menu', L.capMenu, employee.canManageMenu),
+    ];
+
+    Future<void> toggle(String field, bool value) async {
+      final err = await state.setEmployeeCapability(employee.id, field, value);
+      if (err != null && context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
+      }
+    }
+
+    return AppCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Avatar(label: employee.name),
+          const SizedBox(width: 12),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(employee.name,
+                  style:
+                      T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+              Text('${roleLabel(roleFromWire(role))} · @${employee.username}',
+                  style: T.priceSmall.copyWith(color: AppTheme.ink2)),
+            ]),
+          ),
+          if (boss)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                  color: AppTheme.success.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Text(L.fullAccess,
+                  style: T.label.copyWith(
+                      color: AppTheme.success, fontWeight: FontWeight.w800)),
+            ),
         ]),
-      );
+        if (!boss) ...[
+          const SizedBox(height: 6),
+          ...caps.map((c) {
+            final isRoleBase = c.$1 == roleField;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(children: [
+                Expanded(child: Text(c.$2, style: T.body)),
+                if (isRoleBase)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: AppTheme.separator,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text(L.includedWithRole,
+                        style: T.label.copyWith(
+                            color: AppTheme.ink2,
+                            fontWeight: FontWeight.w700)),
+                  )
+                else
+                  Switch.adaptive(
+                    value: c.$3,
+                    activeThumbColor: AppTheme.success,
+                    onChanged: (v) => toggle(c.$1, v),
+                  ),
+              ]),
+            );
+          }),
+        ],
+      ]),
+    );
+  }
 }
 
 class StaffMemberRow extends StatelessWidget {
