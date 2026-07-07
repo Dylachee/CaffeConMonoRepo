@@ -306,14 +306,18 @@ class StatusBadge extends StatelessWidget {
 
     Widget animatedDot = dot;
     if (status == TableStatus.waiting) {
-      animatedDot = dot
-          .animate(onPlay: (c) => c.repeat())
-          .scale(
-              begin: const Offset(1, 1),
-              end: const Offset(1.3, 1.3),
-              duration: 800.ms)
-          .then()
-          .scale(end: const Offset(1, 1), duration: 800.ms);
+      // RepaintBoundary confines this endless pulse to its own layer instead
+      // of forcing a full repaint of whatever card/list it sits in.
+      animatedDot = RepaintBoundary(
+        child: dot
+            .animate(onPlay: (c) => c.repeat())
+            .scale(
+                begin: const Offset(1, 1),
+                end: const Offset(1.3, 1.3),
+                duration: 800.ms)
+            .then()
+            .scale(end: const Offset(1, 1), duration: 800.ms),
+      );
     }
 
     if (!showLabel) return animatedDot;

@@ -159,16 +159,18 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                       itemCount: filtered.length,
                       itemBuilder: (_, i) {
                         final table = filtered[i];
-                        return TableCard(
-                          table: table,
-                          index: i,
-                          onTap: () {
-                            state.currentTable = table;
-                            GoRouter.of(context).push('/table-details');
-                          },
-                          onLongPress: () {
-                            _showQuickCheck(context, table);
-                          },
+                        return RepaintBoundary(
+                          child: TableCard(
+                            table: table,
+                            index: i,
+                            onTap: () {
+                              state.currentTable = table;
+                              GoRouter.of(context).push('/table-details');
+                            },
+                            onLongPress: () {
+                              _showQuickCheck(context, table);
+                            },
+                          ),
                         );
                       },
                     ),
@@ -504,9 +506,13 @@ class _HaloDot extends StatelessWidget {
       ),
     );
     if (pulse) {
-      dot = dot
-          .animate(onPlay: (c) => c.repeat(reverse: true))
-          .scaleXY(begin: 1.0, end: 1.18, duration: 800.ms);
+      // RepaintBoundary keeps this endless 60fps pulse from repainting the
+      // whole table grid every frame — only the tiny dot layer redraws.
+      dot = RepaintBoundary(
+        child: dot
+            .animate(onPlay: (c) => c.repeat(reverse: true))
+            .scaleXY(begin: 1.0, end: 1.18, duration: 800.ms),
+      );
     }
     // Reserve room so the 4px halo isn't clipped against the card edge.
     return Padding(padding: const EdgeInsets.all(4), child: dot);

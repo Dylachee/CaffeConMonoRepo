@@ -186,7 +186,10 @@ class OrderCard extends StatelessWidget {
     // (station roles have no table screen, so no navigation for them).
     final canOpenTable = state.canSeeTables && table != null;
 
-    final card = AppCard(
+    // RepaintBoundary isolates the late-order pulse (an endless repeat when
+    // an order is overdue) so it doesn't repaint the whole feed each frame.
+    final card = RepaintBoundary(
+        child: AppCard(
       index: index,
       padding: EdgeInsets.zero,
       borderColor: late ? AppTheme.danger : null,
@@ -278,7 +281,7 @@ class OrderCard extends StatelessWidget {
     ).animate(onPlay: late ? (c) => c.repeat(reverse: true) : null).tint(
         color:
             late ? AppTheme.danger.withValues(alpha: .05) : Colors.transparent,
-        duration: 500.ms);
+        duration: 500.ms));
 
     if (!canOpenTable) return card;
     // Tapping the card body opens the table; taps on the inner buttons

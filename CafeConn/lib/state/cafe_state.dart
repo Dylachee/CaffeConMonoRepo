@@ -383,11 +383,28 @@ class CafeState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _retryTimer?.cancel();
     _realtimeSub?.cancel();
     _realtime?.dispose();
     _remoteApi.close();
     super.dispose();
+  }
+
+  // Coalesce bursts of mutations (realtime batches, per-item loops like
+  // "deliver all ready") into a single rebuild per microtask instead of one
+  // full-screen rebuild per notifyListeners() call. The UI still updates in
+  // the same frame; screens that watch the state just rebuild once.
+  bool _notifyScheduled = false;
+  bool _disposed = false;
+  @override
+  void notifyListeners() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      if (!_disposed) super.notifyListeners();
+    });
   }
 
   List<String> get categories =>
