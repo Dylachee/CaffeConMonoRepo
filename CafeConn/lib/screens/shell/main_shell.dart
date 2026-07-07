@@ -18,10 +18,11 @@ import '../tables/table_grid.dart';
 // ===== MAIN SHELL (PageView tabs + swipe navigation) =====
 
 class _ShellTab {
-  const _ShellTab(this.label, this.icon, this.page);
+  const _ShellTab(this.label, this.icon, this.page, {this.badge = 0});
   final String label;
   final IconData icon;
   final Widget page;
+  final int badge;
 }
 
 class MainShellScreen extends StatefulWidget {
@@ -47,7 +48,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
   ///   manager / admin — everything.
   List<_ShellTab> _tabsFor(CafeState state) => [
         if (state.canSeeTables)
-          _ShellTab(L.tables, Icons.table_bar, const WaiterTableGridScreen()),
+          _ShellTab(L.tables, Icons.table_bar, const WaiterTableGridScreen(),
+              badge: state.pendingApprovalOrders.length),
         _ShellTab(L.orders, Icons.assignment, const UnifiedOrderFeedScreen()),
         _ShellTab(L.menu, Icons.restaurant_menu, const StaffMenuScreen()),
         _ShellTab(L.chats, Icons.chat_bubble, const StaffChatListScreen()),
@@ -95,6 +97,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         },
         labels: tabs.map((t) => t.label).toList(),
         icons: tabs.map((t) => t.icon).toList(),
+        badges: tabs.map((t) => t.badge).toList(),
       ),
     );
   }
@@ -106,11 +109,13 @@ class _ShellBottomNav extends StatelessWidget {
     required this.onTap,
     required this.labels,
     required this.icons,
+    required this.badges,
   });
   final int selectedIndex;
   final ValueChanged<int> onTap;
   final List<String> labels;
   final List<IconData> icons;
+  final List<int> badges;
 
   @override
   Widget build(BuildContext context) {
@@ -130,9 +135,15 @@ class _ShellBottomNav extends StatelessWidget {
             onDestinationSelected: onTap,
             destinations: List.generate(labels.length, (i) {
               final active = i == selectedIndex;
+              final icon = Icon(icons[i],
+                  color: active ? AppTheme.ink : const Color(0xFFA8A091));
               return NavigationDestination(
-                icon: Icon(icons[i],
-                    color: active ? AppTheme.ink : const Color(0xFFA8A091)),
+                icon: badges[i] > 0
+                    ? Badge(
+                        label: Text('${badges[i]}'),
+                        backgroundColor: AppTheme.warning,
+                        child: icon)
+                    : icon,
                 label: labels[i],
               );
             }),

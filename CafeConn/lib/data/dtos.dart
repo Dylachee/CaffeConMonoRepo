@@ -37,6 +37,8 @@ List<String> _asStringList(dynamic v) =>
 /// with the bootstrap payload.
 String flutterOrderStatusFromDjango(String s) {
   switch (s) {
+    case 'awaiting':
+      return 'awaiting';
     case 'new':
     case 'pending':
       return 'accepted';

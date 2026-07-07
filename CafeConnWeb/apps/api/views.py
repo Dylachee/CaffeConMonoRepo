@@ -112,6 +112,7 @@ def flutter_table_status(status_value: str) -> str:
 def flutter_order_status(status_value: str) -> str:
     status_value = Order.LEGACY_STATUS_ALIASES.get(status_value, status_value)
     return {
+        Order.Status.AWAITING: "awaiting",
         Order.Status.NEW: "accepted",
         Order.Status.COOKING: "cooking",
         Order.Status.READY: "ready",

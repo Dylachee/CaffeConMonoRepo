@@ -10,6 +10,7 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/pending_approval.dart';
 
 class UnifiedOrderFeedScreen extends StatefulWidget {
   const UnifiedOrderFeedScreen({super.key});
@@ -63,6 +64,10 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
               subtitle: locked != null
                   ? L.activeCount(visible.length)
                   : L.activeCount(kitchenOrders.length + barOrders.length)),
+          // Pending guest orders to approve also surface here, so a waiter
+          // working the feed doesn't have to jump back to Tables.
+          const Padding(
+              padding: EdgeInsets.only(top: 12), child: PendingApprovalBanner()),
           // Tap-only segmented control — no swipe widget, no gesture conflict.
           // Hidden for station roles: their zone is fixed.
           if (locked == null)

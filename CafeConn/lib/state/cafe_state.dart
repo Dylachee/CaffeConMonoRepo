@@ -1218,6 +1218,19 @@ class CafeState extends ChangeNotifier {
   void _onRealtimeEvent(RealtimeEvent event) {
     switch (event.type) {
       case RealtimeEventType.orderCreated:
+        final createdDto = event.order;
+        if (createdDto != null) {
+          final isNew = orders.indexWhere((o) => o.id == createdDto.id) < 0;
+          _upsertOrderFromDto(createdDto);
+          // A fresh guest order needs the waiter's approval — buzz so it isn't
+          // missed, on top of the badge/banner that already updated.
+          if (isNew &&
+              !isStationRole &&
+              _orderStatusFromName(createdDto.status) == OrderStatus.awaiting) {
+            HapticFeedback.heavyImpact();
+          }
+        }
+        break;
       case RealtimeEventType.orderUpdated:
         final dto = event.order;
         if (dto != null) _upsertOrderFromDto(dto);

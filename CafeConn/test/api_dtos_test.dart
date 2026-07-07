@@ -158,6 +158,9 @@ void main() {
 
   group('Status mappings mirror the backend', () {
     test('order status: django -> flutter', () {
+      // 'awaiting' must survive the mapping — otherwise pending guest orders
+      // collapse to 'accepted' and skip the waiter's approval inbox.
+      expect(flutterOrderStatusFromDjango('awaiting'), 'awaiting');
       expect(flutterOrderStatusFromDjango('new'), 'accepted');
       expect(flutterOrderStatusFromDjango('pending'), 'accepted');
       expect(flutterOrderStatusFromDjango('preparing'), 'cooking');
