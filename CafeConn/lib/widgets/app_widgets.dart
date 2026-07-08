@@ -468,9 +468,17 @@ class MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 520;
+    final valueStyle = T.h2.copyWith(fontSize: compact ? 20 : 22, height: 1.0);
+    final deltaStyle = T.smallSemi.copyWith(
+        color: isPositive ? AppTheme.success : AppTheme.danger,
+        fontWeight: FontWeight.w700,
+        fontSize: compact ? 12 : 12.5,
+        height: 1.05);
     return AppCard(
       index: index,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -482,19 +490,23 @@ class MetricCard extends StatelessWidget {
                   decoration:
                       BoxDecoration(color: color, shape: BoxShape.circle)),
               const SizedBox(width: 8),
-              Text(label,
-                  style: T.priceSmall.copyWith(
-                      color: AppTheme.ink2, fontWeight: FontWeight.w500)),
+              Expanded(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: T.priceSmall.copyWith(
+                        color: AppTheme.ink2, fontWeight: FontWeight.w500)),
+              ),
             ],
           ),
-          if (detail == null)
-            const Spacer()
-          else ...[
-            const SizedBox(height: 14),
-            Expanded(child: detail!),
-            const SizedBox(height: 10),
-          ],
-          Text(value, style: T.h2.copyWith(fontSize: 22)),
+          if (detail != null) ...[
+            SizedBox(height: compact ? 8 : 12),
+            Flexible(child: detail!),
+            SizedBox(height: compact ? 6 : 8),
+          ] else
+            const Spacer(),
+          Text(value,
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: valueStyle),
           const SizedBox(height: 4),
           Row(
             children: [
@@ -502,10 +514,12 @@ class MetricCard extends StatelessWidget {
                   size: 14,
                   color: isPositive ? AppTheme.success : AppTheme.danger),
               const SizedBox(width: 4),
-              Text(delta,
-                  style: T.smallSemi.copyWith(
-                      color: isPositive ? AppTheme.success : AppTheme.danger,
-                      fontWeight: FontWeight.w700)),
+              Expanded(
+                child: Text(delta,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: deltaStyle),
+              ),
             ],
           ),
         ],

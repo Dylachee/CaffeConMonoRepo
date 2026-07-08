@@ -166,54 +166,57 @@ class _OverviewTabState extends State<_OverviewTab> {
               padding: EdgeInsets.only(bottom: 12),
               child: LinearProgressIndicator(minHeight: 2),
             ),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.3,
-            children: [
-              MetricCard(
-                  label: L.revenue,
-                  value: revenue.rub,
-                  delta: s?.revenueDeltaPct != null
-                      ? L.vsYesterday(s!.revenueDeltaPct!)
-                      : L.todayOrders(ordersToday),
-                  isPositive: (s?.revenueDeltaPct ?? 0) >= 0,
-                  color: AppTheme.success,
-                  detail: _MetricDetail(rows: [
-                    _MetricRow(L.orders, '$ordersToday'),
-                    _MetricRow(L.bestHour, '${bestHour.hour}:00'),
-                  ])),
-              MetricCard(
-                  label: L.avgCheck,
-                  value: avgCheck.rub,
-                  delta: s?.avgCheckDeltaPct != null
-                      ? L.deltaPct(s!.avgCheckDeltaPct!)
-                      : L.acrossTables(servedTables),
-                  isPositive: (s?.avgCheckDeltaPct ?? 0) >= 0,
-                  color: AppTheme.gold,
-                  detail: _MetricDetail(rows: [
-                    _MetricRow(L.tables, '$servedTables'),
-                    _MetricRow(
-                        L.avgPrepTime, L.minutesShort(s?.avgPrepMinutes ?? 0)),
-                  ]),
-                  index: 1),
-              MetricCard(
-                  label: L.tables,
-                  value: '$activeTables / $totalTables',
-                  delta: L.freeCount(freeTables),
-                  isPositive: true,
-                  color: AppTheme.tOccupied,
-                  detail: _OccupancyDetail(
-                      occupancy: occupancy,
-                      activeTables: activeTables,
-                      freeTables: freeTables),
-                  index: 2),
-              _fourthCard(s, activeOrders.length, localOldestMin, delayed),
-            ],
-          ),
+          LayoutBuilder(builder: (context, constraints) {
+            final compact = constraints.maxWidth < 520;
+            return GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: compact ? 1 : 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: compact ? 2.45 : 1.28,
+              children: [
+                MetricCard(
+                    label: L.revenue,
+                    value: revenue.rub,
+                    delta: s?.revenueDeltaPct != null
+                        ? L.vsYesterday(s!.revenueDeltaPct!)
+                        : L.todayOrders(ordersToday),
+                    isPositive: (s?.revenueDeltaPct ?? 0) >= 0,
+                    color: AppTheme.success,
+                    detail: _MetricDetail(rows: [
+                      _MetricRow(L.orders, '$ordersToday'),
+                      _MetricRow(L.bestHour, '${bestHour.hour}:00'),
+                    ])),
+                MetricCard(
+                    label: L.avgCheck,
+                    value: avgCheck.rub,
+                    delta: s?.avgCheckDeltaPct != null
+                        ? L.deltaPct(s!.avgCheckDeltaPct!)
+                        : L.acrossTables(servedTables),
+                    isPositive: (s?.avgCheckDeltaPct ?? 0) >= 0,
+                    color: AppTheme.gold,
+                    detail: _MetricDetail(rows: [
+                      _MetricRow(L.tables, '$servedTables'),
+                      _MetricRow(L.avgPrepTime,
+                          L.minutesShort(s?.avgPrepMinutes ?? 0)),
+                    ]),
+                    index: 1),
+                MetricCard(
+                    label: L.tables,
+                    value: '$activeTables / $totalTables',
+                    delta: L.freeCount(freeTables),
+                    isPositive: true,
+                    color: AppTheme.tOccupied,
+                    detail: _OccupancyDetail(
+                        occupancy: occupancy,
+                        activeTables: activeTables,
+                        freeTables: freeTables),
+                    index: 2),
+                _fourthCard(s, activeOrders.length, localOldestMin, delayed),
+              ],
+            );
+          }),
           const SizedBox(height: 20),
           SectionTitle(L.revenueByHour),
           AppCard(
