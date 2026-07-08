@@ -333,6 +333,18 @@ class L {
   static String get noStaffFound =>
       t('No staff found', 'Nessun membro trovato');
   static String get byWaiter => t('By waiter', 'Per cameriere');
+  // ---- order activity log ----
+  static String get activity => t('Activity', 'Attività');
+  static String get noActivity => t('No activity yet', 'Nessuna attività');
+  static String get evCreated => t('created the order', "ha creato l'ordine");
+  static String get evConfirmed =>
+      t('sent to kitchen & bar', 'inviato a cucina e bar');
+  static String get evRejected => t('rejected the order', "ha rifiutato l'ordine");
+  static String get evReady => t('marked ready', 'segnato pronto');
+  static String get evDelivered => t('delivered', 'servito');
+  static String get evUndelivered => t('undid delivery', 'annullato servizio');
+  static String get evDeleted => t('removed', 'rimosso');
+  static String get evStatus => t('changed status', 'cambiato stato');
   static String get markOutOfStock =>
       t('Mark out of stock', 'Segna esaurito');
   static String get markAvailable =>

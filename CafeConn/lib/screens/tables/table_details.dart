@@ -12,6 +12,7 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/order_activity.dart';
 
 class TableDetailsScreen extends StatefulWidget {
   const TableDetailsScreen({super.key});
@@ -1018,6 +1019,18 @@ class _OrderHistorySection extends StatelessWidget {
             child: Text('#${order.id} · $hhmm',
                 style: T.priceSmall.copyWith(color: AppTheme.ink2)),
           ),
+          // Who did what on this order (confirmed / marked ready / delivered).
+          IconButton(
+            icon: const Icon(Icons.history, size: 18),
+            color: AppTheme.ink2,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            tooltip: L.activity,
+            onPressed: () => showOrderActivitySheet(
+                context, order.id, '#${order.id}'),
+          ),
+          const SizedBox(width: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(

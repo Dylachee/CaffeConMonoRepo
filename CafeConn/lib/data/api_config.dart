@@ -60,6 +60,8 @@ class ApiConfig {
   static Uri confirmOrder(String id) =>
       Uri.parse('$apiRoot/orders/$id/confirm/');
   static Uri rejectOrder(String id) => Uri.parse('$apiRoot/orders/$id/reject/');
+  static Uri orderEvents(String id) =>
+      Uri.parse('$apiRoot/orders/$id/events/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
   static Uri orderItem(String itemId) =>

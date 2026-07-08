@@ -435,6 +435,19 @@ String roleLabel(UserRole role) => switch (role) {
       UserRole.bartender => L.roleBartender,
     };
 
+/// Human label for an OrderEvent.action wire value (audit trail).
+String orderEventLabel(String action) => switch (action) {
+      'created' => L.evCreated,
+      'confirmed' => L.evConfirmed,
+      'rejected' => L.evRejected,
+      'item_ready' => L.evReady,
+      'item_delivered' => L.evDelivered,
+      'item_undelivered' => L.evUndelivered,
+      'item_deleted' => L.evDeleted,
+      'status' => L.evStatus,
+      _ => action,
+    };
+
 String orderStatusLabel(OrderStatus status) => switch (status) {
       OrderStatus.awaiting => L.osAwaiting,
       OrderStatus.accepted => L.osAccepted,

@@ -177,6 +177,18 @@ class CafeApiClient {
   Future<void> rejectOrder(String orderId) => _send(
       () => _http.post(ApiConfig.rejectOrder(orderId), headers: _headers()));
 
+  /// An order's audit trail (who confirmed / marked ready / delivered / …).
+  Future<List<OrderEventDto>> orderEvents(String orderId) async {
+    final res = await _send(
+        () => _http.get(ApiConfig.orderEvents(orderId), headers: _headers()));
+    final decoded = jsonDecode(res.body);
+    final list = decoded is List ? decoded : const [];
+    return list
+        .whereType<Map>()
+        .map((e) => OrderEventDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
   /// Mark a single order item ready (kitchen/bar -> waiter).
   Future<void> markItemReady(String itemId) => _send(
       () => _http.post(ApiConfig.markItemReady(itemId), headers: _headers()));

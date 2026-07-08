@@ -230,6 +230,42 @@ class OrderItem(models.Model):
         return self.unit_price * self.quantity
 
 
+class OrderEvent(models.Model):
+    """Audit trail for an order: who did what and when — who confirmed it, who
+    pressed "ready" on a station, who delivered, who removed an item. Keeps the
+    accountability the paper ticket never had."""
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        CONFIRMED = "confirmed", "Confirmed"
+        REJECTED = "rejected", "Rejected"
+        ITEM_READY = "item_ready", "Marked ready"
+        ITEM_DELIVERED = "item_delivered", "Delivered"
+        ITEM_UNDELIVERED = "item_undelivered", "Undelivered"
+        ITEM_DELETED = "item_deleted", "Item removed"
+        STATUS = "status", "Status changed"
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="events")
+    actor = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        related_name="order_events",
+        null=True,
+        blank=True,
+    )
+    action = models.CharField(max_length=32, choices=Action.choices, db_index=True)
+    detail = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "cafe_order_events"
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        who = self.actor.name if self.actor else "—"
+        return f"{who} {self.action} on order #{self.order_id}"
+
+
 class AttentionSignal(models.Model):
     class Type(models.TextChoices):
         ARRIVED = "arrived", "Arrived"

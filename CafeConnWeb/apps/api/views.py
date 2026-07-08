@@ -38,7 +38,7 @@ from apps.api.serializers import (
     TableSerializer,
 )
 from apps.core.menu_i18n import menu_item_labels
-from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
+from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
 
 User = get_user_model()
 
@@ -83,6 +83,16 @@ def role_for_user(user):
     if user.is_superuser or user.is_staff:
         return Employee.Role.ADMIN
     return Employee.Role.WAITER
+
+
+def log_order_event(order, user, action, detail=""):
+    """Append one line to an order's audit trail (who did what)."""
+    OrderEvent.objects.create(
+        order=order,
+        actor=employee_for_user(user),
+        action=action,
+        detail=detail[:255],
+    )
 
 
 def caps_for_user(user):
@@ -514,6 +524,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         if employee is not None and order.table.waiter_id is None:
             order.table.waiter = employee
         order.table.save(update_fields=["status", "opened_at", "waiter", "updated_at"])
+        log_order_event(order, self.request.user, OrderEvent.Action.CREATED)
         broadcast_order_event("created", order)
         broadcast_table_event(order.table)
 
@@ -536,6 +547,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 stations = [s for s in ("kitchen", "bar") if caps[s]]
                 order.items.filter(station__in=stations).update(ready=True, updated_at=timezone.now())
                 order = sync_order_status_from_items(order)
+                log_order_event(
+                    order, self.request.user, OrderEvent.Action.ITEM_READY,
+                    "/".join(stations),
+                )
                 broadcast_order_event("updated", order)
                 return
             if new_status == Order.Status.COMPLETED and serializer.instance.items.filter(done=False).exists():
@@ -543,6 +558,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             if new_status == Order.Status.CANCELLED and not caps["manage"]:
                 raise PermissionDenied("Only a manager or admin can cancel an order.")
         order = serializer.save()
+        if new_status is not None:
+            log_order_event(
+                order, self.request.user, OrderEvent.Action.STATUS,
+                flutter_order_status(order.status),
+            )
         broadcast_order_event("updated", order)
 
     @decorators.action(detail=False, methods=["get"], url_path="station-feed")
@@ -593,6 +613,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             table_fields.append("waiter")
         table.save(update_fields=table_fields)
 
+        log_order_event(order, request.user, OrderEvent.Action.CONFIRMED)
         broadcast_order_event("updated", order)
         broadcast_table_event(table)
         return Response(OrderSerializer(order).data)
@@ -608,9 +629,27 @@ class OrderViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only a pending order can be rejected.")
         order.status = Order.Status.CANCELLED
         order.save(update_fields=["status", "updated_at"])
+        log_order_event(order, request.user, OrderEvent.Action.REJECTED)
         broadcast_order_event("updated", order)
         broadcast_table_event(order.table)
         return Response(OrderSerializer(order).data)
+
+    @decorators.action(detail=True, methods=["get"], url_path="events")
+    def events(self, request, pk=None):
+        """The order's audit trail: who did what, oldest first."""
+        order = self.get_object()
+        return Response(
+            [
+                {
+                    "id": e.id,
+                    "actor": e.actor.name if e.actor else "",
+                    "action": e.action,
+                    "detail": e.detail,
+                    "createdAt": e.created_at.isoformat(),
+                }
+                for e in order.events.select_related("actor").all()
+            ]
+        )
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
@@ -630,6 +669,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         item.ready = True
         item.save(update_fields=["ready", "updated_at"])
         sync_order_status_from_items(item.order)
+        log_order_event(item.order, request.user, OrderEvent.Action.ITEM_READY, item.menu_item.name)
         broadcast_order_event("updated", item.order)
         return Response(OrderItemSerializer(item).data)
 
@@ -645,6 +685,12 @@ class OrderItemViewSet(viewsets.ModelViewSet):
             item.ready = True
         item.save(update_fields=["ready", "done", "updated_at"])
         sync_order_status_from_items(item.order)
+        log_order_event(
+            item.order,
+            request.user,
+            OrderEvent.Action.ITEM_DELIVERED if item.done else OrderEvent.Action.ITEM_UNDELIVERED,
+            item.menu_item.name,
+        )
         broadcast_order_event("updated", item.order)
         return Response(OrderItemSerializer(item).data)
 

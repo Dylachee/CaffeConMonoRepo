@@ -378,6 +378,26 @@ class EmployeeDto {
       );
 }
 
+/// One line of an order's audit trail (who did what, when).
+class OrderEventDto {
+  final String actor;
+  final String action;
+  final String detail;
+  final String createdAt;
+  const OrderEventDto({
+    required this.actor,
+    required this.action,
+    required this.detail,
+    required this.createdAt,
+  });
+  factory OrderEventDto.fromJson(Map<String, dynamic> j) => OrderEventDto(
+        actor: _asString(j['actor']),
+        action: _asString(j['action']),
+        detail: _asString(j['detail']),
+        createdAt: _asString(j['createdAt']),
+      );
+}
+
 class BootstrapDto {
   final CurrentUserDto? currentUser;
   final List<TableDto> tables;

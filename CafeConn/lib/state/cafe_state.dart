@@ -1414,6 +1414,17 @@ class CafeState extends ChangeNotifier {
     }
   }
 
+  /// Fetch an order's audit trail (who did what). Empty offline / on error.
+  Future<List<OrderEventDto>> orderActivity(String orderId) async {
+    if (!backendConnected) return const [];
+    try {
+      return await _remoteApi.orderEvents(orderId);
+    } on ApiException catch (e) {
+      debugPrint('orderActivity failed: $e');
+      return const [];
+    }
+  }
+
   Future<void> refreshStats() async {
     if (!backendConnected) {
       stats = null;
