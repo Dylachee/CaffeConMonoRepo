@@ -59,9 +59,15 @@ class AppTheme {
     return base.copyWith(
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
+      // Cupertino transition everywhere so the swipe-from-edge "back" gesture
+      // works on the web/desktop builds too, not just Android/iOS.
       pageTransitionsTheme: const PageTransitionsTheme(builders: {
         TargetPlatform.android: CupertinoPageTransitionsBuilder(),
         TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
       }),
       cardColor: isDark ? const Color(0xFF201C15) : card,
       dividerColor: isDark ? const Color(0xFF2E2920) : separator,

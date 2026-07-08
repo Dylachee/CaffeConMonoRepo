@@ -37,6 +37,15 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   String _letter = 'All';
 
   @override
+  void initState() {
+    super.initState();
+    // Pull a fresh menu so a since-deleted item (e.g. after a menu cleanup)
+    // can't be sent with a stale id and get rejected by the hub.
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshMenu());
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -107,11 +116,18 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       builder: (_) => _PrecheckSheet(
         selectionQty: Map.from(_selQty),
         fixedTableId: tableId,
-        onConfirmed: () {
+        onConfirmed: (sent) {
           if (!mounted) return;
           setState(() => _selQty.clear());
-          // Back to the table: the sent lines are visible on its check.
-          if (context.canPop()) context.pop();
+          if (sent) {
+            // Land on the table's detail (now showing the sent items),
+            // regardless of whether we came from the table or the menu tab.
+            final router = GoRouter.of(context);
+            router.go('/tables');
+            router.push('/table-details');
+          } else if (context.canPop()) {
+            context.pop();
+          }
         },
       ),
     );
@@ -483,7 +499,8 @@ class _PrecheckSheet extends StatefulWidget {
   });
   final Map<MenuItem, int> selectionQty;
   final String? fixedTableId;
-  final VoidCallback? onConfirmed;
+  // Called after the sheet closes; `sent` = the order actually went through.
+  final ValueChanged<bool>? onConfirmed;
 
   @override
   State<_PrecheckSheet> createState() => _PrecheckSheetState();
@@ -691,7 +708,6 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
         .fold(0, (s, e) => s + e.value);
     final barCount =
         _items.entries.where((e) => e.key.isBar).fold(0, (s, e) => s + e.value);
-    final messenger = ScaffoldMessenger.of(context);
 
     for (final entry in _items.entries) {
       final note = _noteCtrl[entry.key]?.text.trim() ?? '';
@@ -700,23 +716,23 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     final order = await state.submitOrder(tableId: tableId);
 
     if (!context.mounted) return;
-    Navigator.pop(context);
-    widget.onConfirmed?.call();
-
-    // Explicit feedback in both outcomes: sending to bar must never look idle.
+    // Centre-screen toast (on the root overlay) so it survives the navigation
+    // back to the table and reads at eye level, not tucked at the bottom.
     if (order != null) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(L.orderSent(table.number, kitchenCount, barCount)),
-        backgroundColor: AppTheme.success,
-      ));
+      showCenterToast(
+          context, L.orderSent(table.number, kitchenCount, barCount));
     } else {
-      messenger.showSnackBar(SnackBar(
-        content: Text(state.backendError == null
+      showCenterToast(
+        context,
+        state.backendError == null
             ? L.nothingToSend
-            : L.notSentSaved(state.backendError!)),
-        backgroundColor: AppTheme.danger,
-      ));
+            : L.notSentSaved(state.backendError!),
+        color: AppTheme.danger,
+        icon: Icons.error_outline_rounded,
+      );
     }
+    Navigator.pop(context);
+    widget.onConfirmed?.call(order != null);
   }
 }
 

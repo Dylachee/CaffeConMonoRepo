@@ -1423,6 +1423,33 @@ class CafeState extends ChangeNotifier {
     }
   }
 
+  /// Pull the current menu from the hub so item ids are fresh. After a
+  /// server-side menu change (an item removed or deduped) a cached id would
+  /// 400 on send — "Invalid primary key". Also drops any *unsent* cart line
+  /// pointing at an item that no longer exists, so a table can't get stuck.
+  Future<void> refreshMenu() async {
+    if (!backendConnected) return;
+    try {
+      final data = await _remoteApi.bootstrap();
+      if (data.menu.isEmpty) return;
+      menu
+        ..clear()
+        ..addAll(data.menu.map(_menuFromDto));
+      _saveMenu();
+      final liveIds = menu.map((m) => m.id).toSet();
+      var pruned = false;
+      for (final lines in tableChecks.values) {
+        final before = lines.length;
+        lines.removeWhere((l) => !l.sent && !liveIds.contains(l.item.id));
+        if (lines.length != before) pruned = true;
+      }
+      if (pruned) _saveTables();
+      notifyListeners();
+    } on ApiException catch (e) {
+      debugPrint('refreshMenu failed: $e');
+    }
+  }
+
   /// Grant/revoke one capability for a staff member (manager action).
   /// Returns null on success or an error message.
   Future<String?> setEmployeeCapability(

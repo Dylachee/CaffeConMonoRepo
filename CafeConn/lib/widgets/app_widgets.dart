@@ -883,3 +883,105 @@ class EmptyState extends StatelessWidget {
         ),
       );
 }
+
+/// A brief confirmation toast shown in the centre of the screen (instead of a
+/// bottom SnackBar). It lives on the root overlay, so it stays put through a
+/// navigation that happens right after (e.g. sending an order).
+void showCenterToast(
+  BuildContext context,
+  String message, {
+  Color color = AppTheme.success,
+  IconData icon = Icons.check_circle_rounded,
+}) {
+  final overlay = Overlay.of(context, rootOverlay: true);
+  late OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _CenterToast(
+      message: message,
+      color: color,
+      icon: icon,
+      onDone: () => entry.remove(),
+    ),
+  );
+  overlay.insert(entry);
+}
+
+class _CenterToast extends StatefulWidget {
+  const _CenterToast({
+    required this.message,
+    required this.color,
+    required this.icon,
+    required this.onDone,
+  });
+  final String message;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onDone;
+
+  @override
+  State<_CenterToast> createState() => _CenterToastState();
+}
+
+class _CenterToastState extends State<_CenterToast> {
+  double _opacity = 0;
+  double _scale = 0.9;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _opacity = 1;
+          _scale = 1;
+        });
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        setState(() {
+          _opacity = 0;
+          _scale = 0.96;
+        });
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 1820), widget.onDone);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        child: AnimatedScale(
+          scale: _scale,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutBack,
+          child: AnimatedOpacity(
+            opacity: _opacity,
+            duration: const Duration(milliseconds: 220),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: widget.color,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [AppTheme.shadowSheet],
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(widget.icon, color: Colors.white, size: 22),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(widget.message,
+                      textAlign: TextAlign.center,
+                      style: T.bodySemi.copyWith(
+                          color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

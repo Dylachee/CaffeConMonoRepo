@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,19 @@ void main() async {
   await Hive.initFlutter();
   await Hive.openBox('cafeconnect');
   runApp(const CafeConnectApp());
+}
+
+/// Enables cursor/trackpad/stylus dragging in addition to touch, so the
+/// tab PageView and horizontal lists swipe with a mouse on web/desktop.
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  const _AppScrollBehavior();
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }
 
 class CafeConnectApp extends StatefulWidget {
@@ -68,6 +82,10 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: state.themeMode,
+          // Let mouse/trackpad drag scroll & swipe on the web/desktop builds
+          // (Flutter disables mouse dragging by default) so the tab PageView
+          // and the swipe-back gesture respond to the cursor, not just touch.
+          scrollBehavior: const _AppScrollBehavior(),
           routerConfig: _router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context)
