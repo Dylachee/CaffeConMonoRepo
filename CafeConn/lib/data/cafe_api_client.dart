@@ -85,6 +85,14 @@ class CafeApiClient {
         .toList();
   }
 
+  /// One table's history for a day (default: newest day with orders), plus the
+  /// list of days that have orders so the UI can page day-by-day.
+  Future<TableHistoryDto> tableHistory(String tableId, {String? date}) async {
+    final res = await _send(() =>
+        _http.get(ApiConfig.tableHistory(tableId, date: date), headers: _headers()));
+    return TableHistoryDto.fromJson(_decodeMap(res));
+  }
+
   /// Create an order. `items` = [{menu_item_id:int, quantity:int, notes:[...]}].
   /// The server auto-splits kitchen/bar by each item's station and broadcasts
   /// `order.created` on the realtime feed.

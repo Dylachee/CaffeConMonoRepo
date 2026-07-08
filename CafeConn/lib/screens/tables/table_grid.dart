@@ -461,10 +461,7 @@ class _TableCardState extends State<TableCard> {
                 child: Text(
                   table.status == TableStatus.free
                       ? L.freeLower
-                      : state
-                          .tableCart(table.id)
-                          .fold(0.0, (s, l) => s + l.total)
-                          .rub,
+                      : state.tableDisplayTotal(table.id).rub,
                   style: table.status == TableStatus.free
                       ? AppTypography.label(color: AppColors.ink40)
                       : AppTypography.mono(
@@ -545,7 +542,7 @@ class QuickCheckOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final items = state.tableCart(table.id);
+    final items = state.tableDisplayLines(table.id);
     final total = items.fold(0.0, (s, l) => s + l.total);
 
     return Center(

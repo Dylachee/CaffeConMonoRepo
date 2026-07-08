@@ -447,6 +447,35 @@ class BootstrapDto {
       );
 }
 
+/// One table's history for a single day, plus the list of days that have
+/// orders (newest first) so the client can page day-by-day. See
+/// StaffTableHistoryView on the backend.
+class TableHistoryDto {
+  final String tableId;
+  final String? date; // resolved day being shown (ISO yyyy-MM-dd), null if none
+  final List<String> dates; // distinct days with orders, newest first
+  final List<OrderDto> orders; // orders for [date], newest first
+
+  const TableHistoryDto({
+    required this.tableId,
+    required this.date,
+    required this.dates,
+    required this.orders,
+  });
+
+  factory TableHistoryDto.fromJson(Map<String, dynamic> j) => TableHistoryDto(
+        tableId: _asString(j['tableId']),
+        date: j['date'] == null ? null : _asString(j['date']),
+        dates: ((j['dates'] as List?) ?? const [])
+            .map((e) => _asString(e))
+            .toList(),
+        orders: ((j['orders'] as List?) ?? const [])
+            .map((e) =>
+                OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
 /// Attention signal (guest -> staff) as emitted on the realtime feed.
 class AttentionDto {
   final String id;

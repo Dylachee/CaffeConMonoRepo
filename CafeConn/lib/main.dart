@@ -11,6 +11,7 @@ import 'screens/orders/order_composer.dart';
 import 'screens/settings/settings.dart';
 import 'screens/shell/main_shell.dart';
 import 'screens/tables/table_details.dart';
+import 'screens/tables/table_history.dart';
 import 'state/cafe_state.dart';
 
 void main() async {
@@ -56,6 +57,9 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
         GoRoute(
             path: '/table-details',
             builder: (_, __) => const TableDetailsScreen()),
+        GoRoute(
+            path: '/table-history',
+            builder: (_, __) => const TableHistoryScreen()),
         GoRoute(
             path: '/waiter-menu',
             builder: (_, __) => const WaiterOrderScreen()),

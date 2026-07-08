@@ -462,6 +462,53 @@ class StaffOrderHistoryView(APIView):
         )
 
 
+class StaffTableHistoryView(APIView):
+    """One table's order history, a single calendar day at a time, for any
+    staff member (the floor shares one view — not scoped to a waiter).
+
+    Read-only, no schema change. Returns the distinct days that have orders
+    (newest first) so the client can page day-by-day without ever landing on
+    an empty day, plus the orders for the requested day (default: newest).
+    Bounded to the most recent 300 orders per table for cost safety.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        table_id = request.query_params.get("table")
+        if not table_id:
+            return Response({"detail": "table is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        recent = (
+            Order.objects.filter(table_id=table_id)
+            .exclude(status=Order.Status.CANCELLED)
+            .select_related("table")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("-created_at")[:300]
+        )
+        # Group by *local* calendar day (avoids the UTC __date mismatch), keeping
+        # the newest-first order the queryset already gives us.
+        groups: dict[str, list] = {}
+        for order in recent:
+            day = timezone.localtime(order.created_at).date().isoformat()
+            groups.setdefault(day, []).append(order)
+
+        dates = list(groups.keys())
+        want = request.query_params.get("date")
+        if want not in groups:
+            want = dates[0] if dates else None
+        day_orders = groups.get(want, []) if want else []
+
+        return Response(
+            {
+                "tableId": str(table_id),
+                "date": want,
+                "dates": dates,
+                "orders": [serialize_for_flutter_order(o) for o in day_orders],
+            }
+        )
+
+
 class MenuItemViewSet(viewsets.ModelViewSet):
     queryset = MenuItem.objects.order_by("-is_available", "name")
     serializer_class = MenuItemSerializer

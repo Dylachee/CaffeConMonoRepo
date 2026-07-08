@@ -15,6 +15,19 @@ import '../data/dtos.dart';
 import '../data/realtime_client.dart';
 import '../models/models.dart';
 
+/// Result of [CafeState.loadTableHistory]: the orders for one day plus the
+/// list of days (newest first) that have orders, so the screen can page back.
+class TableHistoryResult {
+  final String? date; // ISO yyyy-MM-dd being shown (null when the table has none)
+  final List<String> dates; // distinct days with orders, newest first
+  final List<CafeOrder> orders; // orders for [date], newest first
+  const TableHistoryResult({
+    required this.date,
+    required this.dates,
+    required this.orders,
+  });
+}
+
 class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   final _api = MockCafeApi();
   // --- Backend integration (CafeConnect Django hub) ---
@@ -444,6 +457,68 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   List<CartLine> tableCart(String tableId) =>
       tableChecks.putIfAbsent(tableId, () => []);
+
+  /// Everything to show for a table wherever it's summarised (grid card,
+  /// quick-check): the SENT items are read from the shared server [orders]
+  /// list, the not-yet-sent DRAFT lines from this device's local check.
+  ///
+  /// This is the fix for "another waiter's table shows 0": the local check
+  /// only ever holds what *this* device typed, so a table opened on another
+  /// device looked empty. [orders] is the same for every device, so reading
+  /// sent items from there makes every table's contents visible to everyone.
+  /// Offline (no server orders yet) it falls back to the local sent lines, so
+  /// the single-device / mock path is unchanged.
+  List<CartLine> tableDisplayLines(String tableId) {
+    final serverItems =
+        orders.where((o) => o.tableId == tableId).expand((o) => o.items).toList();
+    final local = tableCart(tableId);
+    final sent =
+        serverItems.isNotEmpty ? serverItems : local.where((l) => l.sent).toList();
+    final drafts = local.where((l) => !l.sent);
+    return [...sent, ...drafts];
+  }
+
+  double tableDisplayTotal(String tableId) =>
+      tableDisplayLines(tableId).fold(0.0, (s, l) => s + l.total);
+
+  /// A table's day-by-day history. Online it comes from the hub (any staff can
+  /// see any table, any day); offline it's grouped from the orders this device
+  /// holds. Returns null on a backend error so the screen can offer a retry.
+  Future<TableHistoryResult?> loadTableHistory(String tableId,
+      {String? date}) async {
+    if (backendConnected) {
+      try {
+        final dto = await _remoteApi.tableHistory(tableId, date: date);
+        return TableHistoryResult(
+          date: dto.date,
+          dates: dto.dates,
+          orders: dto.orders.map(_orderFromDto).toList(),
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+    final all = [
+      ...orders.where((o) => o.tableId == tableId),
+      ...archivedOrders.where((o) => o.tableId == tableId),
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final byDay = <String, List<CafeOrder>>{};
+    for (final o in all) {
+      byDay.putIfAbsent(_dayKey(o.createdAt), () => []).add(o);
+    }
+    final dates = byDay.keys.toList();
+    final want = (date != null && byDay.containsKey(date))
+        ? date
+        : (dates.isEmpty ? null : dates.first);
+    return TableHistoryResult(
+      date: want,
+      dates: dates,
+      orders: want == null ? const [] : byDay[want]!,
+    );
+  }
+
+  static String _dayKey(DateTime t) =>
+      '${t.year.toString().padLeft(4, '0')}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
   void addToCart(MenuItem item, int quantity, String modifiers,
       {String? tableId}) {

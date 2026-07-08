@@ -52,6 +52,11 @@ class ApiConfig {
   static Uri bootstrap() => Uri.parse('$apiRoot/staff/bootstrap/');
   static Uri stats() => Uri.parse('$apiRoot/staff/stats/');
   static Uri orderHistory() => Uri.parse('$apiRoot/staff/order-history/');
+  static Uri tableHistory(String tableId, {String? date}) =>
+      Uri.parse('$apiRoot/staff/table-history/').replace(queryParameters: {
+        'table': tableId,
+        if (date != null) 'date': date,
+      });
   static Uri staffAccounts() => Uri.parse('$apiRoot/staff/accounts/');
   static Uri employees() => Uri.parse('$apiRoot/employees/');
   static Uri employee(String id) => Uri.parse('$apiRoot/employees/$id/');

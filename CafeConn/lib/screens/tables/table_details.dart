@@ -12,7 +12,6 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
-import '../../widgets/order_activity.dart';
 
 class TableDetailsScreen extends StatefulWidget {
   const TableDetailsScreen({super.key});
@@ -231,9 +230,6 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       onPressed: () => _showChangeCalculator(context, total)),
                 ],
                 const SizedBox(height: 32),
-                SectionTitle(L.orderHistory),
-                _OrderHistorySection(table: table),
-                const SizedBox(height: 8),
                 SectionTitle(L.notes),
                 Wrap(
                   spacing: 8,
@@ -261,6 +257,15 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 24),
+                // Single entry-point to the table's full day-by-day history
+                // (replaces the old inline last-10 list).
+                AppButton(
+                    label: L.orderHistory,
+                    icon: Icons.history,
+                    kind: ButtonKind.ghost,
+                    onPressed: () =>
+                        GoRouter.of(context).push('/table-history')),
                 const SizedBox(height: 40),
               ],
             ),
@@ -957,147 +962,5 @@ class _ActiveDeliverySection extends StatelessWidget {
     if (confirmed == true) {
       await state.deleteOrderItem(order, l);
     }
-  }
-}
-
-/// Per-visit order history: every order sent for this table, newest first.
-/// Delivered (completed) orders do NOT disappear — they stay here until the
-/// waiter clears the table, which archives the whole visit.
-class _OrderHistorySection extends StatelessWidget {
-  const _OrderHistorySection({required this.table});
-  final CafeTable table;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<CafeState>();
-    // Current-visit orders plus this table's recently-archived ones, newest
-    // first, capped to the last 10 so history stays short and readable.
-    final tableOrders = [
-      ...state.orders.where((o) => o.tableId == table.id),
-      ...state.archivedOrders.where((o) => o.tableId == table.id),
-    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final recent = tableOrders.take(10).toList();
-
-    if (recent.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child:
-            Text(L.noOrdersYet, style: T.body.copyWith(color: AppTheme.ink2)),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ...recent.map((o) => _historyCard(context, state, o)),
-        Padding(
-          padding: const EdgeInsets.only(top: 2, bottom: 6),
-          child: Text(L.deliveredStays,
-              style: T.small.copyWith(color: AppTheme.ink3)),
-        ),
-      ],
-    );
-  }
-
-  Widget _historyCard(BuildContext context, CafeState state, CafeOrder order) {
-    final delivered = order.status == OrderStatus.completed;
-    final statusColor = switch (order.status) {
-      OrderStatus.completed => AppTheme.success,
-      OrderStatus.ready => AppTheme.success,
-      OrderStatus.cooking => AppTheme.warning,
-      OrderStatus.accepted => AppTheme.ink2,
-      OrderStatus.awaiting => AppTheme.warning,
-    };
-    final ts = order.createdAt;
-    final hhmm =
-        '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
-
-    return AppCard(
-      padding: const EdgeInsets.all(12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(delivered ? Icons.check_circle : Icons.schedule,
-              size: 15, color: statusColor),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text('#${order.id} · $hhmm',
-                style: T.priceSmall.copyWith(color: AppTheme.ink2)),
-          ),
-          // Who did what on this order (confirmed / marked ready / delivered).
-          IconButton(
-            icon: const Icon(Icons.history, size: 18),
-            color: AppTheme.ink2,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-            tooltip: L.activity,
-            onPressed: () => showOrderActivitySheet(
-                context, order.id, '#${order.id}'),
-          ),
-          const SizedBox(width: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(orderStatusLabel(order.status),
-                style: T.label
-                    .copyWith(color: statusColor, fontWeight: FontWeight.w800)),
-          ),
-        ]),
-        const SizedBox(height: 8),
-        ...order.items.map((l) {
-          final lineDone = l.done;
-          final lineReady = l.ready;
-          final lineColor =
-              lineDone || lineReady ? AppTheme.success : AppTheme.ink2;
-          final lineStatus = lineDone
-              ? L.itemDelivered
-              : lineReady
-                  ? L.itemReady
-                  : L.inPreparation;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Column(children: [
-              Row(children: [
-                Text('${l.quantity}× ',
-                    style: T.priceSmall.copyWith(fontWeight: FontWeight.w700)),
-                Expanded(
-                  child: Text(l.item.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: T.priceSmall.copyWith(
-                          color: lineDone ? AppTheme.ink2 : AppTheme.ink,
-                          decoration:
-                              lineDone ? TextDecoration.lineThrough : null)),
-                ),
-                Text(l.total.rub,
-                    style: T.priceSmall.copyWith(color: AppTheme.ink2)),
-              ]),
-              const SizedBox(height: 3),
-              Row(children: [
-                Text(lineStatus,
-                    style: T.label.copyWith(
-                        color: lineColor, fontWeight: FontWeight.w800)),
-                const Spacer(),
-                if (state.canDeliverOrders && lineReady && !lineDone)
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.success,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(0, 28),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: () => state.toggleOrderItemDelivered(order, l),
-                    child: Text(L.markDelivered,
-                        style: T.label.copyWith(fontWeight: FontWeight.w900)),
-                  ),
-              ]),
-            ]),
-          );
-        }),
-      ]),
-    );
   }
 }

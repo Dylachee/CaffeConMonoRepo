@@ -145,6 +145,18 @@ class L {
   static String get deliveredStays => t(
       'Delivered orders stay here until the table is cleared.',
       'Gli ordini serviti restano qui finché il tavolo non viene liberato.');
+  static String get yesterday => t('Yesterday', 'Ieri');
+  static String get historyEmptyDay =>
+      t('No orders on this day', 'Nessun ordine in questo giorno');
+  static String get historyEmpty =>
+      t('This table has no history yet', 'Questo tavolo non ha ancora storico');
+  static String get earlierDay => t('Earlier day', 'Giorno precedente');
+  static String get laterDay => t('Later day', 'Giorno successivo');
+  static String historyOrdersN(int n) =>
+      t(n == 1 ? '1 order' : '$n orders', n == 1 ? '1 ordine' : '$n ordini');
+  static String get couldNotLoad =>
+      t('Could not load', 'Caricamento non riuscito');
+  static String get retry => t('Retry', 'Riprova');
 
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');
