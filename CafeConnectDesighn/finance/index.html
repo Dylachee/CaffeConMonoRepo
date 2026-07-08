@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CafeConnect · Финансы</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#EEEAE1; --surface:#FBF9F4; --surface-2:#F4F1EA; --sunken:#EBE6DB;
+    --ink:#1E1B16; --ink-70:#5A544A; --ink-45:#938C7E; --hairline:#E4DFD4;
+    --espresso:#221F1A; --ok:#3E9C63; --ok-soft:#EAF3EC;
+    --kitchen:#E0823A; --bar:#3C7BCF; --gold:#B98A3C; --loss:#C0463B; --loss-soft:#F7ECEA;
+    --violet:#8A6FC0;
+    --r-card:20px; --r-btn:12px; --r-chip:10px;
+    --shadow:0 1px 2px rgba(34,31,26,.04), 0 8px 24px -12px rgba(34,31,26,.14);
+    --shadow-lift:0 2px 6px rgba(34,31,26,.06), 0 18px 40px -18px rgba(34,31,26,.22);
+    --z-sticky:20; --z-toast:80;
+    --ease:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.45;
+    font-size:14px;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  h1,h2,h3{letter-spacing:-.02em;text-wrap:balance}
+  button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+  a{color:inherit}
+  ::selection{background:rgba(62,156,99,.22)}
+
+  /* ---------- shell ---------- */
+  .app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+  .sidebar{
+    background:var(--espresso);color:#EFE9DE;position:sticky;top:0;height:100vh;
+    display:flex;flex-direction:column;padding:22px 16px;gap:6px;
+  }
+  .brand{display:flex;align-items:center;gap:11px;padding:6px 8px 18px}
+  .brand .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(150deg,#2E2A22,#17140F);
+    display:grid;place-items:center;color:#E9B872;font-weight:800;font-size:15px;box-shadow:inset 0 0 0 1px rgba(233,184,114,.25)}
+  .brand b{font-size:15px;font-weight:700;letter-spacing:-.02em;display:block;line-height:1.1}
+  .brand span{font-size:11px;color:#A79F90;letter-spacing:.02em}
+  .nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  .nav button{
+    display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;
+    color:#BDB4A3;font-weight:500;font-size:13.5px;transition:background .16s var(--ease),color .16s var(--ease);
+    width:100%;text-align:left;position:relative
+  }
+  .nav button svg{width:18px;height:18px;flex:none;opacity:.9}
+  .nav button:hover{background:rgba(255,255,255,.05);color:#EFE9DE}
+  .nav button[aria-current="true"]{background:rgba(233,184,114,.13);color:#FBF6ED}
+  .nav button[aria-current="true"]::before{content:"";position:absolute;left:-16px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--gold)}
+  .nav .badge{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--loss);color:#fff;padding:1px 7px;border-radius:20px;font-weight:600}
+  .side-foot{margin-top:auto;display:flex;align-items:center;gap:11px;padding:12px 8px 2px;border-top:1px solid rgba(255,255,255,.08)}
+  .side-foot .ava{width:34px;height:34px;border-radius:10px;background:#3A342B;display:grid;place-items:center;font-weight:700;font-size:12px;color:#E9B872}
+  .side-foot b{font-size:13px;display:block;line-height:1.15}
+  .side-foot span{font-size:11px;color:#A79F90}
+
+  .main{min-width:0;display:flex;flex-direction:column}
+  .topbar{
+    position:sticky;top:0;z-index:var(--z-sticky);background:color-mix(in srgb,var(--bg) 86%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--hairline);
+    padding:16px 30px;display:flex;align-items:center;gap:18px;flex-wrap:wrap
+  }
+  .topbar .titles h1{font-size:21px;font-weight:800}
+  .topbar .titles p{font-size:12.5px;color:var(--ink-70);margin-top:1px}
+  .spacer{flex:1}
+  .seg{display:inline-flex;background:var(--sunken);border-radius:12px;padding:3px;gap:2px}
+  .seg button{padding:6px 13px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--ink-70);transition:.16s var(--ease)}
+  .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:12px;
+    background:var(--espresso);color:#fff;font-weight:600;font-size:13px;transition:transform .12s var(--ease),box-shadow .16s var(--ease)
+  }
+  .btn svg{width:16px;height:16px}
+  .btn:hover{box-shadow:var(--shadow-lift)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1px var(--hairline)}
+
+  .content{padding:26px 30px 60px;max-width:1240px;width:100%}
+  .view{display:none;animation:rise .32s var(--ease) both}
+  .view.active{display:block}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* ---------- primitives ---------- */
+  .card{background:var(--surface);border-radius:var(--r-card);box-shadow:var(--shadow);border:1px solid var(--hairline)}
+  .pad{padding:20px}
+  .grid{display:grid;gap:16px}
+  .sect-h{display:flex;align-items:baseline;gap:10px;margin:6px 2px 12px}
+  .sect-h h2{font-size:14px;font-weight:700;letter-spacing:.01em}
+  .sect-h .sub{font-size:12px;color:var(--ink-45)}
+  .eyebrow{font-size:11.5px;color:var(--ink-45);font-weight:600}
+
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .kpi{padding:18px 20px}
+  .kpi .lab{font-size:12.5px;color:var(--ink-70);font-weight:500}
+  .kpi .val{font-size:30px;font-weight:700;margin-top:8px;letter-spacing:-.03em}
+  .kpi .val small{font-size:16px;color:var(--ink-45);font-weight:600}
+  .delta{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;margin-top:9px;padding:2px 8px;border-radius:20px}
+  .delta.up{color:var(--ok);background:var(--ok-soft)}
+  .delta.down{color:var(--loss);background:var(--loss-soft)}
+  .delta svg{width:12px;height:12px}
+  .delta .note{color:var(--ink-45);font-weight:500;background:none}
+
+  .row2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-top:16px}
+  .row2b{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:980px){.row2,.row2b{grid-template-columns:1fr}.kpis{grid-template-columns:1fr}}
+
+  /* chart */
+  .chart{height:186px;width:100%;display:block}
+  .chart .grid-l{stroke:var(--hairline);stroke-width:1}
+  .chart .area{fill:url(#g);}
+  .chart .line{fill:none;stroke:var(--ok);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+  .chart .dot{fill:var(--surface);stroke:var(--ok);stroke-width:2.5}
+  .xlab{font-size:10.5px;fill:var(--ink-45);font-family:'Inter'}
+  .peak{font-size:11px;fill:var(--ink);font-weight:700}
+
+  /* breakdown bars */
+  .bd{display:flex;flex-direction:column;gap:14px}
+  .bd .r{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center}
+  .bd .r .t{font-size:13px;font-weight:500}
+  .bd .r .a{font-size:13px;font-weight:600}
+  .bd .track{grid-column:1/-1;height:8px;border-radius:6px;background:var(--sunken);overflow:hidden}
+  .bd .fill{height:100%;border-radius:6px;transform-origin:left;animation:grow .7s var(--ease) both}
+  @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .bd .pct{font-size:11px;color:var(--ink-45)}
+
+  /* tables */
+  .tscroll{overflow-x:auto;overscroll-behavior-x:contain;margin:0 -4px;padding:0 4px}
+  .tscroll table{min-width:560px}
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-45);font-weight:700;text-align:left;padding:0 14px 11px;border-bottom:1px solid var(--hairline)}
+  thead th.n,tbody td.n{text-align:right}
+  tbody td{padding:13px 14px;border-bottom:1px solid var(--hairline);font-size:13px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:var(--surface-2)}
+  tfoot td{padding:13px 14px;font-weight:700;font-size:13px;border-top:2px solid var(--hairline)}
+  tfoot td.n{text-align:right}
+  .who{display:flex;align-items:center;gap:11px}
+  .who .ci{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--sunken);color:var(--ink-70)}
+  .who b{font-size:13px;font-weight:600;display:block;line-height:1.2}
+  .who span{font-size:11px;color:var(--ink-45)}
+  .rank{width:22px;height:22px;border-radius:7px;background:var(--sunken);display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--ink-70)}
+  .rank.top{background:var(--espresso);color:#E9B872}
+
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+  .tag.paid{color:var(--ok);background:var(--ok-soft)}
+  .tag.due{color:var(--gold);background:#F6EFE0}
+  .tag.over{color:var(--loss);background:var(--loss-soft)}
+  .tag svg{width:11px;height:11px}
+
+  /* profit hero */
+  .hero{padding:22px;display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;align-items:center;
+    background:linear-gradient(135deg,#20455C 0%,#173042 100%);color:#EAF1F5;border:0}
+  .hero.good{background:linear-gradient(135deg,#245C3E 0%,#173322 100%)}
+  .hero .l{font-size:12.5px;color:rgba(255,255,255,.7);font-weight:500}
+  .hero .big{font-size:38px;font-weight:800;letter-spacing:-.03em;margin-top:4px}
+  .hero .m{text-align:right}
+  .hero .m .l{color:rgba(255,255,255,.7)}
+  .hero .m .v{font-size:22px;font-weight:700}
+  .hero .divide{grid-column:1/-1;height:1px;background:rgba(255,255,255,.14);margin:6px 0}
+
+  /* donut */
+  .pay{display:flex;align-items:center;gap:22px}
+  .donut{width:118px;height:118px;flex:none;transform:rotate(-90deg)}
+  .leg{display:flex;flex-direction:column;gap:11px;flex:1}
+  .leg .r{display:flex;align-items:center;gap:9px;font-size:13px}
+  .leg .dot{width:9px;height:9px;border-radius:3px;flex:none}
+  .leg .r b{margin-left:auto;font-weight:600}
+
+  /* dollar structure */
+  .dollar{display:flex;height:14px;border-radius:8px;overflow:hidden;margin:2px 0 14px}
+  .dollar span{height:100%}
+  .dollar-leg{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 20px}
+  .dollar-leg .r{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .dollar-leg .r b{margin-left:auto}
+
+  /* integrations */
+  .integ{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .isys{padding:16px;display:flex;flex-direction:column;gap:12px}
+  .isys .top{display:flex;align-items:center;gap:12px}
+  .isys .mk{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff}
+  .isys b{font-size:14px}
+  .isys .desc{font-size:11.5px;color:var(--ink-45)}
+  .isys .st{margin-left:auto;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+  .isys .st.on{color:var(--ok);background:var(--ok-soft)}
+  .isys .st.off{color:var(--ink-45);background:var(--sunken)}
+  .isys .st.rev{color:var(--gold);background:#F6EFE0}
+  .isys .meta{font-size:11.5px;color:var(--ink-70);display:flex;justify-content:space-between;padding-top:2px;border-top:1px solid var(--hairline);margin-top:2px}
+
+  .export-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:840px){.export-cols{grid-template-columns:1fr}}
+  .pick{display:flex;flex-direction:column;gap:8px}
+  .opt{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:13px;border:1px solid var(--hairline);cursor:pointer;transition:.14s var(--ease)}
+  .opt:hover{border-color:#D6CFC0;background:var(--surface-2)}
+  .opt[aria-checked="true"]{border-color:var(--ok);background:var(--ok-soft)}
+  .opt .ic{width:34px;height:34px;border-radius:9px;background:var(--sunken);display:grid;place-items:center;font-size:11px;font-weight:700}
+  .opt b{font-size:13px;display:block;line-height:1.25}.opt span{font-size:11px;color:var(--ink-45);display:block}
+  .opt .rd{margin-left:auto;width:18px;height:18px;border-radius:50%;border:2px solid var(--hairline);flex:none;display:grid;place-items:center}
+  .opt[aria-checked="true"] .rd{border-color:var(--ok)}
+  .opt[aria-checked="true"] .rd::after{content:"";width:9px;height:9px;border-radius:50%;background:var(--ok)}
+  .check{display:flex;align-items:center;gap:11px;padding:11px 14px;border-radius:13px;background:var(--surface-2);cursor:pointer}
+  .check .box{width:19px;height:19px;border-radius:6px;border:2px solid var(--hairline);flex:none;display:grid;place-items:center;transition:.14s}
+  .check[aria-checked="true"] .box{background:var(--ok);border-color:var(--ok)}
+  .check[aria-checked="true"] .box svg{opacity:1}
+  .check .box svg{width:12px;height:12px;opacity:0;color:#fff}
+  .check b{font-size:13px}.check span{margin-left:auto;font-size:11px;color:var(--ink-45)}
+
+  .log{display:flex;flex-direction:column}
+  .log .e{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--hairline)}
+  .log .e:last-child{border-bottom:0}
+  .log .e .d{width:8px;height:8px;border-radius:50%;background:var(--ok);margin-top:5px;flex:none}
+  .log .e .d.warn{background:var(--gold)}
+  .log b{font-size:12.5px}.log time{font-size:11px;color:var(--ink-45);margin-left:auto}
+  .log .det{font-size:11.5px;color:var(--ink-70);margin-top:2px}
+
+  .note{font-size:12px;color:var(--ink-70);background:#F6EFE0;border:1px solid #ECDFC5;border-radius:12px;padding:11px 14px;display:flex;gap:9px;margin-top:16px}
+  .note svg{width:16px;height:16px;color:var(--gold);flex:none;margin-top:1px}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);z-index:var(--z-toast);
+    background:var(--espresso);color:#fff;padding:12px 18px;border-radius:14px;font-size:13px;font-weight:600;
+    box-shadow:var(--shadow-lift);opacity:0;pointer-events:none;transition:.28s var(--ease);display:flex;align-items:center;gap:9px}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast svg{width:16px;height:16px;color:#7FD69F}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+  }
+  @media(max-width:760px){
+    .app{grid-template-columns:1fr}
+    .sidebar{position:fixed;left:0;top:0;bottom:0;width:248px;transform:translateX(-100%);transition:transform .2s var(--ease);z-index:60}
+    .sidebar.open{transform:none}
+    .content{padding:18px}
+    .topbar{padding:14px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">₵</div>
+      <div><b>CafeConnect</b><span>Финансы и учёт</span></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-view="overview" aria-current="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13h4v8H3zM10 3h4v18h-4zM17 9h4v12h-4z"/></svg>Обзор</button>
+      <button data-view="pnl">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>Прибыль и расходы</button>
+      <button data-view="payroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 8h4M19 6v4"/></svg>Зарплаты</button>
+      <button data-view="taxes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg>Налоги<span class="badge">2</span></button>
+      <button data-view="export">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Выгрузка</button>
+    </nav>
+    <div class="side-foot">
+      <div class="ava">АК</div>
+      <div><b>Алмас К.</b><span>Владелец</span></div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <div class="titles"><h1 id="secTitle">Обзор</h1><p id="secSub">Пульс кафе «Тёплый угол» за выбранный период</p></div>
+      <div class="spacer"></div>
+      <div class="seg" id="period">
+        <button data-p="day" aria-pressed="false">День</button>
+        <button data-p="week" aria-pressed="true">Неделя</button>
+        <button data-p="month" aria-pressed="false">Месяц</button>
+        <button data-p="quarter" aria-pressed="false">Квартал</button>
+      </div>
+      <button class="btn" onclick="goExport()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12M8 11l4 4 4-4M4 19h16"/></svg>Выгрузить</button>
+    </header>
+
+    <main class="content">
+      <!-- ===== OVERVIEW ===== -->
+      <section class="view active" id="v-overview">
+        <div class="kpis">
+          <div class="card kpi"><div class="lab">Выручка</div><div class="val mono" data-k="rev">—</div>
+            <div class="delta up" data-d="rev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 15l6-6 6 6"/></svg><span data-dv="rev">+12%</span><span class="note">к пред. периоду</span></div></div>
+          <div class="card kpi"><div class="lab">Чистая прибыль</div><div class="val mono" data-k="net">—</div>
+            <div class="delta up" data-d="net"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 15l6-6 6 6"/></svg><span data-dv="net">+9%</span><span class="note">маржа <b class="mono" data-k="margin">—</b></span></div></div>
+          <div class="card kpi"><div class="lab">Средний чек</div><div class="val mono" data-k="check">—</div>
+            <div class="delta down" data-d="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg><span data-dv="check">−3%</span><span class="note"><span class="mono" data-k="orders">—</span> заказов</span></div></div>
+        </div>
+
+        <div class="row2">
+          <div class="card pad">
+            <div class="sect-h"><h2>Выручка · динамика</h2><span class="sub" id="trendSub">по дням недели</span></div>
+            <svg class="chart" id="trend" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="card pad">
+            <div class="sect-h"><h2>Куда уходит выручка</h2></div>
+            <div class="bd" id="breakdown"></div>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div class="card pad">
+            <div class="sect-h"><h2>Топ блюд по выручке</h2><span class="sub">за период</span></div>
+            <table><thead><tr><th style="width:30px"></th><th>Блюдо</th><th class="n">Продано</th><th class="n">Выручка</th></tr></thead>
+            <tbody id="topDishes"></tbody></table>
+          </div>
+          <div class="card pad">
+            <div class="sect-h"><h2>Способы оплаты</h2></div>
+            <div class="pay">
+              <svg class="donut" viewBox="0 0 42 42" id="donut"></svg>
+              <div class="leg" id="payLeg"></div>
+            </div>
+            <div class="card hero good" style="margin-top:16px;padding:16px 18px">
+              <div><div class="l">Чистая маржа</div><div class="big mono" data-k="margin2" style="font-size:30px">—</div></div>
+              <div class="m"><div class="l">после всех расходов и налогов</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== P&L ===== -->
+      <section class="view" id="v-pnl">
+        <div class="card hero good" id="pnlHero">
+          <div><div class="l">Чистая прибыль · <span data-k="periodWord">неделя</span></div><div class="big mono" data-k="net2">—</div></div>
+          <div class="m"><div class="l">Маржа</div><div class="v mono" data-k="margin3">—</div></div>
+          <div class="divide"></div>
+          <div><div class="l">EBITDA</div><div class="v mono" data-k="ebitda">—</div></div>
+          <div class="m"><div class="l">Выручка</div><div class="v mono" data-k="rev2">—</div></div>
+        </div>
+
+        <div class="row2b" style="margin-top:16px">
+          <div class="card pad">
+            <div class="sect-h"><h2>Отчёт о прибыли</h2><span class="sub">от выручки к прибыли</span></div>
+            <table><thead><tr><th>Статья</th><th class="n">Сумма</th><th class="n">%</th><th class="n">Δ</th></tr></thead>
+            <tbody id="pnlRows"></tbody></table>
+          </div>
+          <div class="card pad">
+            <div class="sect-h"><h2>Структура 1 $ выручки</h2><span class="sub">на что уходит каждый доллар</span></div>
+            <div class="dollar" id="dollarBar"></div>
+            <div class="dollar-leg" id="dollarLeg"></div>
+            <div class="card" style="margin-top:16px;padding:16px;background:var(--surface-2);box-shadow:none">
+              <div class="l" style="font-size:12px;color:var(--ink-70)">Точка безубыточности за период</div>
+              <div class="mono" style="font-size:22px;font-weight:700;margin-top:4px" data-k="breakeven">—</div>
+              <div style="font-size:11.5px;color:var(--ink-45);margin-top:2px" data-k="breakevenNote">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== PAYROLL ===== -->
+      <section class="view" id="v-payroll">
+        <div class="kpis">
+          <div class="card kpi"><div class="lab">ФОТ всего · <span data-k="periodWord">неделя</span></div><div class="val mono" data-k="payTot">—</div><div class="delta up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 15l6-6 6 6"/></svg><span>+4%</span><span class="note">7 сотрудников</span></div></div>
+          <div class="card kpi"><div class="lab">Чаевые</div><div class="val mono" data-k="payTips">—</div><div class="delta up note" style="background:none;color:var(--ink-45)"><span>распределены по смене</span></div></div>
+          <div class="card kpi"><div class="lab">К выплате</div><div class="val mono" data-k="payNet">—</div><div class="delta down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg><span data-k="heldPct">−13%</span><span class="note">удержания и налоги</span></div></div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="sect-h"><h2>Расчётная ведомость</h2><span class="sub">часы из смен · ставки из профилей</span></div>
+          <div class="tscroll"><table><thead><tr><th>Сотрудник · роль</th><th class="n">Часы</th><th class="n">Ставка</th><th class="n">Начислено</th><th class="n">Чаевые</th><th class="n">Удержано</th><th class="n">К выплате</th></tr></thead>
+          <tbody id="payRows"></tbody>
+          <tfoot id="payFoot"></tfoot></table></div>
+        </div>
+        <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>Часы</b> берутся из отметок смен официантов (сейчас демо). Чтобы начислять по факту, включите учёт открытия и закрытия смены. Это следующий шаг.</div></div>
+      </section>
+
+      <!-- ===== TAXES ===== -->
+      <section class="view" id="v-taxes">
+        <div class="kpis">
+          <div class="card kpi"><div class="lab">Налогов к уплате · <span data-k="periodWord">неделя</span></div><div class="val mono" data-k="taxTot">—</div><div class="delta down note" style="background:none;color:var(--ink-45)"><span data-k="taxRateNote">УСН 6% + взносы</span></div></div>
+          <div class="card kpi"><div class="lab">Ближайший платёж</div><div class="val" style="font-size:22px" data-k="taxDue">—</div><div class="delta down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg><span data-k="taxDueNote">через 6 дней</span></div></div>
+          <div class="card kpi"><div class="lab">Эффективная ставка</div><div class="val mono" data-k="taxEff">—</div><div class="delta note" style="background:none;color:var(--ink-45)"><span>от выручки <span class="mono" data-k="rev3">—</span></span></div></div>
+        </div>
+        <div class="card pad" style="margin-top:16px">
+          <div class="sect-h"><h2>Налоги и взносы</h2></div>
+          <div class="tscroll"><table><thead><tr><th>Налог / взнос · база</th><th class="n">Ставка</th><th class="n">Сумма</th><th class="n">Срок</th><th class="n">Статус</th></tr></thead>
+          <tbody id="taxRows"></tbody>
+          <tfoot id="taxFoot"></tfoot></table></div>
+        </div>
+      </section>
+
+      <!-- ===== EXPORT ===== -->
+      <section class="view" id="v-export">
+        <div class="sect-h"><h2>Учётные системы</h2><span class="sub">куда отдавать данные</span></div>
+        <div class="integ" id="integ"></div>
+        <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>R-Keeper:</b> прямая синхронизация ещё не подтверждена. Нужно выяснить, есть ли у вашей версии API или выгрузка. Пока отдаём файл (CSV/Excel) для ручного импорта. На старте этого достаточно.</div></div>
+
+        <div class="export-cols">
+          <div class="card pad">
+            <div class="sect-h"><h2>Формат</h2><span class="sub" id="expPeriod">Период: неделя</span></div>
+            <div class="pick" id="fmtPick">
+              <button class="opt" role="radio" aria-checked="true" data-fmt="csv"><div class="ic">CSV</div><div><b>CSV</b><span>Универсальный, для R-Keeper / 1С</span></div><div class="rd"></div></button>
+              <button class="opt" role="radio" aria-checked="false" data-fmt="xlsx"><div class="ic">XLS</div><div><b>Excel</b><span>Готовый отчёт с формулами</span></div><div class="rd"></div></button>
+              <button class="opt" role="radio" aria-checked="false" data-fmt="pdf"><div class="ic">PDF</div><div><b>PDF</b><span>Печать / для банка и налоговой</span></div><div class="rd"></div></button>
+            </div>
+          </div>
+          <div class="card pad">
+            <div class="sect-h"><h2>Что включить</h2></div>
+            <div class="pick" id="incPick">
+              <button class="check" role="checkbox" aria-checked="true" data-inc="rev"><div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l4 4 10-11"/></svg></div><b>Выручка и заказы</b><span>1 240 строк</span></button>
+              <button class="check" role="checkbox" aria-checked="true" data-inc="pnl"><div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l4 4 10-11"/></svg></div><b>Прибыль и расходы</b><span>18 строк</span></button>
+              <button class="check" role="checkbox" aria-checked="true" data-inc="pay"><div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l4 4 10-11"/></svg></div><b>Зарплаты</b><span>7 строк</span></button>
+              <button class="check" role="checkbox" aria-checked="false" data-inc="tax"><div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l4 4 10-11"/></svg></div><b>Налоги</b><span>5 строк</span></button>
+            </div>
+            <button class="btn" style="width:100%;justify-content:center;margin-top:16px" onclick="doExport()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12M8 11l4 4 4-4M4 19h16"/></svg>
+              Скачать <span id="expFmt">CSV</span> · <span class="mono" id="expSize">≈ 84 КБ</span></button>
+          </div>
+        </div>
+
+        <div class="card pad" style="margin-top:16px">
+          <div class="sect-h"><h2>Журнал обмена</h2></div>
+          <div class="log" id="log"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l4 4 10-11"/></svg><span id="toastMsg"></span></div>
+
+<script>
+/* ---------------- demo data (per period) ---------------- */
+const money = n => n.toLocaleString('ru-RU') + ' $';
+const D = {
+  week:{ label:'неделя', rev:32480, net:6820, check:18.4, orders:1764, margin:21, ebitda:9240, breakeven:24100,
+    trend:[4.2,3.1,3.8,4.6,6.1,7.3,3.4], xl:['Пн','Вт','Ср','Чт','Пт','Сб','Вс'], trendSub:'по дням недели',
+    drev:'+12%', dnet:'+9%', dcheck:'−3%' },
+  day:{ label:'день', rev:5210, net:1080, check:17.9, orders:291, margin:20, ebitda:1480, breakeven:3600,
+    trend:[.1,.05,.2,.9,1.1,.8,.7,.6,.4,.3], xl:['9','11','13','15','17','19','21','23','1','3'], trendSub:'по часам',
+    drev:'+6%', dnet:'+3%', dcheck:'−1%' },
+  month:{ rev:139500, net:31200, check:18.9, orders:7380, margin:22, ebitda:41800, breakeven:104000, label:'месяц',
+    trend:[28,31,27,34], xl:['Нед 1','Нед 2','Нед 3','Нед 4'], trendSub:'по неделям',
+    drev:'+8%', dnet:'+14%', dcheck:'+2%' },
+  quarter:{ rev:412000, net:96500, check:19.2, orders:21900, margin:23, ebitda:126000, breakeven:308000, label:'квартал',
+    trend:[132,138,142], xl:['Мес 1','Мес 2','Мес 3'], trendSub:'по месяцам',
+    drev:'+11%', dnet:'+17%', dcheck:'+3%' },
+};
+const breakdown = [
+  {t:'Себестоимость продуктов',pct:31,c:'var(--kitchen)'},
+  {t:'Зарплаты и чаевые',pct:28,c:'var(--bar)'},
+  {t:'Аренда и коммунальные',pct:11,c:'var(--gold)'},
+  {t:'Налоги и взносы',pct:9,c:'var(--violet)'},
+  {t:'Прочее (маркетинг, сервис)',pct:0,c:'var(--ink-45)'},
+];
+const dishes = [
+  {n:'Бургерита Сисси',q:214,r:2996},{n:'Тортель с колбаской',q:132,r:2376},
+  {n:'Котлета с фри',q:158,r:2528},{n:'Апероль Спритц',q:301,r:2408},
+  {n:'Пиво Kronenbourg 0,5',q:288,r:2016}];
+const pays = [{t:'Карта',pct:58,c:'var(--bar)'},{t:'Наличные',pct:29,c:'var(--ok)'},{t:'QR / перевод',pct:13,c:'var(--gold)'}];
+const pnl = [
+  {l:'Выручка',a:32480,pct:100,d:'+12%',strong:1},
+  {l:'− Себестоимость',a:-10070,pct:31,d:'+10%'},
+  {l:'Валовая прибыль',a:22410,pct:69,d:'+13%',strong:1},
+  {l:'− Зарплаты и чаевые',a:-9090,pct:28,d:'+4%'},
+  {l:'− Аренда и операционные',a:-3570,pct:11,d:'0%'},
+  {l:'EBITDA',a:9240,pct:28,d:'+15%',strong:1},
+  {l:'− Налоги и взносы',a:-2420,pct:9,d:'+8%'},
+  {l:'Чистая прибыль',a:6820,pct:21,d:'+9%',strong:2},
+];
+const dollar = [{l:'Продукты',pct:31,c:'var(--kitchen)'},{l:'Зарплаты',pct:28,c:'var(--bar)'},{l:'Аренда',pct:11,c:'var(--gold)'},{l:'Налоги',pct:9,c:'var(--violet)'},{l:'Прибыль',pct:21,c:'var(--ok)'}];
+const pay = [
+  {i:'АК',n:'Алмас К.',role:'Владелец',h:0,rate:'—',base:0,tips:0,held:0,net:0,skip:1},
+  {i:'МН',n:'Менеджер Нур',role:'Менеджер',h:42,rate:12,base:504,tips:60,held:73,net:491},
+  {i:'О1',n:'Официант 1',role:'Официант',h:38,rate:8,base:304,tips:240,held:71,net:473},
+  {i:'О2',n:'Официант 2',role:'Официант',h:40,rate:8,base:320,tips:255,held:75,net:500},
+  {i:'О3',n:'Официант 3',role:'Официант',h:31,rate:8,base:248,tips:198,held:58,net:388},
+  {i:'БР',n:'Бартендер',role:'Бар',h:44,rate:9,base:396,tips:150,held:71,net:475},
+  {i:'ПВ',n:'Повар',role:'Кухня',h:45,rate:9,base:405,tips:0,held:53,net:352},
+];
+const taxes = [
+  {n:'УСН «доходы»',sub:'база 32 480 $',rate:'6%',sum:1949,due:'25 июл',st:'due'},
+  {n:'Пенсионные взносы',sub:'ФОТ 8 850 $',rate:'22%',sum:1947,due:'15 июл',st:'over'},
+  {n:'Медицинские взносы',sub:'ФОТ 8 850 $',rate:'5.1%',sum:451,due:'15 июл',st:'due'},
+  {n:'Соц. страхование',sub:'ФОТ 8 850 $',rate:'2.9%',sum:257,due:'15 июл',st:'paid'},
+  {n:'НДФЛ (агент)',sub:'удержан у сотрудников',rate:'—',sum:401,due:'15 июл',st:'paid'},
+];
+const integ = [
+  {mk:'RK',c:'#C0463B',n:'R-Keeper',desc:'Ваша касса',st:'rev',stl:'Проверяется',meta:['Синхр. не настроена','Экспорт CSV']},
+  {mk:'1С',c:'#B98A3C',n:'1С:Бухгалтерия',desc:'Учёт и отчётность',st:'off',stl:'Не подключено',meta:['—','Экспорт CSV/XML']},
+  {mk:'ii',c:'#3C7BCF',n:'iiko',desc:'Автоматизация',st:'off',stl:'Не подключено',meta:['—','Экспорт CSV']},
+  {mk:'Or',c:'#8A6FC0',n:'Oracle Hospitality',desc:'Enterprise',st:'off',stl:'Не подключено',meta:['—','Экспорт CSV']},
+];
+const logs = [
+  {t:'Выгрузка · CSV «Выручка»',time:'сегодня 15:40',det:'1 764 строки · 84 КБ · вручную',warn:0},
+  {t:'Выгрузка · Excel «Зарплаты»',time:'вчера 21:12',det:'7 строк · передано бухгалтеру',warn:0},
+  {t:'R-Keeper: попытка связи',time:'вчера 18:03',det:'API не отвечает, уточнить версию и лицензию',warn:1},
+];
+
+/* ---------------- render ---------------- */
+let period='week';
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+function setText(k,v){$$(`[data-k="${k}"]`).forEach(e=>e.textContent=v)}
+
+function render(){
+  const d=D[period];
+  setText('rev',money(d.rev)); setText('rev2',money(d.rev)); setText('rev3',money(d.rev));
+  setText('net',money(d.net)); setText('net2',money(d.net));
+  setText('check',d.check.toFixed(1)+' $'); setText('orders',d.orders.toLocaleString('ru-RU'));
+  setText('margin',d.margin+'%'); setText('margin2',d.margin+'%'); setText('margin3',d.margin+'%');
+  setText('ebitda',money(d.ebitda)); setText('periodWord',d.label); setText('breakeven',money(d.breakeven));
+  setText('breakevenNote','покрыто на '+Math.round(d.rev/d.breakeven*100)+'% от выручки');
+  $('#trendSub').textContent=d.trendSub;
+  $('[data-dv="rev"]').textContent=d.drev; $('[data-dv="net"]').textContent=d.dnet; $('[data-dv="check"]').textContent=d.dcheck;
+  drawTrend(d.trend,d.xl);
+
+  // breakdown
+  breakdown[4].pct=100-breakdown.slice(0,4).reduce((s,x)=>s+x.pct,0)-d.margin;
+  $('#breakdown').innerHTML=breakdown.map(b=>`
+    <div class="r"><div class="t">${b.t}</div><div class="a mono">${b.pct}%</div>
+      <div class="track"><div class="fill" style="width:${b.pct*2.6}%;background:${b.c}"></div></div></div>`).join('');
+
+  // top dishes
+  $('#topDishes').innerHTML=dishes.map((x,i)=>`<tr>
+    <td><div class="rank ${i===0?'top':''}">${i+1}</div></td>
+    <td><b style="font-weight:600">${x.n}</b></td>
+    <td class="n mono">${x.q}</td><td class="n mono" style="font-weight:600">${money(x.r)}</td></tr>`).join('');
+
+  drawDonut();
+  $('#payLeg').innerHTML=pays.map(p=>`<div class="r"><span class="dot" style="background:${p.c}"></span>${p.t}<b class="mono">${p.pct}%</b></div>`).join('');
+
+  // pnl
+  $('#pnlRows').innerHTML=pnl.map(r=>{
+    const up=r.d.startsWith('+'), z=r.d==='0%';
+    return `<tr>
+      <td style="${r.strong?'font-weight:700':''}">${r.l}</td>
+      <td class="n mono" style="${r.strong?'font-weight:700':''};${r.a<0?'color:var(--loss)':''}">${r.a<0?'−':''}${money(Math.abs(r.a))}</td>
+      <td class="n mono" style="color:var(--ink-45)">${r.pct}%</td>
+      <td class="n mono" style="color:${z?'var(--ink-45)':up?'var(--ok)':'var(--loss)'}">${r.d}</td></tr>`;
+  }).join('');
+  $('#dollarBar').innerHTML=dollar.map(x=>`<span style="width:${x.pct}%;background:${x.c}"></span>`).join('');
+  $('#dollarLeg').innerHTML=dollar.map(x=>`<div class="r"><span class="dot" style="width:9px;height:9px;border-radius:3px;background:${x.c}"></span>${x.l}<b class="mono">${x.pct}¢</b></div>`).join('');
+
+  // payroll
+  const T={h:0,base:0,tips:0,held:0,net:0};
+  $('#payRows').innerHTML=pay.map(p=>{
+    if(!p.skip){T.h+=p.h;T.base+=p.base;T.tips+=p.tips;T.held+=p.held;T.net+=p.net}
+    return `<tr style="${p.skip?'opacity:.5':''}">
+      <td><div class="who"><div class="ci">${p.i}</div><div><b>${p.n}</b><span>${p.role}</span></div></div></td>
+      <td class="n mono">${p.skip?'—':p.h}</td><td class="n mono">${p.skip?'—':p.rate+' $'}</td>
+      <td class="n mono">${p.skip?'—':money(p.base)}</td><td class="n mono" style="color:var(--ok)">${p.tips?'+'+money(p.tips):'—'}</td>
+      <td class="n mono" style="color:var(--loss)">${p.skip?'—':'−'+money(p.held)}</td>
+      <td class="n mono" style="font-weight:700">${p.skip?'—':money(p.net)}</td></tr>`;
+  }).join('');
+  $('#payFoot').innerHTML=`<tr><td>Итого</td><td class="n mono">${T.h} ч</td><td></td>
+    <td class="n mono">${money(T.base)}</td><td class="n mono" style="color:var(--ok)">+${money(T.tips)}</td>
+    <td class="n mono" style="color:var(--loss)">−${money(T.held)}</td><td class="n mono">${money(T.net)}</td></tr>`;
+  setText('payTot',money(T.base+T.tips)); setText('payTips',money(T.tips)); setText('payNet',money(T.net));
+
+  // taxes
+  const taxSum=taxes.reduce((s,t)=>s+t.sum,0);
+  setText('taxTot',money(taxSum)); setText('taxEff',(taxSum/d.rev*100).toFixed(1)+'%');
+  setText('taxDue','15 июля');
+  $('#taxRows').innerHTML=taxes.map(t=>`<tr>
+    <td><b style="font-weight:600">${t.n}</b><div style="font-size:11px;color:var(--ink-45)">${t.sub}</div></td>
+    <td class="n mono">${t.rate}</td><td class="n mono" style="font-weight:600">${money(t.sum)}</td>
+    <td class="n mono" style="color:var(--ink-70)">${t.due}</td>
+    <td class="n"><span class="tag ${t.st}">${t.st==='paid'?'Оплачено':t.st==='over'?'Просрочено':'К оплате'}</span></td></tr>`).join('');
+  $('#taxFoot').innerHTML=`<tr><td>Всего к уплате</td><td></td><td class="n mono">${money(taxSum)}</td><td colspan="2"></td></tr>`;
+
+  // integrations + log
+  $('#integ').innerHTML=integ.map(i=>`<div class="card isys">
+    <div class="top"><div class="mk" style="background:${i.c}">${i.mk}</div><div><b>${i.n}</b><div class="desc">${i.desc}</div></div>
+      <span class="st ${i.st}">${i.stl}</span></div>
+    <div class="meta"><span>${i.meta[0]}</span><span>${i.meta[1]}</span></div></div>`).join('');
+  $('#log').innerHTML=logs.map(l=>`<div class="e"><div class="d ${l.warn?'warn':''}"></div>
+    <div style="flex:1"><div style="display:flex"><b>${l.t}</b><time>${l.time}</time></div><div class="det">${l.det}</div></div></div>`).join('');
+  $('#expPeriod').textContent='Период: '+d.label;
+}
+
+function drawTrend(data,xl){
+  const svg=$('#trend'),W=640,H=190,pad=26,max=Math.max(...data)*1.15;
+  const x=i=>pad+i*(W-pad*2)/(data.length-1), y=v=>H-24-(v/max)*(H-52);
+  let grid='';for(let g=0;g<=3;g++){const gy=22+g*(H-46)/3;grid+=`<line class="grid-l" x1="${pad}" y1="${gy}" x2="${W-pad}" y2="${gy}"/>`}
+  const pts=data.map((v,i)=>[x(i),y(v)]);
+  const line='M'+pts.map(p=>p.join(' ')).join(' L ');
+  const area=line+` L ${x(data.length-1)} ${H-24} L ${pad} ${H-24} Z`;
+  const peak=data.indexOf(Math.max(...data));
+  const labs=xl.map((t,i)=>`<text class="xlab" x="${x(i)}" y="${H-6}" text-anchor="middle">${t}</text>`).join('');
+  const dots=pts.map((p,i)=>`<circle class="dot" cx="${p[0]}" cy="${p[1]}" r="${i===peak?4.5:3}"/>`).join('');
+  svg.innerHTML=`<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3E9C63" stop-opacity=".22"/><stop offset="1" stop-color="#3E9C63" stop-opacity="0"/></linearGradient></defs>
+    ${grid}<path class="area" d="${area}"/><path class="line" d="${line}"/>${dots}
+    <text class="peak" x="${x(peak)}" y="${y(data[peak])-11}" text-anchor="middle">${money(Math.round(data[peak]*1000))}</text>${labs}`;
+}
+function drawDonut(){
+  const svg=$('#donut'),cx=21,cy=21,r=15.5,C=2*Math.PI*r;let off=0;
+  svg.innerHTML=`<circle cx="21" cy="21" r="15.5" fill="none" stroke="var(--sunken)" stroke-width="7"/>`+
+    pays.map(p=>{const len=C*p.pct/100;const c=`<circle cx="21" cy="21" r="15.5" fill="none" stroke="${p.c}" stroke-width="7" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`;off+=len;return c}).join('')+
+    `<text x="21" y="20" text-anchor="middle" transform="rotate(90 21 21)" style="font:700 6px Inter;fill:var(--ink)">58%</text><text x="21" y="26" text-anchor="middle" transform="rotate(90 21 21)" style="font:500 3.6px Inter;fill:var(--ink-45)">картой</text>`;
+}
+
+/* ---------------- nav / interactions ---------------- */
+const titles={overview:['Обзор','Пульс кафе «Тёплый угол» за выбранный период'],
+  pnl:['Прибыль и расходы','Полный путь от выручки к чистой прибыли'],
+  payroll:['Зарплаты','Расчёт по сменам, ставкам и чаевым'],
+  taxes:['Налоги','Что и когда нужно заплатить'],
+  export:['Выгрузка','Данные для учётных систем и бухгалтера']};
+function show(v){
+  $$('.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v));
+  $$('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.view===v));
+  $('#secTitle').textContent=titles[v][0]; $('#secSub').textContent=titles[v][1];
+  $('#sidebar').classList.remove('open'); window.scrollTo({top:0,behavior:'smooth'});
+}
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)show(b.dataset.view)});
+$('#period').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  $$('#period button').forEach(x=>x.setAttribute('aria-pressed',x===b));period=b.dataset.p;render()});
+$('#fmtPick').addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;
+  $$('#fmtPick .opt').forEach(x=>x.setAttribute('aria-checked',x===b));
+  $('#expFmt').textContent=b.dataset.fmt.toUpperCase();
+  $('#expSize').textContent=({csv:'≈ 84 КБ',xlsx:'≈ 120 КБ',pdf:'≈ 340 КБ'})[b.dataset.fmt]});
+$('#incPick').addEventListener('click',e=>{const b=e.target.closest('.check');if(!b)return;
+  b.setAttribute('aria-checked',b.getAttribute('aria-checked')!=='true')});
+function goExport(){show('export')}
+function toast(m){const t=$('#toast');$('#toastMsg').textContent=m;t.classList.add('show');clearTimeout(t._);t._=setTimeout(()=>t.classList.remove('show'),2200)}
+function doExport(){const f=$('#expFmt').textContent;toast('Файл '+f+' готов · '+D[period].label);}
+render();
+</script>
+</body>
+</html>

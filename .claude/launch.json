@@ -2,13 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "cafeconn-staff",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "cd CafeConn && flutter run -d web-server --web-hostname localhost --web-port 5173 --dart-define=API_BASE_URL=http://localhost:8000"
-      ],
-      "port": 5173
+      "name": "finance",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8137", "--directory", "CafeConnectDesighn/finance"],
+      "port": 8137
     }
   ]
 }
