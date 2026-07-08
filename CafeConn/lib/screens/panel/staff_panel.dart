@@ -921,39 +921,57 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                   ),
                 ]),
                 const SizedBox(height: 24),
-                AppButton(
-                  label: L.save,
-                  onPressed: () {
-                    final state = context.read<CafeState>();
-                    if (name.text.trim().isEmpty) return;
-                    if (item == null) {
-                      state.upsertMenuItem(MenuItem(
-                        id: 'm${DateTime.now().millisecondsSinceEpoch}',
-                        name: name.text.trim(),
-                        description: desc.text.trim(),
-                        price: double.tryParse(price.text) ?? 0.0,
-                        category: category.text.trim().isEmpty
-                            ? 'Kitchen'
-                            : category.text.trim(),
-                        imageUrl: '',
-                        tags: [],
-                        prepTime: int.tryParse(prep.text) ?? 10,
-                        station: station,
-                      ));
-                    } else {
-                      item.name = name.text.trim();
-                      item.description = desc.text.trim();
-                      item.price = double.tryParse(price.text) ?? item.price;
-                      item.category = category.text.trim().isEmpty
-                          ? item.category
-                          : category.text.trim();
-                      item.prepTime = int.tryParse(prep.text) ?? item.prepTime;
-                      item.station = station;
-                      state.upsertMenuItem(item);
-                    }
-                    Navigator.pop(context);
-                  },
-                ),
+                Row(children: [
+                  if (item != null) ...[
+                    Expanded(
+                      child: AppButton(
+                        label: L.deleteItem,
+                        kind: ButtonKind.ghost,
+                        icon: Icons.delete_outline,
+                        color: AppTheme.danger.withValues(alpha: 0.08),
+                        onPressed: () => _confirmDeleteMenuItem(context, item),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: AppButton(
+                      label: L.save,
+                      onPressed: () {
+                        final state = context.read<CafeState>();
+                        if (name.text.trim().isEmpty) return;
+                        if (item == null) {
+                          state.upsertMenuItem(MenuItem(
+                            id: 'm${DateTime.now().millisecondsSinceEpoch}',
+                            name: name.text.trim(),
+                            description: desc.text.trim(),
+                            price: double.tryParse(price.text) ?? 0.0,
+                            category: category.text.trim().isEmpty
+                                ? 'Kitchen'
+                                : category.text.trim(),
+                            imageUrl: '',
+                            tags: [],
+                            prepTime: int.tryParse(prep.text) ?? 10,
+                            station: station,
+                          ));
+                        } else {
+                          item.name = name.text.trim();
+                          item.description = desc.text.trim();
+                          item.price =
+                              double.tryParse(price.text) ?? item.price;
+                          item.category = category.text.trim().isEmpty
+                              ? item.category
+                              : category.text.trim();
+                          item.prepTime =
+                              int.tryParse(prep.text) ?? item.prepTime;
+                          item.station = station;
+                          state.upsertMenuItem(item);
+                        }
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                ]),
               ],
             ),
           ),
@@ -961,6 +979,32 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
       ),
     ),
   );
+}
+
+Future<void> _confirmDeleteMenuItem(BuildContext context, MenuItem item) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(L.deleteItemQ(item.displayName), style: T.h2),
+      content: Text(L.deleteItemWarn, style: T.body),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(L.cancel)),
+        FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(L.yesDelete)),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final err = await context.read<CafeState>().deleteMenuItem(item);
+  if (!context.mounted) return;
+  if (err != null) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    return;
+  }
+  Navigator.pop(context);
 }
 
 class _AccessTab extends StatefulWidget {

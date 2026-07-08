@@ -223,6 +223,15 @@ class CafeApiClient {
         ));
   }
 
+  /// Manager/admin: remove a menu item from active menus. The hub deletes it
+  /// when possible, or archives it if historic order rows still reference it.
+  Future<void> deleteMenuItem(String id) async {
+    await _send(() => _http.delete(
+          Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),
+          headers: _headers(),
+        ));
+  }
+
   /// Patch a table's status (Django value, e.g. 'free', 'occupied').
   Future<void> updateTableStatus(String id, String status) async {
     await _send(() => _http.patch(

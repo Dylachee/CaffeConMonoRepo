@@ -780,6 +780,21 @@ class CafeState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String?> deleteMenuItem(MenuItem item) async {
+    try {
+      if (backendConnected) {
+        await _remoteApi.deleteMenuItem(item.id);
+      }
+      menu.removeWhere((m) => m.id == item.id);
+      _saveMenu();
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('deleteMenuItem failed: $e');
+      return e.message;
+    }
+  }
+
   void createStaff(String name, UserRole role) {
     final user = AppUser('u${users.length + 1}', name, role, 'Shift active');
     users.add(user);

@@ -93,7 +93,7 @@ def menu_page(request, table_id=None, table_number=None):
     menu_payload = []
     visible_items = []
     for item in menu_items:
-        if _menu_item_expired(item) or _menu_item_archived(item):
+        if not item.is_available or _menu_item_expired(item) or _menu_item_archived(item):
             continue
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")

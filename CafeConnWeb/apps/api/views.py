@@ -477,6 +477,14 @@ class MenuItemViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         self._require_menu_cap()
+        if instance.order_items.exists():
+            tags = list(instance.tags or [])
+            if "archived" not in tags:
+                tags.append("archived")
+            instance.tags = tags
+            instance.is_available = False
+            instance.save(update_fields=["tags", "is_available", "updated_at"])
+            return
         instance.delete()
 
 
