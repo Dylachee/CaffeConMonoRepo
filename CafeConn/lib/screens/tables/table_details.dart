@@ -34,8 +34,12 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
     final drafts = lines.where((l) => !l.sent).toList();
     final tableOrders =
         state.orders.where((o) => o.tableId == table.id).toList();
-    final activeOrders = tableOrders
-        .where((o) => o.status != OrderStatus.completed)
+    // Everything on this table's current visit that belongs in the order list:
+    // still-active AND already-served orders. A served order must stay visible
+    // until the table is cleared (the day-by-day history button is for past
+    // days); only guest orders awaiting approval are handled elsewhere.
+    final visitOrders = tableOrders
+        .where((o) => o.status != OrderStatus.awaiting)
         .toList();
     final orderItems = tableOrders.expand((o) => o.items).toList();
     final deliveredCount = orderItems.where((l) => l.done).length;
@@ -144,11 +148,11 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   // Live orders (sent to kitchen/bar): per-item delivery +
                   // "deliver all ready". This is the waiter's real delivery
                   // surface, driven by server state, not by the draft copies.
-                  if (activeOrders.isNotEmpty) _ActiveDeliverySection(table: table),
+                  if (visitOrders.isNotEmpty) _ActiveDeliverySection(table: table),
                   // Draft (not-yet-sent) lines: still editable — swipe or the
                   // delete button removes them, tap opens note presets.
                   if (drafts.isNotEmpty) ...[
-                    if (activeOrders.isNotEmpty) const SizedBox(height: 6),
+                    if (visitOrders.isNotEmpty) const SizedBox(height: 6),
                     ...drafts.map((l) => Dismissible(
                           key: ValueKey(l.hashCode),
                           direction: DismissDirection.endToStart,
@@ -759,9 +763,11 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   }
 }
 
-/// Live delivery surface for the waiter: every active (not-yet-completed)
-/// order on the table, with a per-item "Delivered" action and a "Deliver all
-/// ready" button. Every action goes through the item-level backend path
+/// The waiter's order list for the current visit: every order on the table
+/// (still-active AND already-served), with a per-item "Delivered" action and a
+/// "Deliver all ready" button. Served orders stay here (struck-through) until
+/// the table is cleared — they no longer vanish the moment they're delivered.
+/// Every action goes through the item-level backend path
 /// (toggleOrderItemDelivered), so the kitchen/bar and the guest tracker stay
 /// in sync — a bar-only delivery no longer flips the kitchen items.
 class _ActiveDeliverySection extends StatelessWidget {
@@ -774,13 +780,16 @@ class _ActiveDeliverySection extends StatelessWidget {
     final orders = state.orders
         .where((o) =>
             o.tableId == table.id &&
-            o.status != OrderStatus.completed &&
             // Pending guest orders live in the approval section, not here.
             o.status != OrderStatus.awaiting)
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     if (orders.isEmpty) return const SizedBox.shrink();
     final readyN = state.readyToDeliverCount(table.id);
+    // Only offer the deliver action while something is still undelivered; once
+    // the whole visit is served the cards remain but the button drops away.
+    final hasUndelivered =
+        orders.any((o) => o.status != OrderStatus.completed);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -789,14 +798,15 @@ class _ActiveDeliverySection extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: _orderCard(context, state, o),
             )),
-        AppButton(
-          label: readyN > 0 ? L.deliverAllReadyN(readyN) : L.nothingReadyYet,
-          icon: readyN > 0 ? Icons.done_all : null,
-          kind: readyN > 0 ? ButtonKind.primary : ButtonKind.secondary,
-          color: readyN > 0 ? AppColors.ok : null,
-          onPressed: readyN > 0
-              ? () => state.deliverAllReadyForTable(table.id)
-              : null,
+        if (hasUndelivered)
+          AppButton(
+            label: readyN > 0 ? L.deliverAllReadyN(readyN) : L.nothingReadyYet,
+            icon: readyN > 0 ? Icons.done_all : null,
+            kind: readyN > 0 ? ButtonKind.primary : ButtonKind.secondary,
+            color: readyN > 0 ? AppColors.ok : null,
+            onPressed: readyN > 0
+                ? () => state.deliverAllReadyForTable(table.id)
+                : null,
         ),
       ],
     );
