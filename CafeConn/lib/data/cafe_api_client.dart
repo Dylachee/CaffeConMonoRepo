@@ -286,6 +286,11 @@ class CafeApiClient {
       // fall through to raw body
     }
     final body = res.body.trim();
-    return body.isEmpty ? 'HTTP ${res.statusCode}' : body;
+    // A proxy/error page (Render 502/503 while waking up) returns HTML — don't
+    // dump a whole document into the UI; show a short, human message instead.
+    if (body.isEmpty || body.startsWith('<')) {
+      return 'Server busy (HTTP ${res.statusCode}) — retrying…';
+    }
+    return body;
   }
 }

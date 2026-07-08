@@ -15,7 +15,7 @@ import '../data/dtos.dart';
 import '../data/realtime_client.dart';
 import '../models/models.dart';
 
-class CafeState extends ChangeNotifier {
+class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   final _api = MockCafeApi();
   // --- Backend integration (CafeConnect Django hub) ---
   final CafeApiClient _remoteApi = CafeApiClient();
@@ -24,6 +24,11 @@ class CafeState extends ChangeNotifier {
   bool backendConnected = false;
   bool backendConnecting = false;
   String? backendError;
+  // Auto-sync guards: catch up on state the realtime socket missed while it
+  // was down, so a waiter never has to hit "Reconnect" by hand.
+  bool _realtimeEverConnected = false;
+  bool _resyncing = false;
+  Timer? _syncTimer;
 
   /// Manager dashboard analytics from the hub (aggregated over the full order
   /// history). Null when not yet loaded, offline, or the backend predates the
@@ -145,6 +150,13 @@ class CafeState extends ChangeNotifier {
   }
 
   Future<void> boot() async {
+    // Wake the socket + pull fresh data whenever the app comes back to the
+    // foreground (phone unlocked, tab refocused) — the #1 desync cause.
+    WidgetsBinding.instance.addObserver(this);
+    // Safety net for a silently half-dead socket: periodically catch up.
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (backendConnected) _ensureLiveAndResync();
+    });
     // --- Seed users & staff (these are config, not user-editable, re-seed always) ---
     users
       ..clear()
@@ -384,6 +396,8 @@ class CafeState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _syncTimer?.cancel();
     _retryTimer?.cancel();
     _realtimeSub?.cancel();
     _realtime?.dispose();
@@ -1250,6 +1264,41 @@ class CafeState extends ChangeNotifier {
       ..addAll(data.orders.map(_orderFromDto));
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && backendConnected) {
+      _ensureLiveAndResync();
+    }
+  }
+
+  /// Re-open the realtime socket if it died while we were away, then pull the
+  /// authoritative state so nothing is stale.
+  Future<void> _ensureLiveAndResync() async {
+    final token = _remoteApi.token;
+    if (token == null) return;
+    if (_realtime == null || !_realtime!.isConnected) {
+      await _openRealtime(token);
+    }
+    await _resyncFromServer();
+  }
+
+  /// Pull the current state from the hub and re-apply it — catches up after
+  /// the socket dropped (backgrounding, a Render blip, a flaky network).
+  Future<void> _resyncFromServer() async {
+    if (!backendConnected || _resyncing) return;
+    _resyncing = true;
+    try {
+      final data = await _remoteApi.bootstrap();
+      _applyBootstrap(data);
+      backendError = null;
+      notifyListeners();
+    } on ApiException catch (e) {
+      debugPrint('resync failed: $e'); // keep last-known state; retry next tick
+    } finally {
+      _resyncing = false;
+    }
+  }
+
   Future<void> _openRealtime(String token) async {
     await _realtimeSub?.cancel();
     await _realtime?.dispose();
@@ -1289,6 +1338,14 @@ class CafeState extends ChangeNotifier {
         _applyAttention(event.attention, acked: true);
         break;
       case RealtimeEventType.connectionReady:
+        // Every reconnect: pull current state so events missed while the
+        // socket was down don't leave this device stale. Skip the first
+        // connect — the initial bootstrap already loaded everything.
+        if (_realtimeEverConnected) {
+          _resyncFromServer();
+        }
+        _realtimeEverConnected = true;
+        break;
       case RealtimeEventType.unknown:
         break;
     }
