@@ -93,7 +93,7 @@ def menu_page(request, table_id=None, table_number=None):
     menu_payload = []
     visible_items = []
     for item in menu_items:
-        if _menu_item_expired(item):
+        if _menu_item_expired(item) or _menu_item_archived(item):
             continue
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
@@ -416,6 +416,10 @@ def _menu_item_expired(item, today=None):
         if today > valid_until:
             return True
     return False
+
+
+def _menu_item_archived(item):
+    return "archived" in (item.tags or [])
 
 
 def _menu_item_is_daily(item):

@@ -244,7 +244,11 @@ class StaffBootstrapView(APIView):
                     "capabilities": caps_for_user(request.user),
                 },
                 "tables": [serialize_for_flutter_table(table) for table in tables_qs],
-                "menu": [serialize_for_flutter_menu(item) for item in MenuItem.objects.all()],
+                "menu": [
+                    serialize_for_flutter_menu(item)
+                    for item in MenuItem.objects.all()
+                    if "archived" not in (item.tags or [])
+                ],
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "preferences": StaffPreferenceSerializer(preferences).data,
                 "websocketPath": "/ws/staff/?token=<token>",
