@@ -67,13 +67,16 @@ class TableSerializer(serializers.ModelSerializer):
 class EmployeeSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
     # Effective (role + grants) capabilities, so the client can gate its UI.
     capabilities = serializers.DictField(read_only=True)
 
     class Meta:
         model = Employee
         fields = [
-            "id", "username", "email", "name", "role", "phone", "is_on_shift",
+            "id", "username", "email", "first_name", "last_name", "name",
+            "role", "phone", "is_on_shift",
             "can_wait", "can_bar", "can_kitchen", "can_manage_menu",
             "capabilities", "created_at", "updated_at",
         ]

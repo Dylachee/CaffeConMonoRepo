@@ -34,6 +34,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   final _searchCtrl = TextEditingController();
   String _search = '';
   String _category = 'All';
+  String _letter = 'All';
 
   @override
   void dispose() {
@@ -41,7 +42,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     super.dispose();
   }
 
-  List<MenuItem> _filtered(CafeState state) {
+  List<MenuItem> _baseFiltered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
       final okCat = _category == 'All' || m.category == _category;
@@ -52,6 +53,27 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           m.categoryIt.toLowerCase().contains(q);
       return okCat && okSearch;
     }).toList();
+  }
+
+  List<String> _letters(CafeState state) {
+    final letters = _baseFiltered(state)
+        .map((m) => m.displayName.trim())
+        .where((name) => name.isNotEmpty)
+        .map((name) => name.substring(0, 1).toUpperCase())
+        .where((letter) => RegExp(r'[A-ZÀ-Ü]').hasMatch(letter))
+        .toSet()
+        .toList()
+      ..sort();
+    return ['All', ...letters];
+  }
+
+  List<MenuItem> _filtered(CafeState state) {
+    final items = _baseFiltered(state).where((m) {
+      if (_letter == 'All') return true;
+      final name = m.displayName.trim();
+      return name.isNotEmpty && name.substring(0, 1).toUpperCase() == _letter;
+    });
+    return state.sortedMenuItems(items);
   }
 
   void _add(BuildContext context, MenuItem item) {
@@ -107,6 +129,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               sub: L.addTableFirst));
     }
     final items = _filtered(state);
+    final letters = _letters(state);
+    if (_letter != 'All' && !letters.contains(_letter)) _letter = 'All';
     final count = _selQty.values.fold(0, (s, v) => s + v);
     final total =
         _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
@@ -168,6 +192,20 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                         label: state.categoryDisplay(c),
                         active: _category == c,
                         onTap: () => setState(() => _category = c),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 32,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: letters
+                  .map((letter) => CategoryChip(
+                        label: letter == 'All' ? L.all : letter,
+                        active: _letter == letter,
+                        onTap: () => setState(() => _letter = letter),
                       ))
                   .toList(),
             ),
@@ -470,7 +508,9 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
 
   @override
   void dispose() {
-    for (final c in _noteCtrl.values) c.dispose();
+    for (final c in _noteCtrl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -564,8 +604,7 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
                     const Icon(Icons.table_restaurant,
                         size: 16, color: AppTheme.ink2),
                     const SizedBox(width: 8),
-                    Text(L.tableN(selectedTable.number),
-                        style: T.bodySemi),
+                    Text(L.tableN(selectedTable.number), style: T.bodySemi),
                   ]),
                 ),
                 const SizedBox(height: 20),
@@ -660,15 +699,14 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     }
     final order = await state.submitOrder(tableId: tableId);
 
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.pop(context);
     widget.onConfirmed?.call();
 
     // Explicit feedback in both outcomes: sending to bar must never look idle.
     if (order != null) {
       messenger.showSnackBar(SnackBar(
-        content:
-            Text(L.orderSent(table.number, kitchenCount, barCount)),
+        content: Text(L.orderSent(table.number, kitchenCount, barCount)),
         backgroundColor: AppTheme.success,
       ));
     } else {

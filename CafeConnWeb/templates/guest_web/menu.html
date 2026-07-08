@@ -311,8 +311,7 @@
     </div>
     {% endif %}
     <div class="grid" id="menu-grid">
-      {% for section in menu_sections %}
-        {% for item in section.items %}
+      {% for item in menu_items %}
         <article class="dish{% if not item.image_url %} text-only{% endif %}{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
           <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}" style="all:unset;display:block;cursor:pointer">
             {% if item.image_url %}
@@ -345,7 +344,6 @@
             {% endif %}
           </div>
         </article>
-        {% endfor %}
       {% empty %}
         <p class="empty" data-i18n="menu_empty">The menu is being filled. Ask your waiter for a paper menu.</p>
       {% endfor %}

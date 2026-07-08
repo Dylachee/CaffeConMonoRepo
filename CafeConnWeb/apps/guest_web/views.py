@@ -77,7 +77,7 @@ MENU_VISUALS = {
 
 def menu_page(request, table_id=None, table_number=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
-    menu_items = MenuItem.objects.order_by("category", "name")
+    menu_items = MenuItem.objects.order_by("category", "-is_available", "name")
     # Two ways to address a table:
     #   /menu/t/<pk>/     — legacy, internal DB id (kept for old links);
     #   /menu/n/<number>/ — the printed table number. QR codes should use this
@@ -150,7 +150,10 @@ def menu_page(request, table_id=None, table_number=None):
             sections_by_name[display_category] = section
         section["items"].append(item)
     for section in sections:
-        section["items"].sort(key=lambda i: not i.is_available)  # stable
+        section["items"].sort(
+            key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower())
+        )
+    visible_items.sort(key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower()))
     sections.sort(key=lambda s: (s["name"] != "Menu del giorno", s["name_it"]))
     featured_items = [
         item
@@ -170,6 +173,7 @@ def menu_page(request, table_id=None, table_number=None):
         {
             "featured_items": featured_items,
             "menu_sections": sections,
+            "menu_items": visible_items,
             "menu_payload": menu_payload,
             "table": table,
             "venue": VENUE,

@@ -350,6 +350,8 @@ class CurrentUserDto {
 class EmployeeDto {
   final String id;
   final String username;
+  final String firstName;
+  final String lastName;
   final String name;
   final String role;
   final bool canWait;
@@ -359,6 +361,8 @@ class EmployeeDto {
   const EmployeeDto({
     required this.id,
     required this.username,
+    required this.firstName,
+    required this.lastName,
     required this.name,
     required this.role,
     required this.canWait,
@@ -369,6 +373,8 @@ class EmployeeDto {
   factory EmployeeDto.fromJson(Map<String, dynamic> j) => EmployeeDto(
         id: _asString(j['id']),
         username: _asString(j['username']),
+        firstName: _asString(j['first_name']),
+        lastName: _asString(j['last_name']),
         name: _asString(j['name']),
         role: _asString(j['role']),
         canWait: _asBool(j['can_wait']),

@@ -38,7 +38,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
 
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
-    return state.menu.where((m) {
+    final items = state.menu.where((m) {
       final okCat = _category == 'All' || m.category == _category;
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
@@ -46,7 +46,8 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
           m.category.toLowerCase().contains(q) ||
           m.categoryIt.toLowerCase().contains(q);
       return okCat && okSearch;
-    }).toList();
+    });
+    return state.sortedMenuItems(items);
   }
 
   void _pickTableAndOrder(BuildContext context) {

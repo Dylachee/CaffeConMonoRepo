@@ -450,7 +450,7 @@ class StaffOrderHistoryView(APIView):
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):
-    queryset = MenuItem.objects.all()
+    queryset = MenuItem.objects.order_by("-is_available", "name")
     serializer_class = MenuItemSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filterset_fields = ["category", "is_available"]
@@ -735,10 +735,15 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.select_related("user").all()
     serializer_class = EmployeeSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["role", "is_on_shift"]
     search_fields = ["name", "user__username", "user__email"]
     ordering_fields = ["name", "role", "updated_at"]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not caps_for_user(request.user)["manage"]:
+            raise PermissionDenied("Only a manager or admin can manage staff.")
 
 
 class StaffAccountCreateView(APIView):
@@ -763,7 +768,11 @@ class StaffAccountCreateView(APIView):
 
         username = (request.data.get("username") or "").strip()
         password = request.data.get("password") or ""
+        first_name = (request.data.get("first_name") or "").strip()
+        last_name = (request.data.get("last_name") or "").strip()
         name = (request.data.get("name") or "").strip()
+        if not name:
+            name = " ".join(part for part in [first_name, last_name] if part).strip()
         role = request.data.get("role") or Employee.Role.WAITER
 
         errors = {}
@@ -784,7 +793,8 @@ class StaffAccountCreateView(APIView):
             user = User.objects.create_user(
                 username=username,
                 password=password,
-                first_name=name,
+                first_name=first_name or name,
+                last_name=last_name,
                 is_staff=(role == Employee.Role.MANAGER),
             )
             employee = Employee.objects.create(

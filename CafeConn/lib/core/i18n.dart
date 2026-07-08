@@ -324,8 +324,7 @@ class L {
   static String get capBar => t('Bar station', 'Postazione bar');
   static String get capKitchen => t('Kitchen station', 'Postazione cucina');
   static String get capMenu => t('Manage menu', 'Gestisci menu');
-  static String get includedWithRole =>
-      t('role', 'ruolo');
+  static String get includedWithRole => t('role', 'ruolo');
   static String get fullAccess => t('Full access', 'Accesso completo');
   static String get connectToManage => t(
       'Connect to the hub to manage staff access.',
@@ -339,22 +338,22 @@ class L {
   static String get evCreated => t('created the order', "ha creato l'ordine");
   static String get evConfirmed =>
       t('sent to kitchen & bar', 'inviato a cucina e bar');
-  static String get evRejected => t('rejected the order', "ha rifiutato l'ordine");
+  static String get evRejected =>
+      t('rejected the order', "ha rifiutato l'ordine");
   static String get evReady => t('marked ready', 'segnato pronto');
   static String get evDelivered => t('delivered', 'servito');
   static String get evUndelivered => t('undid delivery', 'annullato servizio');
   static String get evDeleted => t('removed', 'rimosso');
   static String get evStatus => t('changed status', 'cambiato stato');
-  static String get markOutOfStock =>
-      t('Mark out of stock', 'Segna esaurito');
-  static String get markAvailable =>
-      t('Mark available', 'Segna disponibile');
-  static String waiterOrdersTables(int o, int t) => L.isIt
-      ? '$o ordini · $t tavoli'
-      : '$o orders · $t tables';
+  static String get markOutOfStock => t('Mark out of stock', 'Segna esaurito');
+  static String get markAvailable => t('Mark available', 'Segna disponibile');
+  static String waiterOrdersTables(int o, int t) =>
+      L.isIt ? '$o ordini · $t tavoli' : '$o orders · $t tables';
   static String get newItem => t('New item', 'Nuovo piatto');
   static String get editItem => t('Edit item', 'Modifica piatto');
   static String get name => t('Name', 'Nome');
+  static String get firstName => t('First name', 'Nome');
+  static String get lastName => t('Surname', 'Cognome');
   static String get description => t('Description', 'Descrizione');
   static String get descriptionHint =>
       t('Composition, details...', 'Composizione, dettagli...');
@@ -366,8 +365,7 @@ class L {
       t('New staff member', 'Nuovo membro del personale');
   static String get username => t('Username', 'Nome utente');
   static String get createAccount => t('Create account', 'Crea account');
-  static String get accountCreated =>
-      t('Account created', 'Account creato');
+  static String get accountCreated => t('Account created', 'Account creato');
   static String get accountNeedsConnection => t(
       'Connect to the hub to create an account.',
       "Connettiti all'hub per creare un account.");

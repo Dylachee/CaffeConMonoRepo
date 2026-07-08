@@ -112,6 +112,8 @@ class CafeApiClient {
   /// employee payload.
   Future<Map<String, dynamic>> createStaffAccount({
     required String name,
+    required String firstName,
+    required String lastName,
     required String username,
     required String password,
     required String role,
@@ -121,6 +123,8 @@ class CafeApiClient {
           headers: _headers(),
           body: jsonEncode({
             'name': name,
+            'first_name': firstName,
+            'last_name': lastName,
             'username': username,
             'password': password,
             'role': role,
@@ -136,7 +140,9 @@ class CafeApiClient {
     final decoded = jsonDecode(res.body);
     final list = decoded is List
         ? decoded
-        : (decoded is Map ? (decoded['results'] as List? ?? const []) : const []);
+        : (decoded is Map
+            ? (decoded['results'] as List? ?? const [])
+            : const []);
     return list
         .whereType<Map>()
         .map((e) => EmployeeDto.fromJson(e.cast<String, dynamic>()))
@@ -168,8 +174,8 @@ class CafeApiClient {
   /// Waiter/manager approves a pending guest order: awaiting -> new, and the
   /// kitchen/bar see it for the first time.
   Future<OrderDto> confirmOrder(String orderId) async {
-    final res = await _send(() =>
-        _http.post(ApiConfig.confirmOrder(orderId), headers: _headers()));
+    final res = await _send(
+        () => _http.post(ApiConfig.confirmOrder(orderId), headers: _headers()));
     return OrderDto.fromDrf(_decodeMap(res));
   }
 

@@ -379,9 +379,11 @@ class _WaiterStatRow extends StatelessWidget {
         Avatar(label: waiter.name),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(waiter.name,
-                style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 15)),
+                style:
+                    T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 15)),
             Text(L.waiterOrdersTables(waiter.orders, waiter.tables),
                 style: T.priceSmall.copyWith(color: AppTheme.ink2)),
           ]),
@@ -733,22 +735,59 @@ class _OrderHistoryCard extends StatelessWidget {
       };
 }
 
-class TeamManagementScreen extends StatelessWidget {
+class TeamManagementScreen extends StatefulWidget {
   const TeamManagementScreen({super.key});
+
+  @override
+  State<TeamManagementScreen> createState() => _TeamManagementScreenState();
+}
+
+class _TeamManagementScreenState extends State<TeamManagementScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshStaffAccounts());
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    return ListView(children: [
-      Row(children: [
-        Expanded(child: SectionTitle(L.staff)),
-        AppButton(
-            label: L.add,
-            kind: ButtonKind.ghost,
-            icon: Icons.person_add,
-            onPressed: () => _showStaffForm(context))
-      ]),
-      ...state.users.map((u) => StaffMemberRow(user: u)),
-    ]);
+    final staff = state.staffAccounts;
+    return RefreshIndicator(
+      onRefresh: () => context.read<CafeState>().refreshStaffAccounts(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          Row(children: [
+            Expanded(child: SectionTitle(L.staff)),
+            if (state.staffAccountsLoading)
+              const Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: CupertinoActivityIndicator(),
+              ),
+            AppButton(
+                label: L.add,
+                kind: ButtonKind.ghost,
+                icon: Icons.person_add,
+                onPressed: () => _showStaffForm(context))
+          ]),
+          if (!state.backendConnected)
+            EmptyState(
+              icon: Icons.people_outline,
+              title: L.staff,
+              sub: L.connectToManage,
+            )
+          else if (staff.isEmpty && !state.staffAccountsLoading)
+            EmptyState(
+                icon: Icons.people_outline,
+                title: L.noStaffFound,
+                sub: L.pullToRefresh)
+          else
+            ...staff.map((u) => StaffMemberRow(employee: u)),
+        ],
+      ),
+    );
   }
 }
 
@@ -1049,8 +1088,7 @@ class _StaffAccessCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8)),
                     child: Text(L.includedWithRole,
                         style: T.label.copyWith(
-                            color: AppTheme.ink2,
-                            fontWeight: FontWeight.w700)),
+                            color: AppTheme.ink2, fontWeight: FontWeight.w700)),
                   )
                 else
                   Switch.adaptive(
@@ -1068,46 +1106,44 @@ class _StaffAccessCard extends StatelessWidget {
 }
 
 class StaffMemberRow extends StatelessWidget {
-  const StaffMemberRow({super.key, required this.user});
-  final AppUser user;
+  const StaffMemberRow({super.key, required this.employee});
+  final EmployeeDto employee;
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      onTap: () => _showStaffForm(context, user: user),
       child: Row(children: [
-        Avatar(label: user.name),
+        Avatar(label: employee.name),
         const SizedBox(width: 12),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(user.name,
+          Text(employee.name,
               style: T.h3.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
-          Text(roleLabel(user.role),
+          Text(
+              '${roleLabel(roleFromWire(employee.role))} · @${employee.username}',
               style: T.priceSmall.copyWith(color: AppTheme.ink2)),
         ])),
         Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-                color: user.online ? AppTheme.success : AppTheme.ink3,
-                shape: BoxShape.circle)),
+            decoration: const BoxDecoration(
+                color: AppTheme.success, shape: BoxShape.circle)),
       ]),
     );
   }
 }
 
-void _showStaffForm(BuildContext context, {AppUser? user}) {
-  final isNew = user == null;
-  final name = TextEditingController(text: user?.name ?? '');
+void _showStaffForm(BuildContext context) {
+  final firstName = TextEditingController();
+  final lastName = TextEditingController();
   final username = TextEditingController();
   final password = TextEditingController();
-  var role = user?.role ?? UserRole.waiter;
+  var role = UserRole.waiter;
   var busy = false;
   // A manager can create floor/station staff and other managers, but not
   // admins — mirrors the hub's StaffAccountCreateView.CREATABLE_ROLES.
-  final roleOptions = isNew
-      ? UserRole.values.where((r) => r != UserRole.admin).toList()
-      : UserRole.values.toList();
+  final roleOptions =
+      UserRole.values.where((r) => r != UserRole.admin).toList();
   showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1121,21 +1157,25 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                 padding: EdgeInsets.fromLTRB(
                     20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(isNew ? L.newStaffMember : L.edit, style: T.h2),
+                  Text(L.newStaffMember, style: T.h2),
                   const SizedBox(height: 20),
-                  AppTextField(controller: name, label: L.name),
-                  if (isNew) ...[
-                    const SizedBox(height: 12),
-                    AppTextField(
-                        controller: username,
-                        label: L.username,
-                        keyboardType: TextInputType.visiblePassword),
-                    const SizedBox(height: 12),
-                    AppTextField(
-                        controller: password,
-                        label: L.password,
-                        obscure: true),
-                  ],
+                  Row(children: [
+                    Expanded(
+                        child: AppTextField(
+                            controller: firstName, label: L.firstName)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: AppTextField(
+                            controller: lastName, label: L.lastName)),
+                  ]),
+                  const SizedBox(height: 12),
+                  AppTextField(
+                      controller: username,
+                      label: L.username,
+                      keyboardType: TextInputType.visiblePassword),
+                  const SizedBox(height: 12),
+                  AppTextField(
+                      controller: password, label: L.password, obscure: true),
                   const SizedBox(height: 12),
                   DropdownButtonFormField(
                       initialValue: role,
@@ -1146,21 +1186,21 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                       onChanged: (v) => set(() => role = v!)),
                   const SizedBox(height: 20),
                   AppButton(
-                      label: isNew ? L.createAccount : L.save,
+                      label: L.createAccount,
                       onPressed: busy
                           ? null
                           : () async {
-                              if (!isNew) {
-                                user.name = name.text;
-                                user.role = role;
-                                context.read<CafeState>().refresh();
-                                Navigator.pop(context);
-                                return;
-                              }
-                              final nm = name.text.trim();
+                              final first = firstName.text.trim();
+                              final last = lastName.text.trim();
+                              final nm = [first, last]
+                                  .where((part) => part.isNotEmpty)
+                                  .join(' ');
                               final un = username.text.trim();
                               final pw = password.text;
-                              if (nm.isEmpty || un.isEmpty || pw.isEmpty) {
+                              if (first.isEmpty ||
+                                  last.isEmpty ||
+                                  un.isEmpty ||
+                                  pw.isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(L.fillAllFields)));
                                 return;
@@ -1170,14 +1210,16 @@ void _showStaffForm(BuildContext context, {AppUser? user}) {
                                   .read<CafeState>()
                                   .createStaffAccount(
                                       name: nm,
+                                      firstName: first,
+                                      lastName: last,
                                       username: un,
                                       password: pw,
                                       role: role);
                               if (!context.mounted) return;
                               if (err != null) {
                                 set(() => busy = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(err)));
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(SnackBar(content: Text(err)));
                                 return;
                               }
                               ScaffoldMessenger.of(context).showSnackBar(

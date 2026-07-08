@@ -76,7 +76,7 @@ class CafeState extends ChangeNotifier {
   bool offlineModeSimulated = false;
   String activeUserName = 'Elena Sokolova';
 
-  void setSetting<T>(String key, T value, Function(T) apply) {
+  void setSetting<Value>(String key, Value value, Function(Value) apply) {
     apply(value);
     _box.put(key, value);
     notifyListeners();
@@ -409,6 +409,12 @@ class CafeState extends ChangeNotifier {
 
   List<String> get categories =>
       ['All', ...menu.map((m) => m.category).toSet()];
+
+  List<MenuItem> sortedMenuItems(Iterable<MenuItem> items) => items.toList()
+    ..sort((a, b) {
+      if (a.available != b.available) return a.available ? -1 : 1;
+      return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+    });
 
   /// Display label for a raw category key ('All' + menu categories):
   /// raw values stay stable for filtering, only the label is localized.
@@ -786,6 +792,8 @@ class CafeState extends ChangeNotifier {
   /// couldn't actually log in.
   Future<String?> createStaffAccount({
     required String name,
+    required String firstName,
+    required String lastName,
     required String username,
     required String password,
     required UserRole role,
@@ -796,12 +804,15 @@ class CafeState extends ChangeNotifier {
     try {
       final created = await _remoteApi.createStaffAccount(
         name: name,
+        firstName: firstName,
+        lastName: lastName,
         username: username,
         password: password,
         role: roleToWire(role),
       );
       final id = created['id']?.toString() ?? 'u${users.length + 1}';
       users.add(AppUser(id, name, role, 'Shift active', online: false));
+      await refreshStaffAccounts();
       notifyListeners();
       return null;
     } on ApiException catch (e) {
@@ -924,9 +935,10 @@ class CafeState extends ChangeNotifier {
   /// for them.
   List<CafeOrder> get pendingApprovalOrders {
     if (isStationRole) return const [];
-    final pending =
-        orders.where((o) => o.status == OrderStatus.awaiting).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final pending = orders
+        .where((o) => o.status == OrderStatus.awaiting)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return pending;
   }
 
