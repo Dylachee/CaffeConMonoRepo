@@ -10,7 +10,7 @@
 <style>
   :root{
     --bg:#EEEAE1; --surface:#FBF9F4; --surface-2:#F4F1EA; --sunken:#EBE6DB;
-    --ink:#1E1B16; --ink-70:#5A544A; --ink-45:#938C7E; --hairline:#E4DFD4;
+    --ink:#1E1B16; --ink-70:#5A544A; --ink-45:#7A7263; --hairline:#E4DFD4;
     --espresso:#221F1A; --ok:#3E9C63; --ok-soft:#EAF3EC;
     --kitchen:#E0823A; --bar:#3C7BCF; --gold:#B98A3C; --loss:#C0463B; --loss-soft:#F7ECEA;
     --violet:#8A6FC0;
@@ -227,8 +227,33 @@
   .toast.show{opacity:1;transform:translate(-50%,0)}
   .toast svg{width:16px;height:16px;color:#7FD69F}
 
+  /* freshness / source + demo marker */
+  .fresh{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-70);font-weight:500;white-space:nowrap}
+  .fresh .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+  .demo-pill{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);
+    background:#F6EFE0;border:1px solid #ECDFC5;padding:2px 7px;border-radius:20px;margin-left:9px;vertical-align:middle;position:relative;top:-2px}
+
+  /* mobile nav trigger + scrim */
+  .menu-btn{display:none}
+  .scrim{position:fixed;inset:0;background:rgba(34,31,26,.34);z-index:55;opacity:0;pointer-events:none;transition:opacity .2s var(--ease)}
+  .scrim.show{opacity:1;pointer-events:auto}
+
+  /* keyboard focus (a11y) */
+  :focus{outline:none}
+  :focus-visible{outline:2px solid var(--bar);outline-offset:2px;border-radius:10px}
+  .nav button:focus-visible{outline-offset:-2px}
+
   @media (prefers-reduced-motion: reduce){
     *{animation:none!important;transition:none!important}
+  }
+  @media print{
+    .sidebar,.topbar,.menu-btn,.scrim,.toast{display:none!important}
+    .app{display:block}
+    .content{max-width:none;padding:0}
+    .view{display:block!important;animation:none;page-break-before:always}
+    .view:first-of-type{page-break-before:avoid}
+    .card{box-shadow:none;border:1px solid #d9d3c6;break-inside:avoid}
+    body{background:#fff}
   }
   @media(max-width:760px){
     .app{grid-template-columns:1fr}
@@ -236,6 +261,10 @@
     .sidebar.open{transform:none}
     .content{padding:18px}
     .topbar{padding:14px 18px}
+    .menu-btn{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:11px;
+      background:var(--surface);color:var(--ink);box-shadow:inset 0 0 0 1px var(--hairline)}
+    .menu-btn svg{width:20px;height:20px}
+    .fresh{display:none}
   }
 </style>
 </head>
@@ -268,9 +297,12 @@
   <!-- MAIN -->
   <div class="main">
     <header class="topbar">
-      <div class="titles"><h1 id="secTitle">Обзор</h1><p id="secSub">Пульс кафе «Тёплый угол» за выбранный период</p></div>
+      <button class="menu-btn" id="menuBtn" aria-label="Меню">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="titles"><h1 id="secTitle">Обзор<span class="demo-pill">демо-данные</span></h1><p id="secSub">Пульс кафе «Тёплый угол» за выбранный период</p></div>
       <div class="spacer"></div>
-      <div class="seg" id="period">
+      <span class="fresh" title="Источник: заказы из приложения зала"><span class="dot"></span>Данные на 8 июля, 15:40</span>
+      <div class="seg" id="period" role="group" aria-label="Период">
         <button data-p="day" aria-pressed="false">День</button>
         <button data-p="week" aria-pressed="true">Неделя</button>
         <button data-p="month" aria-pressed="false">Месяц</button>
@@ -295,7 +327,7 @@
         <div class="row2">
           <div class="card pad">
             <div class="sect-h"><h2>Выручка · динамика</h2><span class="sub" id="trendSub">по дням недели</span></div>
-            <svg class="chart" id="trend" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
+            <svg class="chart" id="trend" viewBox="0 0 640 190" preserveAspectRatio="none" role="img"></svg>
           </div>
           <div class="card pad">
             <div class="sect-h"><h2>Куда уходит выручка</h2></div>
@@ -312,7 +344,7 @@
           <div class="card pad">
             <div class="sect-h"><h2>Способы оплаты</h2></div>
             <div class="pay">
-              <svg class="donut" viewBox="0 0 42 42" id="donut"></svg>
+              <svg class="donut" viewBox="0 0 42 42" id="donut" role="img"></svg>
               <div class="leg" id="payLeg"></div>
             </div>
             <div class="card hero good" style="margin-top:16px;padding:16px 18px">
@@ -382,6 +414,8 @@
           <tbody id="taxRows"></tbody>
           <tfoot id="taxFoot"></tfoot></table></div>
         </div>
+        <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div>Это разбивка строки «Налоги и взносы» из P&amp;L (~9% выручки): налог с оборота (УСН), страховые взносы с ФОТ и удержанный у сотрудников НДФЛ. Итоги совпадают.</div></div>
       </section>
 
       <!-- ===== EXPORT ===== -->
@@ -422,48 +456,33 @@
     </main>
   </div>
 </div>
+<div class="scrim" id="scrim"></div>
 <div class="toast" id="toast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l4 4 10-11"/></svg><span id="toastMsg"></span></div>
 
 <script>
 /* ---------------- demo data (per period) ---------------- */
-const money = n => n.toLocaleString('ru-RU') + ' $';
+const money = n => Math.round(n).toLocaleString('ru-RU') + ' $';
+const WEEK_REV = 32480;                          // baseline; demo tables scale proportionally
+const RATIO = { cogs:.31, labor:.28, rent:.11, tax:.09 };   // → EBITDA .30, чистая маржа .21
 const D = {
-  week:{ label:'неделя', rev:32480, net:6820, check:18.4, orders:1764, margin:21, ebitda:9240, breakeven:24100,
-    trend:[4.2,3.1,3.8,4.6,6.1,7.3,3.4], xl:['Пн','Вт','Ср','Чт','Пт','Сб','Вс'], trendSub:'по дням недели',
-    drev:'+12%', dnet:'+9%', dcheck:'−3%' },
-  day:{ label:'день', rev:5210, net:1080, check:17.9, orders:291, margin:20, ebitda:1480, breakeven:3600,
-    trend:[.1,.05,.2,.9,1.1,.8,.7,.6,.4,.3], xl:['9','11','13','15','17','19','21','23','1','3'], trendSub:'по часам',
-    drev:'+6%', dnet:'+3%', dcheck:'−1%' },
-  month:{ rev:139500, net:31200, check:18.9, orders:7380, margin:22, ebitda:41800, breakeven:104000, label:'месяц',
-    trend:[28,31,27,34], xl:['Нед 1','Нед 2','Нед 3','Нед 4'], trendSub:'по неделям',
-    drev:'+8%', dnet:'+14%', dcheck:'+2%' },
-  quarter:{ rev:412000, net:96500, check:19.2, orders:21900, margin:23, ebitda:126000, breakeven:308000, label:'квартал',
-    trend:[132,138,142], xl:['Мес 1','Мес 2','Мес 3'], trendSub:'по месяцам',
-    drev:'+11%', dnet:'+17%', dcheck:'+3%' },
+  day:    { label:'день',    rev:5210,   check:17.9, orders:291,   trend:[.1,.05,.2,.9,1.1,.8,.7,.6,.4,.3], xl:['9','11','13','15','17','19','21','23','1','3'], trendSub:'по часам',       drev:'+6%',  dnet:'+3%',  dcheck:'−1%' },
+  week:   { label:'неделя',  rev:32480,  check:18.4, orders:1764,  trend:[4.2,3.1,3.8,4.6,6.1,7.3,3.4],     xl:['Пн','Вт','Ср','Чт','Пт','Сб','Вс'],            trendSub:'по дням недели', drev:'+12%', dnet:'+9%',  dcheck:'−3%' },
+  month:  { label:'месяц',   rev:139500, check:18.9, orders:7380,  trend:[28,31,27,34],                     xl:['Нед 1','Нед 2','Нед 3','Нед 4'],                trendSub:'по неделям',     drev:'+8%',  dnet:'+14%', dcheck:'+2%' },
+  quarter:{ label:'квартал', rev:412000, check:19.2, orders:21900, trend:[132,138,142],                     xl:['Мес 1','Мес 2','Мес 3'],                        trendSub:'по месяцам',     drev:'+11%', dnet:'+17%', dcheck:'+3%' },
 };
-const breakdown = [
-  {t:'Себестоимость продуктов',pct:31,c:'var(--kitchen)'},
-  {t:'Зарплаты и чаевые',pct:28,c:'var(--bar)'},
-  {t:'Аренда и коммунальные',pct:11,c:'var(--gold)'},
-  {t:'Налоги и взносы',pct:9,c:'var(--violet)'},
-  {t:'Прочее (маркетинг, сервис)',pct:0,c:'var(--ink-45)'},
-];
+// «Куда уходит выручка» + «структура 1 $» share one derived model (see buildStruct)
+function buildStruct(margin){return [
+  {t:'Себестоимость продуктов',l:'Продукты',pct:Math.round(RATIO.cogs*100), c:'var(--kitchen)'},
+  {t:'Зарплаты и чаевые',      l:'Зарплаты',pct:Math.round(RATIO.labor*100),c:'var(--bar)'},
+  {t:'Аренда и коммунальные',  l:'Аренда',  pct:Math.round(RATIO.rent*100), c:'var(--gold)'},
+  {t:'Налоги и взносы',        l:'Налоги',  pct:Math.round(RATIO.tax*100),  c:'var(--violet)'},
+  {t:'Остаётся прибылью',      l:'Прибыль', pct:margin,                     c:'var(--ok)'},
+];}
 const dishes = [
   {n:'Бургерита Сисси',q:214,r:2996},{n:'Тортель с колбаской',q:132,r:2376},
   {n:'Котлета с фри',q:158,r:2528},{n:'Апероль Спритц',q:301,r:2408},
   {n:'Пиво Kronenbourg 0,5',q:288,r:2016}];
 const pays = [{t:'Карта',pct:58,c:'var(--bar)'},{t:'Наличные',pct:29,c:'var(--ok)'},{t:'QR / перевод',pct:13,c:'var(--gold)'}];
-const pnl = [
-  {l:'Выручка',a:32480,pct:100,d:'+12%',strong:1},
-  {l:'− Себестоимость',a:-10070,pct:31,d:'+10%'},
-  {l:'Валовая прибыль',a:22410,pct:69,d:'+13%',strong:1},
-  {l:'− Зарплаты и чаевые',a:-9090,pct:28,d:'+4%'},
-  {l:'− Аренда и операционные',a:-3570,pct:11,d:'0%'},
-  {l:'EBITDA',a:9240,pct:28,d:'+15%',strong:1},
-  {l:'− Налоги и взносы',a:-2420,pct:9,d:'+8%'},
-  {l:'Чистая прибыль',a:6820,pct:21,d:'+9%',strong:2},
-];
-const dollar = [{l:'Продукты',pct:31,c:'var(--kitchen)'},{l:'Зарплаты',pct:28,c:'var(--bar)'},{l:'Аренда',pct:11,c:'var(--gold)'},{l:'Налоги',pct:9,c:'var(--violet)'},{l:'Прибыль',pct:21,c:'var(--ok)'}];
 const pay = [
   {i:'АК',n:'Алмас К.',role:'Владелец',h:0,rate:'—',base:0,tips:0,held:0,net:0,skip:1},
   {i:'МН',n:'Менеджер Нур',role:'Менеджер',h:42,rate:12,base:504,tips:60,held:73,net:491},
@@ -473,12 +492,13 @@ const pay = [
   {i:'БР',n:'Бартендер',role:'Бар',h:44,rate:9,base:396,tips:150,held:71,net:475},
   {i:'ПВ',n:'Повар',role:'Кухня',h:45,rate:9,base:405,tips:0,held:53,net:352},
 ];
-const taxes = [
-  {n:'УСН «доходы»',sub:'база 32 480 $',rate:'6%',sum:1949,due:'25 июл',st:'due'},
-  {n:'Пенсионные взносы',sub:'ФОТ 8 850 $',rate:'22%',sum:1947,due:'15 июл',st:'over'},
-  {n:'Медицинские взносы',sub:'ФОТ 8 850 $',rate:'5.1%',sum:451,due:'15 июл',st:'due'},
-  {n:'Соц. страхование',sub:'ФОТ 8 850 $',rate:'2.9%',sum:257,due:'15 июл',st:'paid'},
-  {n:'НДФЛ (агент)',sub:'удержан у сотрудников',rate:'—',sum:401,due:'15 июл',st:'paid'},
+// bases resolved per period in render(): rev = выручка, fot = ФОТ (нач.), pit = удержанный НДФЛ
+const TAXDEF = [
+  {n:'УСН «доходы»',       base:'rev', rate:6,    due:'25 июл', st:'due'},
+  {n:'Пенсионные взносы',  base:'fot', rate:22,   due:'15 июл', st:'over'},
+  {n:'Медицинские взносы', base:'fot', rate:5.1,  due:'15 июл', st:'due'},
+  {n:'Соц. страхование',   base:'fot', rate:2.9,  due:'15 июл', st:'paid'},
+  {n:'НДФЛ (агент)',       base:'pit', rate:null, due:'15 июл', st:'paid'},
 ];
 const integ = [
   {mk:'RK',c:'#C0463B',n:'R-Keeper',desc:'Ваша касса',st:'rev',stl:'Проверяется',meta:['Синхр. не настроена','Экспорт CSV']},
@@ -498,33 +518,47 @@ const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelect
 function setText(k,v){$$(`[data-k="${k}"]`).forEach(e=>e.textContent=v)}
 
 function render(){
-  const d=D[period];
-  setText('rev',money(d.rev)); setText('rev2',money(d.rev)); setText('rev3',money(d.rev));
-  setText('net',money(d.net)); setText('net2',money(d.net));
+  const d=D[period], rev=d.rev, f=rev/WEEK_REV;
+  const cogs=rev*RATIO.cogs, labor=rev*RATIO.labor, rent=rev*RATIO.rent;
+  const gross=rev-cogs, ebitda=gross-labor-rent, tax=rev*RATIO.tax, net=ebitda-tax;
+  const margin=Math.round(net/rev*100), breakeven=rev*0.742;
+
+  setText('rev',money(rev)); setText('rev2',money(rev)); setText('rev3',money(rev));
+  setText('net',money(net)); setText('net2',money(net));
   setText('check',d.check.toFixed(1)+' $'); setText('orders',d.orders.toLocaleString('ru-RU'));
-  setText('margin',d.margin+'%'); setText('margin2',d.margin+'%'); setText('margin3',d.margin+'%');
-  setText('ebitda',money(d.ebitda)); setText('periodWord',d.label); setText('breakeven',money(d.breakeven));
-  setText('breakevenNote','покрыто на '+Math.round(d.rev/d.breakeven*100)+'% от выручки');
+  setText('margin',margin+'%'); setText('margin2',margin+'%'); setText('margin3',margin+'%');
+  setText('ebitda',money(ebitda)); setText('periodWord',d.label); setText('breakeven',money(breakeven));
+  setText('breakevenNote','выручка выше точки на '+Math.round(rev/breakeven*100-100)+'%');
   $('#trendSub').textContent=d.trendSub;
   $('[data-dv="rev"]').textContent=d.drev; $('[data-dv="net"]').textContent=d.dnet; $('[data-dv="check"]').textContent=d.dcheck;
-  drawTrend(d.trend,d.xl);
+  drawTrend(d.trend,d.xl,d.label);
 
-  // breakdown
-  breakdown[4].pct=100-breakdown.slice(0,4).reduce((s,x)=>s+x.pct,0)-d.margin;
-  $('#breakdown').innerHTML=breakdown.map(b=>`
+  // where revenue goes — one derived model, shared with the $-structure below
+  const struct=buildStruct(margin);
+  $('#breakdown').innerHTML=struct.map(b=>`
     <div class="r"><div class="t">${b.t}</div><div class="a mono">${b.pct}%</div>
-      <div class="track"><div class="fill" style="width:${b.pct*2.6}%;background:${b.c}"></div></div></div>`).join('');
+      <div class="track"><div class="fill" style="width:${b.pct}%;background:${b.c}"></div></div></div>`).join('');
 
-  // top dishes
+  // top dishes (scaled to period)
   $('#topDishes').innerHTML=dishes.map((x,i)=>`<tr>
     <td><div class="rank ${i===0?'top':''}">${i+1}</div></td>
     <td><b style="font-weight:600">${x.n}</b></td>
-    <td class="n mono">${x.q}</td><td class="n mono" style="font-weight:600">${money(x.r)}</td></tr>`).join('');
+    <td class="n mono">${Math.round(x.q*f).toLocaleString('ru-RU')}</td><td class="n mono" style="font-weight:600">${money(x.r*f)}</td></tr>`).join('');
 
   drawDonut();
   $('#payLeg').innerHTML=pays.map(p=>`<div class="r"><span class="dot" style="background:${p.c}"></span>${p.t}<b class="mono">${p.pct}%</b></div>`).join('');
 
-  // pnl
+  // P&L (derived from the same ratios so KPIs and this table always agree)
+  const pnl=[
+    {l:'Выручка',a:rev,pct:100,d:d.drev,strong:1},
+    {l:'− Себестоимость',a:-cogs,pct:31,d:'+10%'},
+    {l:'Валовая прибыль',a:gross,pct:69,d:'+13%',strong:1},
+    {l:'− Зарплаты и чаевые',a:-labor,pct:28,d:'+4%'},
+    {l:'− Аренда и операционные',a:-rent,pct:11,d:'0%'},
+    {l:'EBITDA',a:ebitda,pct:30,d:'+15%',strong:1},
+    {l:'− Налоги и взносы',a:-tax,pct:9,d:'+8%'},
+    {l:'Чистая прибыль',a:net,pct:margin,d:d.dnet,strong:2},
+  ];
   $('#pnlRows').innerHTML=pnl.map(r=>{
     const up=r.d.startsWith('+'), z=r.d==='0%';
     return `<tr>
@@ -533,34 +567,38 @@ function render(){
       <td class="n mono" style="color:var(--ink-45)">${r.pct}%</td>
       <td class="n mono" style="color:${z?'var(--ink-45)':up?'var(--ok)':'var(--loss)'}">${r.d}</td></tr>`;
   }).join('');
-  $('#dollarBar').innerHTML=dollar.map(x=>`<span style="width:${x.pct}%;background:${x.c}"></span>`).join('');
-  $('#dollarLeg').innerHTML=dollar.map(x=>`<div class="r"><span class="dot" style="width:9px;height:9px;border-radius:3px;background:${x.c}"></span>${x.l}<b class="mono">${x.pct}¢</b></div>`).join('');
+  $('#dollarBar').innerHTML=struct.map(x=>`<span style="width:${x.pct}%;background:${x.c}"></span>`).join('');
+  $('#dollarLeg').innerHTML=struct.map(x=>`<div class="r"><span class="dot" style="width:9px;height:9px;border-radius:3px;background:${x.c}"></span>${x.l}<b class="mono">${x.pct}¢</b></div>`).join('');
 
-  // payroll
+  // payroll (scaled to period)
   const T={h:0,base:0,tips:0,held:0,net:0};
   $('#payRows').innerHTML=pay.map(p=>{
-    if(!p.skip){T.h+=p.h;T.base+=p.base;T.tips+=p.tips;T.held+=p.held;T.net+=p.net}
+    const h=Math.round(p.h*f), base=p.base*f, tips=p.tips*f, held=p.held*f, pnet=p.net*f;
+    if(!p.skip){T.h+=h;T.base+=base;T.tips+=tips;T.held+=held;T.net+=pnet}
     return `<tr style="${p.skip?'opacity:.5':''}">
       <td><div class="who"><div class="ci">${p.i}</div><div><b>${p.n}</b><span>${p.role}</span></div></div></td>
-      <td class="n mono">${p.skip?'—':p.h}</td><td class="n mono">${p.skip?'—':p.rate+' $'}</td>
-      <td class="n mono">${p.skip?'—':money(p.base)}</td><td class="n mono" style="color:var(--ok)">${p.tips?'+'+money(p.tips):'—'}</td>
-      <td class="n mono" style="color:var(--loss)">${p.skip?'—':'−'+money(p.held)}</td>
-      <td class="n mono" style="font-weight:700">${p.skip?'—':money(p.net)}</td></tr>`;
+      <td class="n mono">${p.skip?'—':h}</td><td class="n mono">${p.skip?'—':p.rate+' $'}</td>
+      <td class="n mono">${p.skip?'—':money(base)}</td><td class="n mono" style="color:var(--ok)">${p.tips?'+'+money(tips):'—'}</td>
+      <td class="n mono" style="color:var(--loss)">${p.skip?'—':'−'+money(held)}</td>
+      <td class="n mono" style="font-weight:700">${p.skip?'—':money(pnet)}</td></tr>`;
   }).join('');
   $('#payFoot').innerHTML=`<tr><td>Итого</td><td class="n mono">${T.h} ч</td><td></td>
     <td class="n mono">${money(T.base)}</td><td class="n mono" style="color:var(--ok)">+${money(T.tips)}</td>
     <td class="n mono" style="color:var(--loss)">−${money(T.held)}</td><td class="n mono">${money(T.net)}</td></tr>`;
   setText('payTot',money(T.base+T.tips)); setText('payTips',money(T.tips)); setText('payNet',money(T.net));
 
-  // taxes
-  const taxSum=taxes.reduce((s,t)=>s+t.sum,0);
-  setText('taxTot',money(taxSum)); setText('taxEff',(taxSum/d.rev*100).toFixed(1)+'%');
+  // taxes (bases resolved from this period's revenue + payroll)
+  const baseVal={rev:rev, fot:T.base, pit:T.held};
+  const subFor={rev:'база: выручка '+money(rev), fot:'база: ФОТ '+money(T.base), pit:'удержан у сотрудников'};
+  const taxRows=TAXDEF.map(t=>({...t, sub:subFor[t.base], sum:t.rate==null?baseVal.pit:baseVal[t.base]*t.rate/100}));
+  const taxSum=taxRows.reduce((s,t)=>s+t.sum,0);
+  setText('taxTot',money(taxSum)); setText('taxEff',(taxSum/rev*100).toFixed(1)+'%');
   setText('taxDue','15 июля');
-  $('#taxRows').innerHTML=taxes.map(t=>`<tr>
+  $('#taxRows').innerHTML=taxRows.map(t=>`<tr>
     <td><b style="font-weight:600">${t.n}</b><div style="font-size:11px;color:var(--ink-45)">${t.sub}</div></td>
-    <td class="n mono">${t.rate}</td><td class="n mono" style="font-weight:600">${money(t.sum)}</td>
+    <td class="n mono">${t.rate==null?'—':t.rate+'%'}</td><td class="n mono" style="font-weight:600">${money(t.sum)}</td>
     <td class="n mono" style="color:var(--ink-70)">${t.due}</td>
-    <td class="n"><span class="tag ${t.st}">${t.st==='paid'?'Оплачено':t.st==='over'?'Просрочено':'К оплате'}</span></td></tr>`).join('');
+    <td class="n"><span class="tag ${t.st}">${tagIcon(t.st)}${t.st==='paid'?'Оплачено':t.st==='over'?'Просрочено':'К оплате'}</span></td></tr>`).join('');
   $('#taxFoot').innerHTML=`<tr><td>Всего к уплате</td><td></td><td class="n mono">${money(taxSum)}</td><td colspan="2"></td></tr>`;
 
   // integrations + log
@@ -573,8 +611,14 @@ function render(){
   $('#expPeriod').textContent='Период: '+d.label;
 }
 
-function drawTrend(data,xl){
+function tagIcon(st){
+  if(st==='paid') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12l4 4 10-11"/></svg>';
+  if(st==='over') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>';
+}
+function drawTrend(data,xl,label){
   const svg=$('#trend'),W=640,H=190,pad=26,max=Math.max(...data)*1.15;
+  svg.setAttribute('aria-label','Динамика выручки за '+label+': '+xl.map((t,i)=>t+' — '+money(data[i]*1000)).join(', '));
   const x=i=>pad+i*(W-pad*2)/(data.length-1), y=v=>H-24-(v/max)*(H-52);
   let grid='';for(let g=0;g<=3;g++){const gy=22+g*(H-46)/3;grid+=`<line class="grid-l" x1="${pad}" y1="${gy}" x2="${W-pad}" y2="${gy}"/>`}
   const pts=data.map((v,i)=>[x(i),y(v)]);
@@ -588,10 +632,13 @@ function drawTrend(data,xl){
     <text class="peak" x="${x(peak)}" y="${y(data[peak])-11}" text-anchor="middle">${money(Math.round(data[peak]*1000))}</text>${labs}`;
 }
 function drawDonut(){
-  const svg=$('#donut'),cx=21,cy=21,r=15.5,C=2*Math.PI*r;let off=0;
+  const svg=$('#donut'),r=15.5,C=2*Math.PI*r;let off=0;
+  const top=pays.reduce((a,b)=>b.pct>a.pct?b:a,pays[0]);
+  const lab={'Карта':'картой','Наличные':'наличными','QR / перевод':'по QR'}[top.t]||top.t.toLowerCase();
+  svg.setAttribute('aria-label','Способы оплаты: '+pays.map(p=>p.t+' '+p.pct+'%').join(', '));
   svg.innerHTML=`<circle cx="21" cy="21" r="15.5" fill="none" stroke="var(--sunken)" stroke-width="7"/>`+
     pays.map(p=>{const len=C*p.pct/100;const c=`<circle cx="21" cy="21" r="15.5" fill="none" stroke="${p.c}" stroke-width="7" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`;off+=len;return c}).join('')+
-    `<text x="21" y="20" text-anchor="middle" transform="rotate(90 21 21)" style="font:700 6px Inter;fill:var(--ink)">58%</text><text x="21" y="26" text-anchor="middle" transform="rotate(90 21 21)" style="font:500 3.6px Inter;fill:var(--ink-45)">картой</text>`;
+    `<text x="21" y="20" text-anchor="middle" transform="rotate(90 21 21)" style="font:700 6px Inter;fill:var(--ink)">${top.pct}%</text><text x="21" y="26" text-anchor="middle" transform="rotate(90 21 21)" style="font:500 3.6px Inter;fill:var(--ink-45)">${lab}</text>`;
 }
 
 /* ---------------- nav / interactions ---------------- */
@@ -604,8 +651,13 @@ function show(v){
   $$('.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v));
   $$('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.view===v));
   $('#secTitle').textContent=titles[v][0]; $('#secSub').textContent=titles[v][1];
-  $('#sidebar').classList.remove('open'); window.scrollTo({top:0,behavior:'smooth'});
+  closeNav(); window.scrollTo({top:0,behavior:'smooth'});
 }
+function openNav(){$('#sidebar').classList.add('open');$('#scrim').classList.add('show')}
+function closeNav(){$('#sidebar').classList.remove('open');$('#scrim').classList.remove('show')}
+$('#menuBtn').addEventListener('click',openNav);
+$('#scrim').addEventListener('click',closeNav);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeNav()});
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)show(b.dataset.view)});
 $('#period').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   $$('#period button').forEach(x=>x.setAttribute('aria-pressed',x===b));period=b.dataset.p;render()});
