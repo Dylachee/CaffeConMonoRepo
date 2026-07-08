@@ -65,6 +65,12 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   final List<ChatGroup> groups = [];
   final List<ChatMessage> messages = [];
   final Map<String, List<CartLine>> tableChecks = {};
+  // Tables with a send in flight. A draft is only marked `sent` after the
+  // network round-trip, so a double-tap used to fire the same draft as a fresh
+  // order each time; this blocks a re-entrant submit until the first finishes.
+  final Set<String> _submittingTables = {};
+  bool isSubmitting([String? tableId]) =>
+      _submittingTables.contains(tableId ?? currentTable?.id ?? '');
   final List<Map<String, dynamic>> _pendingQueue = [];
   int get pendingQueueCount => _pendingQueue.length;
   final syncSuccess = ValueNotifier<bool>(false);
@@ -566,6 +572,20 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     final table = tables
         .firstWhereOrNull((t) => t.id == (tableId ?? currentTable?.id ?? ''));
     if (table == null) return null;
+    // Re-entrancy guard: ignore taps while this table's send is in flight, so a
+    // double-tap can't send the same draft as several orders.
+    if (_submittingTables.contains(table.id)) return null;
+    _submittingTables.add(table.id);
+    notifyListeners();
+    try {
+      return await _submitOrderImpl(table, onlyFor);
+    } finally {
+      _submittingTables.remove(table.id);
+      notifyListeners();
+    }
+  }
+
+  Future<CafeOrder?> _submitOrderImpl(CafeTable table, FeedType? onlyFor) async {
     // When connected, send to the hub; realtime echoes it back to all devices.
     if (backendConnected) return _submitOrderRemote(table, onlyFor);
 

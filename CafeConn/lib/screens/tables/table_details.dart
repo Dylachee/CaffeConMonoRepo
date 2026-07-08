@@ -285,7 +285,11 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                         label: L.send,
                         icon: Icons.send,
                         color: AppTheme.warning,
-                        onPressed: () => _sendUnsent(context, state, table))),
+                        // Disabled while a send is in flight so it can't be
+                        // double-tapped into duplicate orders.
+                        onPressed: state.isSubmitting(table.id)
+                            ? null
+                            : () => _sendUnsent(context, state, table))),
                 const SizedBox(width: 12),
                 AppButton(
                     label: '',

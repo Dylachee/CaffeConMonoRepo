@@ -690,8 +690,12 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
             label: L.sendOrder,
             icon: Icons.send,
             height: 52,
-            enabled: _items.isNotEmpty && _tableId != null,
-            onTap: _items.isNotEmpty && _tableId != null
+            enabled: _items.isNotEmpty &&
+                _tableId != null &&
+                !state.isSubmitting(_tableId),
+            onTap: _items.isNotEmpty &&
+                    _tableId != null &&
+                    !state.isSubmitting(_tableId)
                 ? () => _confirm(context, state)
                 : null,
           ),
