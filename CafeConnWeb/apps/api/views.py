@@ -220,6 +220,14 @@ class StaffBootstrapView(APIView):
             .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
             .order_by("-created_at")[:100]
         )
+        # Recently-archived orders (a freed table's paid visits) so the app's
+        # per-table history survives a reload/resync. The app caps it per table.
+        history = (
+            Order.objects.select_related("table")
+            .prefetch_related("items", "items__menu_item")
+            .filter(status=Order.Status.PAID)
+            .order_by("-created_at")[:80]
+        )
         tables_qs = Table.objects.select_related("waiter").prefetch_related(
             Prefetch(
                 "attention_signals",
@@ -250,6 +258,7 @@ class StaffBootstrapView(APIView):
                     if "archived" not in (item.tags or [])
                 ],
                 "orders": [serialize_for_flutter_order(order) for order in orders],
+                "history": [serialize_for_flutter_order(order) for order in history],
                 "preferences": StaffPreferenceSerializer(preferences).data,
                 "websocketPath": "/ws/staff/?token=<token>",
             }

@@ -76,6 +76,25 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
           Expanded(
             child: ListView(
               children: [
+                SectionTitle(L.tableStatus),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: TableStatus.values
+                        .map((s) => CategoryChip(
+                              label: statusLabel(s),
+                              active: table.status == s,
+                              // Push through CafeState so the change reaches
+                              // the hub (and every other device), not just
+                              // this screen.
+                              onTap: () => state.setTableStatus(table, s),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 22),
                 Row(
                   children: [
                     Text(L.order, style: T.sectionTitle),
@@ -241,24 +260,6 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 32),
-                SectionTitle(L.tableStatus),
-                SizedBox(
-                  height: 38,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: TableStatus.values
-                        .map((s) => CategoryChip(
-                              label: statusLabel(s),
-                              active: table.status == s,
-                              // Push through CafeState so the change reaches
-                              // the hub (and every other device), not just
-                              // this screen.
-                              onTap: () => state.setTableStatus(table, s),
-                            ))
-                        .toList(),
-                  ),
                 ),
                 const SizedBox(height: 40),
               ],
@@ -969,12 +970,15 @@ class _OrderHistorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final tableOrders = state.orders
-        .where((o) => o.tableId == table.id)
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    // Current-visit orders plus this table's recently-archived ones, newest
+    // first, capped to the last 10 so history stays short and readable.
+    final tableOrders = [
+      ...state.orders.where((o) => o.tableId == table.id),
+      ...state.archivedOrders.where((o) => o.tableId == table.id),
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final recent = tableOrders.take(10).toList();
 
-    if (tableOrders.isEmpty) {
+    if (recent.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child:
@@ -985,7 +989,7 @@ class _OrderHistorySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ...tableOrders.map((o) => _historyCard(context, state, o)),
+        ...recent.map((o) => _historyCard(context, state, o)),
         Padding(
           padding: const EdgeInsets.only(top: 2, bottom: 6),
           child: Text(L.deliveredStays,

@@ -44,6 +44,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   final List<CafeTable> tables = [];
   final List<MenuItem> menu = [];
   final List<CafeOrder> orders = [];
+  // Freed/paid orders kept only for each table's "Storico ordini" — never
+  // active, never counted in the current-visit total. Capped so it can't grow.
+  final List<CafeOrder> archivedOrders = [];
+  static const _archiveCap = 60;
   final List<AppUser> staff = [];
   final List<ChatGroup> groups = [];
   final List<ChatMessage> messages = [];
@@ -709,9 +713,19 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       table.attention = null;
       table.lastSignalId = null;
       tableChecks[table.id]?.clear();
-      // Clearing the table archives its order history (the hub marks the
-      // orders PAID; the local mirror drops them the same moment).
+      // Clearing the table ARCHIVES its orders into history — it does not
+      // delete them. They move out of the active list (so the total/feed are
+      // clean) and into `archivedOrders`, where the table's "Storico ordini"
+      // still shows them. The hub marks them PAID; the next sync agrees.
+      final freed = orders.where((o) => o.tableId == table.id).toList();
       orders.removeWhere((o) => o.tableId == table.id);
+      for (final o in freed) {
+        o.status = OrderStatus.completed;
+      }
+      archivedOrders.insertAll(0, freed);
+      if (archivedOrders.length > _archiveCap) {
+        archivedOrders.removeRange(_archiveCap, archivedOrders.length);
+      }
     }
     HapticFeedback.selectionClick();
     _saveTables();
@@ -1262,6 +1276,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     orders
       ..clear()
       ..addAll(data.orders.map(_orderFromDto));
+    archivedOrders
+      ..clear()
+      ..addAll(data.history.map(_orderFromDto));
   }
 
   @override

@@ -409,6 +409,7 @@ class BootstrapDto {
   final List<TableDto> tables;
   final List<MenuItemDto> menu;
   final List<OrderDto> orders;
+  final List<OrderDto> history; // recently-archived (paid) orders, for history
   final Map<String, dynamic> preferences;
 
   const BootstrapDto({
@@ -416,6 +417,7 @@ class BootstrapDto {
     required this.tables,
     required this.menu,
     required this.orders,
+    required this.history,
     required this.preferences,
   });
 
@@ -433,6 +435,10 @@ class BootstrapDto {
                 MenuItemDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
         orders: ((j['orders'] as List?) ?? const [])
+            .map((e) =>
+                OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
+            .toList(),
+        history: ((j['history'] as List?) ?? const [])
             .map((e) =>
                 OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
