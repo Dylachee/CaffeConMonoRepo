@@ -34,6 +34,9 @@ CORS_ALLOW_CREDENTIALS = env_bool("DJANGO_CORS_ALLOW_CREDENTIALS", default=False
 
 INSTALLED_APPS = [
     "daphne",
+    # django-unfold themes django.contrib.admin — it must sit immediately
+    # before it so its template overrides take precedence. Config: UNFOLD below.
+    "unfold",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -50,6 +53,35 @@ INSTALLED_APPS = [
     "apps.admin_web",
     "apps.api",
 ]
+
+# ── Admin theme (django-unfold) ──────────────────────────────────────────────
+# CafeConnect back-office look: warm cream shell, espresso sidebar, gold accent,
+# matching the staff/guest apps. Everything here is optional config; the admin
+# still works if unfold is ever removed.
+UNFOLD = {
+    "SITE_TITLE": "CafeConnect Admin",
+    "SITE_HEADER": "CafeConnect",
+    "SITE_SUBHEADER": "Sissi Bistro Bar",
+    "SITE_URL": "/",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "COLORS": {
+        # Warm gold ramp (accent #c8821e) as Tailwind-style RGB channels.
+        "primary": {
+            "50": "250 244 231",
+            "100": "243 226 198",
+            "200": "233 199 141",
+            "300": "223 171 92",
+            "400": "212 147 58",
+            "500": "200 130 30",
+            "600": "168 106 22",
+            "700": "133 83 18",
+            "800": "106 67 16",
+            "900": "87 56 15",
+            "950": "51 31 8",
+        },
+    },
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
