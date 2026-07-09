@@ -62,6 +62,11 @@
   .primary{height:54px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;box-shadow:0 10px 22px -10px rgba(200,130,30,.45);display:flex;align-items:center;justify-content:center;gap:9px}
   .primary.flex{flex:1}
   .icon-btn{width:54px;height:54px;border-radius:16px;background:#fff;border:1.5px solid var(--line);display:grid;place-items:center;color:var(--ink)}
+  /* solid-icon system: filled silhouettes, inherit currentColor */
+  .ic{width:24px;height:24px;fill:currentColor;fill-rule:evenodd;flex:none;display:inline-block;vertical-align:middle}
+  .primary .ic{width:21px;height:21px}
+  .tab .ic{width:24px;height:24px}
+  .how h2 .ic{width:18px;height:18px;vertical-align:-3px;margin-right:5px}
 
   .section-title{margin-top:26px;display:flex;align-items:baseline;gap:9px}
   .section-title h2{font-size:21px;font-weight:900;letter-spacing:-.4px}
@@ -226,6 +231,16 @@
 {% csrf_token %}
 {{ menu_payload|json_script:"menu-data" }}
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="ic-home" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M11.4 3.05a1 1 0 0 1 1.2 0l8 6.35a1 1 0 0 1 .4.8V20a1 1 0 0 1-1 1h-4.75v-5.25a1 1 0 0 0-1-1h-2.5a1 1 0 0 0-1 1V21H4a1 1 0 0 1-1-1v-9.8a1 1 0 0 1 .4-.8z"/></symbol>
+    <symbol id="ic-menu" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M6 2.5h12A1.5 1.5 0 0 1 19.5 4v16a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 20V4A1.5 1.5 0 0 1 6 2.5zM8 7.4v1.7h8V7.4zm0 3.75v1.7h8v-1.7zm0 3.75v1.7h5v-1.7z"/></symbol>
+    <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M12 2.25A6.75 6.75 0 0 0 5.25 9c0 3.3-.82 5.14-1.58 6.22A1.13 1.13 0 0 0 4.6 17h14.8a1.13 1.13 0 0 0 .93-1.78c-.76-1.08-1.58-2.92-1.58-6.22A6.75 6.75 0 0 0 12 2.25zM9.4 18.6a2.75 2.75 0 0 0 5.2 0z"/></symbol>
+    <symbol id="ic-receipt" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M6 2.75A.75.75 0 0 1 6.75 2h10.5a.75.75 0 0 1 .75.75V21l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3zM9 7.4v1.6h6V7.4zm0 3.6v1.6h5v-1.6z"/></symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.75a9.25 9.25 0 1 0 0 18.5 9.25 9.25 0 0 0 0-18.5zM12 7.4a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3zm-.95 4a.95.95 0 0 1 1.9 0v4.9a.95.95 0 0 1-1.9 0z"/></symbol>
+  </defs>
+</svg>
+
 <div class="topbar">
   <div class="topbar-in">
     <div class="brand">
@@ -265,8 +280,8 @@
         {% endfor %}
       </div>
       <div class="hero-actions">
-        <button class="primary flex" type="button" data-go="menu">▤ <span data-i18n="view_menu">View menu</span></button>
-        <button class="icon-btn" type="button" data-go="service" aria-label="Service">🔔</button>
+        <button class="primary flex" type="button" data-go="menu"><svg class="ic"><use href="#ic-menu"/></svg><span data-i18n="view_menu">View menu</span></button>
+        <button class="icon-btn" type="button" data-go="service" aria-label="Service"><svg class="ic"><use href="#ic-bell"/></svg></button>
       </div>
     </div>
 
@@ -369,19 +384,19 @@
 
     <div class="service-list" id="signal-idle" {% if table.status == 'waiting' %}hidden{% endif %}>
       <button class="service-card dark" type="button" data-signal="call_waiter">
-        <span class="service-icon">🔔</span>
+        <span class="service-icon"><svg class="ic"><use href="#ic-bell"/></svg></span>
         <span style="flex:1"><span class="service-title" data-i18n="call_waiter">Call waiter</span><span class="service-sub" data-i18n="come_table">They will come to your table</span></span>
         <span aria-hidden="true">›</span>
       </button>
       <button class="service-card bill" type="button" data-signal="bill_request">
-        <span class="service-icon">▤</span>
+        <span class="service-icon"><svg class="ic"><use href="#ic-receipt"/></svg></span>
         <span style="flex:1"><span class="service-title" data-i18n="ask_bill">Ask for bill</span><span class="service-sub" data-i18n="bring_bill">A waiter will bring the bill</span></span>
         <span aria-hidden="true">›</span>
       </button>
     </div>
 
     <section class="how">
-      <h2 data-i18n="how_title">ⓘ How it works</h2>
+      <h2><svg class="ic"><use href="#ic-info"/></svg><span data-i18n="how_title">How it works</span></h2>
       <p data-i18n="how_body">The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.</p>
     </section>
   </section>
@@ -389,9 +404,9 @@
 
 <nav class="bottom-nav" aria-label="Navigation">
   <div class="nav-in">
-    <button class="tab active" type="button" data-go="profile"><span>⌂</span><span data-i18n="profile">Profile</span></button>
-    <button class="tab" type="button" data-go="menu"><span>▤</span><span data-i18n="menu">Menu</span></button>
-    <button class="tab" type="button" data-go="service"><span>🔔</span><span data-i18n="service">Service</span></button>
+    <button class="tab active" type="button" data-go="profile"><span><svg class="ic"><use href="#ic-home"/></svg></span><span data-i18n="profile">Profile</span></button>
+    <button class="tab" type="button" data-go="menu"><span><svg class="ic"><use href="#ic-menu"/></svg></span><span data-i18n="menu">Menu</span></button>
+    <button class="tab" type="button" data-go="service"><span><svg class="ic"><use href="#ic-bell"/></svg></span><span data-i18n="service">Service</span></button>
     {% if table %}
       <button class="checkout" id="checkout" type="button"><span class="cart-count" id="cart-count">0</span><span id="cart-total">0 €</span></button>
     {% endif %}
@@ -427,7 +442,7 @@
   <div class="detail-bar">
     <div class="detail-bar-in">
       <button class="primary flex" id="detail-add" type="button" data-i18n="add_order">Add to order</button>
-      <button class="icon-btn" type="button" data-go="service">🔔</button>
+      <button class="icon-btn" type="button" data-go="service" aria-label="Service"><svg class="ic"><use href="#ic-bell"/></svg></button>
     </div>
   </div>
 </div>
@@ -493,7 +508,7 @@
       scan_qr:"Scan the QR code on your table", signal_sent:"The signal has been sent to staff. Your table is highlighted in the app.",
       cancel_call:"Cancel call", call_waiter:"Call waiter", come_table:"They will come to your table",
       ask_bill:"Ask for bill", bring_bill:"A waiter will bring the bill",
-      how_title:"ⓘ How it works", how_body:"The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.",
+      how_title:"How it works", how_body:"The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.",
       profile:"Profile", composition:"Composition", allergens:"Allergens", portion:"Portion size",
       calories:"Calories", add_order:"Add to order", your_order:"Your order",
       name_waiter:"Name for the waiter", comment:"Comment", total:"Total", start_order:"Start order",
@@ -517,7 +532,7 @@
       scan_qr:"Scansiona il QR code sul tavolo", signal_sent:"Il segnale è stato inviato allo staff. Il tuo tavolo è evidenziato nell'app.",
       cancel_call:"Annulla chiamata", call_waiter:"Chiama cameriere", come_table:"Arriveranno al tuo tavolo",
       ask_bill:"Chiedi il conto", bring_bill:"Un cameriere porterà il conto",
-      how_title:"ⓘ Come funziona", how_body:"Il segnale arriva subito nell'app dello staff. Puoi comporre l'ordine nel carrello e lo staff lo vedrà nel feed condiviso.",
+      how_title:"Come funziona", how_body:"Il segnale arriva subito nell'app dello staff. Puoi comporre l'ordine nel carrello e lo staff lo vedrà nel feed condiviso.",
       profile:"Profilo", composition:"Composizione", allergens:"Allergeni", portion:"Porzione",
       calories:"Calorie", add_order:"Aggiungi all'ordine", your_order:"Il tuo ordine",
       name_waiter:"Nome per il cameriere", comment:"Commento", total:"Totale", start_order:"Inizia ordine",
