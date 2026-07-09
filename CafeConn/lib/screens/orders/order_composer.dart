@@ -760,10 +760,9 @@ class _PrecheckItemRow extends StatelessWidget {
   final ValueChanged<String> onPreset;
   final VoidCallback onDelete;
 
-  static List<String> get _presets => L.notePresetsShort;
-
   @override
   Widget build(BuildContext context) {
+    final presets = item.notePresets;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -819,7 +818,7 @@ class _PrecheckItemRow extends StatelessWidget {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: _presets
+            children: presets
                 .map((p) => GestureDetector(
                       onTap: () => onPreset(p),
                       child: Container(

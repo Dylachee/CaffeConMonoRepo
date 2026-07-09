@@ -214,6 +214,167 @@ class MenuItem {
   bool get isBar =>
       station.isNotEmpty ? station == 'bar' : _barCategories.contains(category);
 
+  List<String> get notePresets {
+    final presets = <String>[];
+    void add(String preset) {
+      if (!presets.contains(preset)) presets.add(preset);
+    }
+
+    if (_acceptsIce) {
+      add(L.noIce);
+      if (_isCocktailLike) {
+        add(L.lessIce);
+        add(L.extraIce);
+      }
+    }
+    if (_acceptsSugar) add(L.noSugar);
+    if (_acceptsMilkSwap) add(L.soyMilk);
+    add(L.takeaway);
+    if (_isFoodLike) {
+      add(L.spicy);
+      add(L.notSpicy);
+    }
+    if (_acceptsDoneness) add(L.wellDone);
+
+    _addIngredientPresets(add);
+    _addTaggedPresets(add);
+    return presets;
+  }
+
+  bool get _isFoodLike =>
+      station == 'kitchen' ||
+      _hasAny([
+        'food',
+        'savory',
+        'spuntino',
+        'sandwich',
+        'panini',
+        'snack',
+        'stuzzicare',
+        'breakfast',
+        'colazione',
+        'kitchen',
+        'cucina'
+      ]);
+
+  bool get _isCoffeeLike => _hasAny([
+        'coffee',
+        'caffetteria',
+        'caffe',
+        'caffè',
+        'cappuccino',
+        'latte',
+        'macchiato',
+        'orzo',
+        'ginseng',
+        'cioccolata',
+        'chocolate',
+        'tea',
+        'tè',
+        'tisana',
+        'camomilla',
+      ]);
+
+  bool get _isCocktailLike => _hasAny([
+        'cocktail',
+        'mocktail',
+        'aperitif',
+        'aperitivi',
+        'spritz',
+        'negroni',
+        'mule',
+        'gin tonic',
+        'bloody',
+        'analcolici',
+        'non-alcoholic',
+      ]);
+
+  bool get _isBeerOrWineLike => _hasAny(
+      ['beer', 'birra', 'wine', 'vino', 'grappa', 'spirits', 'liquori']);
+
+  bool get _acceptsIce =>
+      _hasMod('no_ice') ||
+      (isBar && !_isCoffeeLike && !_isBeerOrWineLike) ||
+      _isCocktailLike;
+
+  bool get _acceptsSugar =>
+      _hasMod('no_sugar') ||
+      _isCoffeeLike ||
+      _isCocktailLike ||
+      _hasIngredient(['sugar', 'zucchero']);
+
+  bool get _acceptsMilkSwap =>
+      _hasMod('soy_milk') || _isCoffeeLike || _hasIngredient(['milk', 'latte']);
+
+  bool get _acceptsDoneness =>
+      _hasMod('well_done') ||
+      (_isFoodLike &&
+          _hasAny([
+            'burger',
+            'hamburger',
+            'cotoletta',
+            'uova',
+            'egg',
+            'omelette',
+            'bacon',
+            'salsiccia',
+            'meat',
+            'carne',
+            'pollo',
+            'chicken',
+            'tortel'
+          ]));
+
+  bool _hasAny(List<String> tokens) {
+    final haystack = [
+      name,
+      nameIt,
+      category,
+      categoryIt,
+      composition,
+      ...tags,
+    ].join(' ').toLowerCase();
+    return tokens.any((token) => haystack.contains(token));
+  }
+
+  bool _hasIngredient(List<String> tokens) {
+    final haystack = [composition, ...tags].join(' ').toLowerCase();
+    return tokens.any((token) =>
+        haystack.contains(token) || haystack.contains('ingredient:$token'));
+  }
+
+  bool _hasMod(String mod) => tags.any((tag) {
+        final normalized = tag.toLowerCase().replaceAll('-', '_');
+        return normalized == 'mod:$mod' || normalized == mod;
+      });
+
+  void _addIngredientPresets(void Function(String) add) {
+    if (_hasIngredient(['onion', 'cipolla'])) add(L.noOnion);
+    if (_hasIngredient(['lemon', 'limone'])) add(L.noLemon);
+    if (_hasIngredient(['mint', 'menta'])) add(L.noMint);
+    if (_hasIngredient(['tomato', 'pomodoro'])) add(L.noTomato);
+    if (_hasIngredient(['cheese', 'formaggio', 'mozzarella'])) {
+      add(L.noCheese);
+    }
+    if (_hasIngredient(['mayo', 'maionese', 'mayonnaise'])) add(L.noMayo);
+    if (_hasIngredient(['bacon', 'pancetta'])) add(L.noBacon);
+    if (_hasIngredient(['mushroom', 'funghi', 'fungo'])) add(L.noMushrooms);
+    if (_hasIngredient(['egg', 'uovo', 'uova'])) add(L.noEgg);
+  }
+
+  void _addTaggedPresets(void Function(String) add) {
+    if (_hasMod('no_onion')) add(L.noOnion);
+    if (_hasMod('no_ice')) add(L.noIce);
+    if (_hasMod('less_ice')) add(L.lessIce);
+    if (_hasMod('extra_ice')) add(L.extraIce);
+    if (_hasMod('soy_milk')) add(L.soyMilk);
+    if (_hasMod('spicy')) add(L.spicy);
+    if (_hasMod('not_spicy')) add(L.notSpicy);
+    if (_hasMod('takeaway')) add(L.takeaway);
+    if (_hasMod('no_sugar')) add(L.noSugar);
+    if (_hasMod('well_done')) add(L.wellDone);
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,

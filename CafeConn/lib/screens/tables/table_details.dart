@@ -596,7 +596,7 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   }
 
   void _showNotePresets(BuildContext context, CafeState state, CartLine line) {
-    final presets = L.notePresets;
+    final presets = line.item.notePresets;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,

@@ -258,6 +258,16 @@ class L {
   static String get takeaway => t('Takeaway', 'Da asporto');
   static String get noSugar => t('No sugar', 'Senza zucchero');
   static String get wellDone => t('Well done', 'Ben cotto');
+  static String get lessIce => t('Less ice', 'Poco ghiaccio');
+  static String get extraIce => t('Extra ice', 'Extra ghiaccio');
+  static String get noLemon => t('No lemon', 'Senza limone');
+  static String get noMint => t('No mint', 'Senza menta');
+  static String get noTomato => t('No tomato', 'Senza pomodoro');
+  static String get noCheese => t('No cheese', 'Senza formaggio');
+  static String get noMayo => t('No mayo', 'Senza maionese');
+  static String get noBacon => t('No bacon', 'Senza bacon');
+  static String get noMushrooms => t('No mushrooms', 'Senza funghi');
+  static String get noEgg => t('No egg', 'Senza uovo');
   static List<String> get notePresets =>
       [noOnion, noIce, soyMilk, spicy, notSpicy, takeaway, noSugar, wellDone];
   static List<String> get notePresetsShort =>
