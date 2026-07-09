@@ -61,20 +61,27 @@ VALID_UNTIL_TAG = "valid_until:"
 
 
 MENU_VISUALS = {
+    "analcolici": ("drink", "🥤"),
     "aperitivi": ("drink", "🍹"),
     "bevande": ("drink", "🥤"),
+    "bibite": ("drink", "🥤"),
     "birra": ("drink", "🍺"),
     "caffetteria": ("coffee", "☕"),
     "cocktails": ("drink", "🍸"),
     "colazione": ("breakfast", "🥐"),
     "cucina": ("hot", "🍽"),
+    "da stuzzicare": ("hot", "🍟"),
     "dolci": ("dessert", "🍰"),
     "gelati": ("dessert", "🍨"),
     "food": ("hot", "🍽"),
+    "grappe e liquori": ("drink", "🥃"),
     "liquori": ("drink", "🥃"),
     "menu del giorno": ("hot", "🍽"),
     "panini": ("hot", "🍔"),
+    "premium cocktails": ("drink", "🍸"),
+    "spuntino salato": ("hot", "🍽"),
     "vino": ("drink", "🍷"),
+    "vino al calice e bottiglie": ("drink", "🍷"),
 }
 
 

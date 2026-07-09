@@ -1,20 +1,27 @@
 """Display translations for the seeded Sissi menu."""
 
 CATEGORY_TRANSLATIONS = {
+    "Analcolici": {"en": "Non-alcoholic", "it": "Analcolici"},
     "Aperitivi": {"en": "Aperitifs", "it": "Aperitivi"},
     "Bevande": {"en": "Drinks", "it": "Bevande"},
+    "Bibite": {"en": "Soft drinks", "it": "Bibite"},
     "Birra": {"en": "Beer", "it": "Birra"},
     "Caffetteria": {"en": "Coffee", "it": "Caffetteria"},
     "Cocktails": {"en": "Cocktails", "it": "Cocktails"},
     "Colazione": {"en": "Breakfast", "it": "Colazione"},
     "Cucina": {"en": "Kitchen", "it": "Cucina"},
+    "Da stuzzicare": {"en": "Snacks", "it": "Da stuzzicare"},
     "Dolci": {"en": "Desserts", "it": "Dolci"},
     "Food": {"en": "Food", "it": "Food"},
     "Gelati": {"en": "Ice cream", "it": "Gelati"},
+    "Grappe e liquori": {"en": "Grappas and spirits", "it": "Grappe e liquori"},
     "Liquori": {"en": "Spirits", "it": "Liquori"},
     "Menu del giorno": {"en": "Daily menu", "it": "Menu del giorno"},
     "Panini": {"en": "Sandwiches", "it": "Panini"},
+    "Premium Cocktails": {"en": "Premium Cocktails", "it": "Premium Cocktails"},
+    "Spuntino Salato": {"en": "Savory snacks", "it": "Spuntino Salato"},
     "Vino": {"en": "Wine", "it": "Vino"},
+    "Vino al calice e bottiglie": {"en": "Wine by glass and bottle", "it": "Vino al calice e bottiglie"},
 }
 
 MENU_ITEM_TRANSLATIONS = {

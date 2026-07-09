@@ -396,13 +396,13 @@ CLIENT_VISIBLE_ITEMS = {
 
 CATEGORY_NAMES = {
     "APERITIVI": "Aperitivi",
-    "BEVANDE": "Bevande",
+    "BEVANDE": "Bibite",
     "CAFFETTERIA": "Caffetteria",
     "DOLCI": "Dolci",
     "FOOD": "Food",
     "GELATI": "Gelati",
-    "LIQUORI": "Liquori",
-    "VINO": "Vino",
+    "LIQUORI": "Grappe e liquori",
+    "VINO": "Vino al calice e bottiglie",
 }
 
 BAR_CATEGORIES = {"APERITIVI", "BEVANDE", "CAFFETTERIA", "LIQUORI", "VINO"}
@@ -412,12 +412,83 @@ def menu_item_key(name, raw_category):
     return (raw_category.strip().upper(), name)
 
 
+CATEGORY_OVERRIDES = {
+    ("APERITIVI", "Analcolico frutta"): "Analcolici",
+    ("APERITIVI", "Aperitivo Assenzio Lurisia"): "Analcolici",
+    ("APERITIVI", "Aperitivo Lurisia genziana"): "Analcolici",
+    ("APERITIVI", "Bloody Mary"): "Cocktails",
+    ("APERITIVI", "Bloody Virgin"): "Analcolici",
+    ("APERITIVI", "Cocktail 12€ base"): "Cocktails",
+    ("APERITIVI", "Gin tonic 12€ base"): "Cocktails",
+    ("APERITIVI", "Moscow Mule"): "Cocktails",
+    ("APERITIVI", "Forst"): "Birra",
+    ("APERITIVI", "Media Grimbergen"): "Birra",
+    ("APERITIVI", "Media Kronenbourg"): "Birra",
+    ("APERITIVI", "Peroni doppio malto"): "Birra",
+    ("APERITIVI", "Piccola Kronenbourg"): "Birra",
+    ("APERITIVI", "Radler media"): "Birra",
+    ("APERITIVI", "Radler piccola"): "Birra",
+    ("APERITIVI", "Calice Gewürztraminer"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Calice Lagrain"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Calice Pinot Grigio"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Calice Prosecco"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Calice Teroldego"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Calice Trento DOC"): "Vino al calice e bottiglie",
+    ("APERITIVI", "Aurora Boreale"): "Premium Cocktails",
+    ("APERITIVI", "Baby It's Cold"): "Premium Cocktails",
+    ("APERITIVI", "Cinnamon Snow Mule"): "Premium Cocktails",
+    ("APERITIVI", "Coconut Snowdrift"): "Premium Cocktails",
+    ("APERITIVI", "Franz Joseph Spritz"): "Premium Cocktails",
+    ("APERITIVI", "Frosted Maracuja"): "Premium Cocktails",
+    ("APERITIVI", "Gingerbread Martini"): "Premium Cocktails",
+    ("APERITIVI", "Lavender Spritz"): "Premium Cocktails",
+    ("APERITIVI", "Marshmallow Martini"): "Premium Cocktails",
+    ("APERITIVI", "Merry Kiss Shot"): "Premium Cocktails",
+    ("APERITIVI", "Mr Sandman"): "Premium Cocktails",
+    ("APERITIVI", "Premium cocktail"): "Premium Cocktails",
+    ("APERITIVI", "Snowflake"): "Premium Cocktails",
+    ("APERITIVI", "Sanbitter"): "Analcolici",
+    ("APERITIVI", "Sissi aperitivo"): "Analcolici",
+    ("BEVANDE", "Crodino"): "Analcolici",
+    ("BEVANDE", "Sanbitter"): "Analcolici",
+    ("BEVANDE", "Sissi mocktail"): "Analcolici",
+    ("BEVANDE", "Succo pomodoro"): "Analcolici",
+    ("DOLCI", "Fagottino mela"): "Colazione",
+    ("DOLCI", "French toast"): "Colazione",
+    ("DOLCI", "Krapfen crema"): "Colazione",
+    ("DOLCI", "Krapfen marmellata"): "Colazione",
+    ("DOLCI", "Krapfen Nutella"): "Colazione",
+    ("DOLCI", "Krapfen pistacchio"): "Colazione",
+    ("DOLCI", "Krapfen vuoto"): "Colazione",
+    ("FOOD", "Alpino"): "Panini",
+    ("FOOD", "Baby tost"): "Colazione",
+    ("FOOD", "Bocconcino Sissi"): "Panini",
+    ("FOOD", "Hamburger"): "Panini",
+    ("FOOD", "Hamburger vegetariano"): "Panini",
+    ("FOOD", "Montanaro"): "Panini",
+    ("FOOD", "Panino speck"): "Panini",
+    ("FOOD", "Panino vegetariano"): "Panini",
+    ("FOOD", "Patatine fritte"): "Da stuzzicare",
+    ("FOOD", "Rendena"): "Panini",
+    ("FOOD", "Snowboard"): "Panini",
+    ("FOOD", "Sticks polenta"): "Da stuzzicare",
+    ("FOOD", "Tirolese"): "Panini",
+    ("FOOD", "Uova bacon"): "Colazione",
+}
+
+
 def is_client_visible(name, raw_category):
     return menu_item_key(name, raw_category) in CLIENT_VISIBLE_ITEMS
 
 
-def normalized_category(raw_category):
+def normalized_category(raw_category, name=None):
     key = raw_category.strip().upper()
+    if name:
+        override = CATEGORY_OVERRIDES.get((key, name))
+        if override:
+            return override
+        if key == "FOOD":
+            return "Spuntino Salato"
     return CATEGORY_NAMES.get(key, raw_category.title())
 
 
@@ -433,7 +504,7 @@ def catalog_items():
             "name": name,
             "description": "",
             "price": Decimal(price),
-            "category": normalized_category(raw_category),
+            "category": normalized_category(raw_category, name),
             "image_url": "",
             "station": station_for_category(raw_category),
             "tags": tags,
