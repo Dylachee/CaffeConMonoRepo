@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.http import Http404
 from django.db import transaction
 from django.db.models import (
     Avg,
@@ -37,6 +38,7 @@ from apps.api.serializers import (
     StaffPreferenceSerializer,
     TableSerializer,
 )
+from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
 
@@ -516,6 +518,33 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     filterset_fields = ["category", "is_available"]
     search_fields = ["name", "description", "category"]
     ordering_fields = ["name", "category", "price", "updated_at"]
+
+    def _visible_to_request(self, item):
+        tags = item.tags or []
+        if "archived" in tags:
+            return False
+        if self.request.user and self.request.user.is_authenticated:
+            return True
+        return item.is_available and CLIENT_MENU_TAG in tags
+
+    def list(self, request, *args, **kwargs):
+        queryset = [
+            item
+            for item in self.filter_queryset(self.get_queryset())
+            if self._visible_to_request(item)
+        ]
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def get_object(self):
+        obj = super().get_object()
+        if not self._visible_to_request(obj):
+            raise Http404
+        return obj
 
     def _require_menu_cap(self):
         # Changing the menu (e.g. the in/out-of-stock toggle) is a granted

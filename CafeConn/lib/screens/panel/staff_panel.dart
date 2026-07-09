@@ -828,7 +828,7 @@ class MenuManagementScreen extends StatelessWidget {
                           style: T.h3.copyWith(
                               fontWeight: FontWeight.w700, fontSize: 16)),
                       Text(
-                          '${item.price.rub} · ${item.displayCategory} · ${item.isBar ? L.bar.toLowerCase() : L.kitchen.toLowerCase()}',
+                          '${item.price.rub} · ${item.displayCategory} · ${item.isBar ? L.bar.toLowerCase() : L.kitchen.toLowerCase()}${item.tags.contains('client') ? ' · ${L.clientMenu}' : ''}',
                           style: T.smallSemi.copyWith(color: AppTheme.ink2)),
                     ],
                   ),

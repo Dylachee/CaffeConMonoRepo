@@ -1,334 +1,39 @@
-from decimal import Decimal
-
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.core.menu_catalog import CLIENT_MENU_TAG, catalog_items
 from apps.core.models import MenuItem, Order, Table
-
-
-# Full Sissi menu, generated from the owner's list. Every item ships
-# is_available=False so staff switch them on as the kitchen/bar is ready.
-ITEMS = [
-    {"name": 'Espresso', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Decaffeinato', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Americano', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Corretto', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Caffè con panna', "description": '', "price": Decimal('2.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccino', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccino con miele e cannella', "description": '', "price": Decimal('4.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Latte bianco', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Latte macchiato', "description": '', "price": Decimal('3.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Bombardino', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Punch', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Vin brulè', "description": '', "price": Decimal('6.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata calda con panna', "description": '', "price": Decimal('6.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Orzo/Ginseng piccolo', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Orzo/Ginseng grande', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Flat White', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Tè/Tisana', "description": '', "price": Decimal('3.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 0,5 l', "description": '', "price": Decimal('2.50'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Succo di frutta', "description": '', "price": Decimal('4.00'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Tè freddo', "description": '', "price": Decimal('4.00'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Coca-Cola/Sprite', "description": '', "price": Decimal('4.50'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Lemonsoda/Aranciata', "description": '', "price": Decimal('4.50'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Limonata/Chinotto', "description": '', "price": Decimal('4.50'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": "Spremuta d'arancia", "description": '', "price": Decimal('6.00'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Tonica/Cedrata', "description": '', "price": Decimal('4.50'), "category": 'Bibite', "station": 'bar', "composition": ''},
-    {"name": 'Kronenbourg 1664 alla spina 0,25 l', "description": '', "price": Decimal('4.00'), "category": 'Birra', "station": 'bar', "composition": ''},
-    {"name": 'Kronenbourg 1664 alla spina 0,5 l', "description": '', "price": Decimal('7.00'), "category": 'Birra', "station": 'bar', "composition": ''},
-    {"name": 'Birra in bottiglia 0,33 l', "description": '', "price": Decimal('5.00'), "category": 'Birra', "station": 'bar', "composition": ''},
-    {"name": 'Peroni Gran Riserva Doppio Malto 0,5 l', "description": '', "price": Decimal('7.50'), "category": 'Birra', "station": 'bar', "composition": ''},
-    {"name": 'Pinot grigio', "description": 'Calice. Bottiglia: €33.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Lugana', "description": 'Calice. Bottiglia: €33.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Gewürztraminer', "description": 'Calice. Bottiglia: €33.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Lagrein', "description": 'Calice. Bottiglia: €35.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Marzemino', "description": 'Calice. Bottiglia: €35.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Teroldego', "description": 'Calice. Bottiglia: €35.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Prosecco Valdobbiadene', "description": 'Calice. Bottiglia: €33.', "price": Decimal('6.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Trento DOC', "description": 'Calice. Bottiglia: €52.', "price": Decimal('8.00'), "category": 'Vino al calice e bottiglie', "station": 'bar', "composition": ''},
-    {"name": 'Croissant o krapfen', "description": '', "price": Decimal('2.50'), "category": 'Colazione', "station": 'kitchen', "composition": 'Crema, marmellata, Nutella o pistacchio'},
-    {"name": 'Croissant vegano', "description": '', "price": Decimal('3.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Biscotto Occhio di Bue', "description": '', "price": Decimal('3.70'), "category": 'Colazione', "station": 'kitchen', "composition": 'Marmellata o Nutella'},
-    {"name": 'Crêpe con Nutella o miele', "description": '', "price": Decimal('7.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'French Toast con miele e noci', "description": '', "price": Decimal('13.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Toast classico cotto e formaggio', "description": '', "price": Decimal('7.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Baby Toast', "description": '', "price": Decimal('6.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Omelette cotto e fontina', "description": '', "price": Decimal('13.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Pan carré tostato', "description": '', "price": Decimal('13.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": 'Crêpe cotto e fontina', "description": '', "price": Decimal('8.00'), "category": 'Colazione', "station": 'kitchen', "composition": ''},
-    {"name": "Uovo all'occhio di bue", "description": '', "price": Decimal('13.00'), "category": 'Colazione', "station": 'kitchen', "composition": 'Bacon e pan carré tostato'},
-    {"name": 'Aperol Spritz', "description": '', "price": Decimal('8.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Limoncello Spritz', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Campari Soda', "description": '', "price": Decimal('6.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Americano/Negroni', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Negroni Sbagliato/Negrosky', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Daiquiri/Mimosa', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Campari Shakerato', "description": '', "price": Decimal('7.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Patatine fritte', "description": '', "price": Decimal('5.50'), "category": 'Da stuzzicare', "station": 'kitchen', "composition": ''},
-    {"name": 'Sticks misti da stuzzicare', "description": '', "price": Decimal('25.00'), "category": 'Da stuzzicare', "station": 'kitchen', "composition": 'Sticks di polenta, rosti di patate, speck, lardo, miele, formaggio e noci'},
-    {"name": 'Crodino/San Bitter', "description": '', "price": Decimal('6.00'), "category": 'Analcolici', "station": 'bar', "composition": ''},
-    {"name": 'Lurisia Assenzio o Genziana', "description": '', "price": Decimal('6.00'), "category": 'Analcolici', "station": 'bar', "composition": ''},
-    {"name": 'Succo di pomodoro condito', "description": '', "price": Decimal('6.00'), "category": 'Analcolici', "station": 'bar', "composition": ''},
-    {"name": 'Analcolico Sissi', "description": '', "price": Decimal('8.00'), "category": 'Analcolici', "station": 'bar', "composition": ''},
-    {"name": 'Bloody Mary', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Moscow Mule', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Margarita', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Caipiroska/Caipirinha', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Cosmopolitan', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Cuba Libre', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Sex on the Beach', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Long Island Iced Tea', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Tequila Sunrise', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Vodka Tonic', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Sissi Signature Cocktail', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Gin Tonic Base Bombay', "description": '', "price": Decimal('12.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Premium Cocktails', "description": '', "price": Decimal('14.00'), "category": 'Cocktails', "station": 'bar', "composition": ''},
-    {"name": 'Tortel di patate con la Caprese', "description": '', "price": Decimal('14.00'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": ''},
-    {"name": 'Tortel di patate con lardo e miele', "description": '', "price": Decimal('16.00'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": ''},
-    {"name": 'Tortel di patate con uova e bacon', "description": '', "price": Decimal('16.00'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": ''},
-    {"name": 'Tortel di patate con salsiccia', "description": '', "price": Decimal('18.00'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": 'Formaggio alla piastra e crauti'},
-    {"name": 'Cotoletta con patatine fritte', "description": '', "price": Decimal('16.00'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": ''},
-    {"name": 'Patatine fritte', "description": '', "price": Decimal('5.50'), "category": 'Cucina di Sissi', "station": 'kitchen', "composition": ''},
-    {"name": 'Bocconcino Sissi', "description": '', "price": Decimal('12.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Würstel, ketchup e cipolla caramellata'},
-    {"name": 'Hot Dog Alpino', "description": '', "price": Decimal('12.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Würstel, senape e crauti'},
-    {"name": 'Tirolese', "description": '', "price": Decimal('12.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Würstel, maionese e cipolla fritta'},
-    {"name": 'Montantaro', "description": '', "price": Decimal('12.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Porchetta, insalata, salsa tartara e cipolla fritta'},
-    {"name": 'Rendena', "description": '', "price": Decimal('8.50'), "category": 'Panini', "station": 'kitchen', "composition": 'Speck, formaggio Casolet e salsa tartara'},
-    {"name": 'Snowboard', "description": '', "price": Decimal('13.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Cotoletta, maionese, pomodorino, insalata e cipolla fritta'},
-    {"name": 'Vegetariano', "description": '', "price": Decimal('8.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Mozzarella e pomodoro'},
-    {"name": 'Burgherita Sissi', "description": 'Extra: uovo, bacon, cetriolini, cipolla fritta o caramellata + €1.50', "price": Decimal('14.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Burger bun, hamburger di manzo, cheddar, pomodoro, insalata e salsa'},
-    {"name": 'Hamburger vegetariano', "description": '', "price": Decimal('14.00'), "category": 'Panini', "station": 'kitchen', "composition": 'Burger bun, burger ai vegetali grigliati, scamorza, pomodoro, insalata, cipolla fritta e salsa'},
-    {"name": 'Sissi Club Sandwich', "description": '', "price": Decimal('8.00'), "category": 'Spuntino Salato', "station": 'kitchen', "composition": 'Tacchino, pomodoro, maionese e insalata'},
-    {"name": 'Toast vegetariano', "description": '', "price": Decimal('7.00'), "category": 'Spuntino Salato', "station": 'kitchen', "composition": 'Fontina, pomodoro e insalata'},
-    {"name": 'Piadina cotto', "description": '', "price": Decimal('8.00'), "category": 'Spuntino Salato', "station": 'kitchen', "composition": 'Formaggio, pomodoro e insalata'},
-    {"name": 'Piadina speck', "description": '', "price": Decimal('8.80'), "category": 'Spuntino Salato', "station": 'kitchen', "composition": 'Brie, miele, noci e rucola'},
-    {"name": 'Crostata del giorno', "description": '', "price": Decimal('5.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Crostata vegana', "description": '', "price": Decimal('5.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Strüdel di mele', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": 'Salsa di vaniglia e panna'},
-    {"name": 'Sacher con la panna', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Torta di carote con la panna', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Torta di carote con gelato', "description": '', "price": Decimal('7.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Cheesecake Sissi', "description": '', "price": Decimal('7.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Crêpes con Nutella', "description": '', "price": Decimal('7.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Grappe e liquori', "description": '', "price": Decimal('5.00'), "category": 'Grappe e liquori', "station": 'bar', "composition": ''},
-    {"name": 'Grappa Barricata / 18 lune', "description": '', "price": Decimal('6.00'), "category": 'Grappe e liquori', "station": 'bar', "composition": ''},
-    {"name": 'Amari', "description": '', "price": Decimal('6.00'), "category": 'Grappe e liquori', "station": 'bar', "composition": ''},
-    {"name": 'Caffè Shakerato', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Camomilla', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccino Deca', "description": '', "price": Decimal('3.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccino Panna', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccino Soya', "description": '', "price": Decimal('3.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cappuccio Orzo', "description": '', "price": Decimal('3.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Arancia Cannella', "description": '', "price": Decimal('7.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Baby', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Bianca Menta', "description": '', "price": Decimal('6.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Calda', "description": '', "price": Decimal('5.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Calda Bianca', "description": '', "price": Decimal('5.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Cocco Mou', "description": '', "price": Decimal('7.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Cioccolata Peperoncino', "description": '', "price": Decimal('7.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Deca Macchiato', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Deca Macchiato Freddo', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Doppio Caffè', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Ginseng Grande', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Ginseng Piccolo', "description": '', "price": Decimal('2.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Latte Caldo', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Lungo Caffè', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Macchiato', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Macchiato Freddo', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Macchiatone', "description": '', "price": Decimal('2.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Marocchino', "description": '', "price": Decimal('2.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'No Lattosio Cappuccio', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Orzo Grande', "description": '', "price": Decimal('3.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Orzo Macchiato', "description": '', "price": Decimal('2.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Orzo Piccolo', "description": '', "price": Decimal('2.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Punch Mandarino', "description": '', "price": Decimal('5.00'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Ristretto', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Schiumetta Piccola', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Schiumetta', "description": '', "price": Decimal('1.50'), "category": 'Caffetteria', "station": 'bar', "composition": ''},
-    {"name": 'Limonata', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'ACE Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 0,5 Frizz Pejo', "description": '', "price": Decimal('2.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 0,5 Nat. Pejo', "description": '', "price": Decimal('2.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 0,5 Asporto', "description": '', "price": Decimal('2.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 1 L Pejo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua 1 Litro Asporto', "description": '', "price": Decimal('3.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Acqua Menta Lampone', "description": '', "price": Decimal('3.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Albicocca Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Ananas Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Aranciata', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Bicchiere H2O', "description": '', "price": Decimal('0.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Bicchiere H2O Frizzante', "description": '', "price": Decimal('0.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Cedrata', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Chinotto', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Coca Cola', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Coca Zero', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Crodino', "description": '', "price": Decimal('6.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Energy Drink', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Lemonsoda', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Let It Snow', "description": '', "price": Decimal('11.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Mela Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Milkshake', "description": '', "price": Decimal('7.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Mirtillo Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Pera Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Pesca Succo', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Red Bull', "description": '', "price": Decimal('6.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Sanbitter', "description": '', "price": Decimal('6.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Sissi Mocktail', "description": '', "price": Decimal('11.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Sprite', "description": '', "price": Decimal('4.50'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Succo Pomodoro', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Tè Limone', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Tè Pesca', "description": '', "price": Decimal('4.00'), "category": 'Bevande', "station": 'bar', "composition": ''},
-    {"name": 'Amaro del Capo', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Amaro Trentino', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Anima Nera', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Asperula', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Averna', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Baileys', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Barricata', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Braulio', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Cacao Nocciola', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Camomilla Grappa', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Caramello Salato', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Cirmolo', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Cointreau', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Fernet Branca', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Fernet Menta', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Fieno Grappa', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Ginepro', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Jack Daniels', "description": '', "price": Decimal('7.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Jagermeister', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Limoncino', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Mela Verde', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Mirtillo', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Montenegro', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Moscato', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Mugo', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Pera Williams', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Ramazzotti', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Sambuca', "description": '', "price": Decimal('6.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Teroldego Grappa', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Vodka', "description": '', "price": Decimal('5.00'), "category": 'Liquori', "station": 'bar', "composition": ''},
-    {"name": 'Chardonnay MG', "description": '', "price": Decimal('33.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Lagrein Stella Alpina', "description": '', "price": Decimal('38.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Marzemino Trentino DOC', "description": '', "price": Decimal('35.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Morus Brut Millesimato', "description": '', "price": Decimal('52.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Morus Brut Rosé', "description": '', "price": Decimal('60.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Naonis Jader', "description": '', "price": Decimal('5.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Nosiola', "description": '', "price": Decimal('6.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Nosiola Poli Giovanni', "description": '', "price": Decimal('34.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Pinot Bianco', "description": '', "price": Decimal('6.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Pinot Bianco Muri Gries', "description": '', "price": Decimal('32.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Pinot Grigio MG', "description": '', "price": Decimal('32.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Pinot Grigio Cantina Muri Gries', "description": '', "price": Decimal('6.50'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Pinot Nero MG', "description": '', "price": Decimal('40.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Teroldego Vigneti delle Dolomiti', "description": '', "price": Decimal('35.00'), "category": 'Vino', "station": 'bar', "composition": ''},
-    {"name": 'Gelato 1 Chilo', "description": '', "price": Decimal('24.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Gelato 500 g', "description": '', "price": Decimal('12.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": '2 Gusti Take Away', "description": '', "price": Decimal('3.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Affogato al Caffè', "description": '', "price": Decimal('4.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Affogato Baileys', "description": '', "price": Decimal('10.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Cono Coppetta 1', "description": '', "price": Decimal('2.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Cono Coppetta 2', "description": '', "price": Decimal('3.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Cono Coppetta 3', "description": '', "price": Decimal('4.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Coppa 1', "description": '', "price": Decimal('3.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Coppa 2', "description": '', "price": Decimal('5.00'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Coppa 3', "description": '', "price": Decimal('6.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Frappè', "description": '', "price": Decimal('8.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Jingle Bell Rock', "description": '', "price": Decimal('11.50'), "category": 'Gelati', "station": 'kitchen', "composition": ''},
-    {"name": 'Panino Speck', "description": '', "price": Decimal('8.50'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Piadina Light', "description": '', "price": Decimal('8.50'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Piadina Salame', "description": '', "price": Decimal('8.50'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Piadina Vegetariana', "description": '', "price": Decimal('8.00'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Tortel Lardo o Speck', "description": '', "price": Decimal('16.00'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Tortel Uova', "description": '', "price": Decimal('16.00'), "category": 'Food', "station": 'kitchen', "composition": ''},
-    {"name": 'Fagottino Mela', "description": '', "price": Decimal('3.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Fetta Crostata Asporto', "description": '', "price": Decimal('4.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Fetta Sacher Asporto', "description": '', "price": Decimal('5.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Fetta Strudel Asporto', "description": '', "price": Decimal('5.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Gluten Free Snack', "description": '', "price": Decimal('3.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Krapfen Crema', "description": '', "price": Decimal('2.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Krapfen Marmellata', "description": '', "price": Decimal('2.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Krapfen Nutella', "description": '', "price": Decimal('2.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Krapfen Pistacchio', "description": '', "price": Decimal('3.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Krapfen Vuoto', "description": '', "price": Decimal('2.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Lintz', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Macarons', "description": '', "price": Decimal('2.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Marshmallow Piccolo', "description": '', "price": Decimal('0.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Meringa', "description": '', "price": Decimal('1.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Mignon Pasticcini', "description": '', "price": Decimal('1.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Mini Sacherina', "description": '', "price": Decimal('2.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Muffin', "description": '', "price": Decimal('3.80'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Occhio Bue Cioccolato', "description": '', "price": Decimal('3.70'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Occhio di Bue Marmellata', "description": '', "price": Decimal('3.70'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Sacher', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Senza Glutine Senza Lattosio', "description": '', "price": Decimal('12.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Sissi Souvenir', "description": '', "price": Decimal('5.90'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Strudel Piccolo', "description": '', "price": Decimal('18.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Strudel + Vaniglia Gelato', "description": '', "price": Decimal('7.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Torta di Carote', "description": '', "price": Decimal('6.00'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Mele Torta', "description": '', "price": Decimal('6.50'), "category": 'Dolci', "station": 'kitchen', "composition": ''},
-    {"name": 'Aperitivo Assenzio Lurisia', "description": '', "price": Decimal('6.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Aurora Boreale', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": "Baby It's Cold", "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Bloody Virgin', "description": '', "price": Decimal('6.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Cinnamon Snow Mule', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Coconut Snowdrift', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Frosted Maracuja', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Gingerbread Martini', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Marshmallow Martini', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Merry Kiss Shot', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Mr Sandman', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Snowflake', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Spritz Misto', "description": '', "price": Decimal('8.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Americano', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Lavender Spritz', "description": '', "price": Decimal('12.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Analcolico Frutta', "description": '', "price": Decimal('8.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Aperitivo Lurisia Genziana', "description": '', "price": Decimal('6.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Cocktail 12€ Base', "description": '', "price": Decimal('12.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Forst', "description": '', "price": Decimal('5.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Gin Tonic 12€ Base', "description": '', "price": Decimal('12.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Hugo', "description": '', "price": Decimal('8.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Martini', "description": '', "price": Decimal('6.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Media Grimbergen', "description": '', "price": Decimal('8.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Media Kronenbourg', "description": '', "price": Decimal('7.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Negroni', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Negrosky', "description": '', "price": Decimal('10.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Franz Joseph Spritz', "description": '', "price": Decimal('14.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Spritz Estivo', "description": '', "price": Decimal('12.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Piccola Kronenbourg', "description": '', "price": Decimal('4.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Radler Media', "description": '', "price": Decimal('7.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-    {"name": 'Radler Piccola', "description": '', "price": Decimal('4.00'), "category": 'Aperitivi', "station": 'bar', "composition": ''},
-]
 
 
 class Command(BaseCommand):
     help = (
         "DESTRUCTIVE: delete all orders (order history) and all menu items, "
-        "then recreate the menu with every item is_available=False. "
-        "Requires --yes."
+        "then recreate the raw Sissi staff menu. Requires --yes."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--yes", action="store_true",
+            "--yes",
+            action="store_true",
             help="Confirm: this deletes ALL orders and ALL menu items.",
         )
-
     @transaction.atomic
     def handle(self, *args, **options):
         if not options["yes"]:
-            self.stderr.write(self.style.ERROR(
-                "Refusing to run without --yes "
-                "(this permanently deletes all orders and menu items)."
-            ))
+            self.stderr.write(
+                self.style.ERROR(
+                    "Refusing to run without --yes "
+                    "(this permanently deletes all orders and menu items)."
+                )
+            )
             return
 
         orders = Order.objects.count()
-        # Order delete cascades OrderItem + OrderEvent (the order history);
-        # removing the OrderItems is what frees the PROTECT on MenuItem.
+        # Order delete cascades OrderItem + OrderEvent; removing the OrderItems
+        # frees the PROTECT on MenuItem so the menu can be replaced.
         Order.objects.all().delete()
 
-        # No orders left, so free every table (clear the visit state).
+        # No orders left, so free every table.
         Table.objects.update(
             status=Table.Status.FREE,
             guest_count=0,
@@ -341,28 +46,14 @@ class Command(BaseCommand):
         old_menu = MenuItem.objects.count()
         MenuItem.objects.all().delete()
 
-        objs = [
-            MenuItem(
-                name=i["name"],
-                description=i["description"],
-                price=i["price"],
-                category=i["category"],
-                image_url="",
-                station=i["station"],
-                tags=[],
-                composition=i["composition"],
-                allergens=[],
-                is_available=False,
-                is_promoted=False,
-                preparation_minutes=5,
-                portion_weight="",
-                calories=None,
-            )
-            for i in ITEMS
-        ]
+        objs = [MenuItem(**item) for item in catalog_items()]
         MenuItem.objects.bulk_create(objs)
+        client_visible = sum(1 for item in objs if CLIENT_MENU_TAG in item.tags)
 
-        self.stdout.write(self.style.SUCCESS(
-            f"Deleted {orders} orders and {old_menu} old menu items. "
-            f"Created {len(objs)} menu items (all is_available=False)."
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Deleted {orders} orders and {old_menu} old menu items. "
+                f"Created {len(objs)} menu items "
+                f"({client_visible} client-visible, all available)."
+            )
+        )

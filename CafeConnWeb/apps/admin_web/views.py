@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.models import AttentionSignal, MenuItem, Order, Table
 from apps.core.services import acknowledge_signal_on_table
 
@@ -14,6 +15,7 @@ from apps.core.services import acknowledge_signal_on_table
 @staff_member_required(login_url="/system-admin/login/")
 def dashboard(request):
     orders = Order.objects.select_related("table").prefetch_related("items", "items__menu_item")
+    menu_list = [item for item in MenuItem.objects.all() if "archived" not in (item.tags or [])]
     line_total = ExpressionWrapper(
         F("items__unit_price") * F("items__quantity"),
         output_field=DecimalField(max_digits=12, decimal_places=2),
@@ -23,13 +25,13 @@ def dashboard(request):
         "orders_pending": orders.filter(status=Order.Status.NEW).count(),
         "orders_ready": orders.filter(status=Order.Status.READY).count(),
         "active_tables": Table.objects.exclude(status=Table.Status.FREE).count(),
-        "menu_items": MenuItem.objects.count(),
+        "menu_items": len(menu_list),
         "sales_total": orders.aggregate(total=Sum(line_total))["total"] or 0,
         "orders_by_status": orders.values("status").annotate(total=Count("id")).order_by("status"),
         "latest_orders": orders[:10],
         "active_signals": AttentionSignal.objects.select_related("table").filter(ack=False)[:8],
         "tables": Table.objects.select_related("waiter").all(),
-        "menu_list": MenuItem.objects.all()[:80],
+        "menu_list": menu_list[:80],
         "order_statuses": Order.Status.choices,
         "stations": MenuItem._meta.get_field("station").choices,
     }
@@ -71,6 +73,7 @@ def toggle_menu_item(request, item_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def create_menu_item(request):
+    tags = [CLIENT_MENU_TAG] if request.POST.get("is_client_visible") == "on" else []
     item = MenuItem.objects.create(
         name=request.POST.get("name", "").strip(),
         description=request.POST.get("description", "").strip(),
@@ -78,6 +81,7 @@ def create_menu_item(request):
         price=request.POST.get("price") or 0,
         category=request.POST.get("category", "Menu").strip() or "Menu",
         station=request.POST.get("station") or "kitchen",
+        tags=tags,
         is_available=request.POST.get("is_available") == "on",
     )
     messages.success(request, f"Item {item.name} added.")

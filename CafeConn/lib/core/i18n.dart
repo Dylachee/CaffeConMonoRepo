@@ -208,6 +208,7 @@ class L {
       t('Change the search or category', 'Cambia ricerca o categoria');
   static String get takeOrder => t('Take order', 'Prendi ordine');
   static String get whichTable => t('Which table?', 'Quale tavolo?');
+  static String get clientMenu => t('CLIENT', 'CLIENTE');
   static String get stop => t('STOP', 'STOP');
   static String get stopList => t('STOP-LIST', 'STOP-LIST');
   static String get composition => t('COMPOSITION', 'COMPOSIZIONE');

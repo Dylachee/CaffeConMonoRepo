@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import category_labels, menu_item_labels
 from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table
 from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
@@ -69,6 +70,8 @@ MENU_VISUALS = {
     "cucina": ("hot", "🍽"),
     "dolci": ("dessert", "🍰"),
     "gelati": ("dessert", "🍨"),
+    "food": ("hot", "🍽"),
+    "liquori": ("drink", "🥃"),
     "menu del giorno": ("hot", "🍽"),
     "panini": ("hot", "🍔"),
     "vino": ("drink", "🍷"),
@@ -93,7 +96,12 @@ def menu_page(request, table_id=None, table_number=None):
     menu_payload = []
     visible_items = []
     for item in menu_items:
-        if not item.is_available or _menu_item_expired(item) or _menu_item_archived(item):
+        if (
+            not item.is_available
+            or not _menu_item_client_visible(item)
+            or _menu_item_expired(item)
+            or _menu_item_archived(item)
+        ):
             continue
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
@@ -255,7 +263,9 @@ def create_guest_order(request):
         menu_items = [
             item
             for item in MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
-            if not _menu_item_expired(item)
+            if _menu_item_client_visible(item)
+            and not _menu_item_expired(item)
+            and not _menu_item_archived(item)
         ]
         order_items = []
         for item in menu_items:
@@ -420,6 +430,10 @@ def _menu_item_expired(item, today=None):
 
 def _menu_item_archived(item):
     return "archived" in (item.tags or [])
+
+
+def _menu_item_client_visible(item):
+    return CLIENT_MENU_TAG in (item.tags or [])
 
 
 def _menu_item_is_daily(item):

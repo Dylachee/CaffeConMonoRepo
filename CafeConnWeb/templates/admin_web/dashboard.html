@@ -91,7 +91,10 @@
           <span class="zone-dot zone-{{ item.station }}"></span>
           <div>
             <strong>{{ item.name }}</strong>
-            <p>{{ item.get_station_display }} · {{ item.category }} · {{ item.price }} EUR</p>
+            <p>
+              {{ item.get_station_display }} · {{ item.category }} · {{ item.price }} EUR
+              {% if "client" in item.tags %} · Client{% endif %}
+            </p>
           </div>
           <button class="availability-pill {% if item.is_available %}is-on{% endif %}" type="submit">
             {% if item.is_available %}Available{% else %}Stop-list{% endif %}
@@ -124,6 +127,7 @@
       </label>
       <label>Description <textarea name="description" rows="3"></textarea></label>
       <label class="checkbox-row"><input name="is_available" type="checkbox" checked> Available</label>
+      <label class="checkbox-row"><input name="is_client_visible" type="checkbox"> Client menu</label>
       <button class="button full" type="submit">Add</button>
     </form>
   </article>

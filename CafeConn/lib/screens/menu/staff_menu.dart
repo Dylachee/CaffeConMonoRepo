@@ -183,6 +183,16 @@ class _MenuShowcaseCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: T.label.copyWith(color: AppTheme.ink3)),
             ),
+            if (item.tags.contains('client'))
+              Container(
+                margin: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: AppTheme.cta.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6)),
+                child: Text(L.clientMenu,
+                    style: T.label.copyWith(color: AppTheme.cta, fontSize: 9)),
+              ),
             if (!item.available)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
