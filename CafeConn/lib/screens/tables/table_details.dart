@@ -12,6 +12,7 @@ import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/pending_approval.dart';
 
 class TableDetailsScreen extends StatefulWidget {
   const TableDetailsScreen({super.key});
@@ -38,9 +39,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
     // still-active AND already-served orders. A served order must stay visible
     // until the table is cleared (the day-by-day history button is for past
     // days); only guest orders awaiting approval are handled elsewhere.
-    final visitOrders = tableOrders
-        .where((o) => o.status != OrderStatus.awaiting)
-        .toList();
+    final visitOrders =
+        tableOrders.where((o) => o.status != OrderStatus.awaiting).toList();
     final orderItems = tableOrders.expand((o) => o.items).toList();
     final deliveredCount = orderItems.where((l) => l.done).length;
     final totalItems = orderItems.length;
@@ -124,6 +124,9 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                 const SizedBox(height: 12),
                 _guestStepper(context, state, table),
                 const SizedBox(height: 16),
+                // Guest orders on this table awaiting the waiter's approval —
+                // approve/reject right here, not only from the Orders screen.
+                TablePendingOrders(tableId: table.id),
                 if (drafts.isEmpty && tableOrders.isEmpty)
                   AppCard(
                     padding: const EdgeInsets.all(32),
@@ -148,7 +151,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   // Live orders (sent to kitchen/bar): per-item delivery +
                   // "deliver all ready". This is the waiter's real delivery
                   // surface, driven by server state, not by the draft copies.
-                  if (visitOrders.isNotEmpty) _ActiveDeliverySection(table: table),
+                  if (visitOrders.isNotEmpty)
+                    _ActiveDeliverySection(table: table),
                   // Draft (not-yet-sent) lines: still editable — swipe or the
                   // delete button removes them, tap opens note presets.
                   if (drafts.isNotEmpty) ...[
@@ -788,8 +792,7 @@ class _ActiveDeliverySection extends StatelessWidget {
     final readyN = state.readyToDeliverCount(table.id);
     // Only offer the deliver action while something is still undelivered; once
     // the whole visit is served the cards remain but the button drops away.
-    final hasUndelivered =
-        orders.any((o) => o.status != OrderStatus.completed);
+    final hasUndelivered = orders.any((o) => o.status != OrderStatus.completed);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -807,7 +810,7 @@ class _ActiveDeliverySection extends StatelessWidget {
             onPressed: readyN > 0
                 ? () => state.deliverAllReadyForTable(table.id)
                 : null,
-        ),
+          ),
       ],
     );
   }
@@ -853,6 +856,25 @@ class _ActiveDeliverySection extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 10),
+        if (order.note.trim().isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.sticky_note_2_outlined,
+                  size: 15, color: AppTheme.warning),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(order.note,
+                    style: T.label.copyWith(
+                        color: AppTheme.ink, fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ),
         ...order.items.map((l) => _deliverRow(context, state, order, l)),
       ]),
     );
@@ -906,8 +928,7 @@ class _ActiveDeliverySection extends StatelessWidget {
                       fontSize: 14.5,
                       fontWeight: FontWeight.w600,
                       color: l.done ? AppColors.ink40 : AppColors.ink,
-                      decoration:
-                          l.done ? TextDecoration.lineThrough : null)),
+                      decoration: l.done ? TextDecoration.lineThrough : null)),
               if (l.modifiers.isNotEmpty)
                 Text(l.modifiers,
                     style: T.label.copyWith(color: AppTheme.warning)),
@@ -917,6 +938,20 @@ class _ActiveDeliverySection extends StatelessWidget {
             ],
           ),
         ),
+        // Item still cooking: let the waiter advance it to "ready" right from
+        // the table, not only from the kitchen/bar feed.
+        if (state.canDeliverOrders && !l.ready && !l.done)
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.warning,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => state.markOrderItemReady(order, l),
+            child: Text(L.markReady,
+                style: T.label.copyWith(fontWeight: FontWeight.w900)),
+          ),
         if (canDeliver)
           TextButton(
             style: TextButton.styleFrom(
@@ -945,14 +980,13 @@ class _ActiveDeliverySection extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmDeleteItem(
-      BuildContext context, CafeState state, CafeOrder order, CartLine l) async {
+  Future<void> _confirmDeleteItem(BuildContext context, CafeState state,
+      CafeOrder order, CartLine l) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.card,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(L.deleteItemQ(l.item.displayName), style: T.h2),
         content: Text(L.deleteItemWarn, style: T.body),
         actions: [

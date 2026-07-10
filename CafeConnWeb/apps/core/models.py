@@ -182,6 +182,11 @@ class Order(models.Model):
     guest_name = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # When a waiter approved the order (awaiting → new). The kitchen/bar prep
+    # timer counts from here, not from created_at — a guest order shouldn't look
+    # "late" for the minutes it sat waiting for approval. Null for orders that
+    # predate this field or were never approved.
+    accepted_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

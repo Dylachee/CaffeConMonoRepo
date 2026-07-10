@@ -137,9 +137,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
             "total",
             "created_at",
+            "accepted_at",
             "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = ["created_at", "accepted_at", "updated_at"]
 
     def validate_status(self, value):
         return Order.LEGACY_STATUS_ALIASES.get(value, value)

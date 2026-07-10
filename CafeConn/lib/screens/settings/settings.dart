@@ -164,8 +164,7 @@ class SettingsScreen extends StatelessWidget {
         title: Text(L.logout),
         content: Text(L.logoutConfirm),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
           TextButton(
               onPressed: () async {
                 Navigator.pop(c);
@@ -187,8 +186,7 @@ class SettingsScreen extends StatelessWidget {
         title: Text(L.resetData),
         content: Text(L.resetWarn),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(L.cancel)),
           TextButton(
               onPressed: () {
                 state.resetToDemo();
@@ -312,7 +310,7 @@ class _SettingsToggle extends StatelessWidget {
         title: Text(label, style: T.h3.copyWith(fontWeight: FontWeight.w500)),
         value: value,
         onChanged: onChanged,
-        activeColor: AppTheme.cta,
+        activeThumbColor: AppTheme.cta,
       );
 }
 

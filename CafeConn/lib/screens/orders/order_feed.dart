@@ -67,7 +67,8 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
           // Pending guest orders to approve also surface here, so a waiter
           // working the feed doesn't have to jump back to Tables.
           const Padding(
-              padding: EdgeInsets.only(top: 12), child: PendingApprovalBanner()),
+              padding: EdgeInsets.only(top: 12),
+              child: PendingApprovalBanner()),
           // Tap-only segmented control — no swipe widget, no gesture conflict.
           // Hidden for station roles: their zone is fixed.
           if (locked == null)
@@ -171,7 +172,9 @@ class OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final table = state.tables.firstWhereOrNull((t) => t.id == order.tableId);
-    final age = DateTime.now().difference(order.createdAt);
+    // Count from when the waiter accepted the order, not when the guest placed
+    // it — a pending order shouldn't look "late" for the time it sat unapproved.
+    final age = DateTime.now().difference(order.timerStart);
     final late = age.inMinutes > 20;
     final color = late
         ? AppTheme.danger
@@ -226,7 +229,7 @@ class OrderCard extends StatelessWidget {
                             '#${order.id} · ${effectiveZone == FeedType.kitchen ? L.kitchen : L.bar}',
                             style:
                                 T.priceSmall.copyWith(color: AppTheme.ink2))),
-                    LiveTimer(createdAt: order.createdAt, color: color),
+                    LiveTimer(createdAt: order.timerStart, color: color),
                   ],
                 ),
                 const Divider(height: 24),
@@ -279,9 +282,10 @@ class OrderCard extends StatelessWidget {
         ],
       ),
     ).animate(onPlay: late ? (c) => c.repeat(reverse: true) : null).tint(
-        color:
-            late ? AppTheme.danger.withValues(alpha: .05) : Colors.transparent,
-        duration: 500.ms));
+            color: late
+                ? AppTheme.danger.withValues(alpha: .05)
+                : Colors.transparent,
+            duration: 500.ms));
 
     if (!canOpenTable) return card;
     // Tapping the card body opens the table; taps on the inner buttons

@@ -18,7 +18,8 @@ import '../models/models.dart';
 /// Result of [CafeState.loadTableHistory]: the orders for one day plus the
 /// list of days (newest first) that have orders, so the screen can page back.
 class TableHistoryResult {
-  final String? date; // ISO yyyy-MM-dd being shown (null when the table has none)
+  final String?
+      date; // ISO yyyy-MM-dd being shown (null when the table has none)
   final List<String> dates; // distinct days with orders, newest first
   final List<CafeOrder> orders; // orders for [date], newest first
   const TableHistoryResult({
@@ -475,11 +476,14 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// Offline (no server orders yet) it falls back to the local sent lines, so
   /// the single-device / mock path is unchanged.
   List<CartLine> tableDisplayLines(String tableId) {
-    final serverItems =
-        orders.where((o) => o.tableId == tableId).expand((o) => o.items).toList();
+    final serverItems = orders
+        .where((o) => o.tableId == tableId)
+        .expand((o) => o.items)
+        .toList();
     final local = tableCart(tableId);
-    final sent =
-        serverItems.isNotEmpty ? serverItems : local.where((l) => l.sent).toList();
+    final sent = serverItems.isNotEmpty
+        ? serverItems
+        : local.where((l) => l.sent).toList();
     final drafts = local.where((l) => !l.sent);
     return [...sent, ...drafts];
   }
@@ -585,7 +589,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<CafeOrder?> _submitOrderImpl(CafeTable table, FeedType? onlyFor) async {
+  Future<CafeOrder?> _submitOrderImpl(
+      CafeTable table, FeedType? onlyFor) async {
     // When connected, send to the hub; realtime echoes it back to all devices.
     if (backendConnected) return _submitOrderRemote(table, onlyFor);
 
@@ -1015,6 +1020,21 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     if (backendConnected) {
       await _pushItemsReady(order, lines, previous);
+    }
+  }
+
+  /// Waiter/manager action from the table view: mark one item prepared (ready)
+  /// while it's still in preparation, so item state can be advanced without
+  /// leaving the table.
+  Future<void> markOrderItemReady(CafeOrder order, CartLine line) async {
+    if (line.ready || line.done) return;
+    final previous = order.status;
+    line.ready = true;
+    _syncLocalOrderStatus(order);
+    HapticFeedback.mediumImpact();
+    notifyListeners();
+    if (backendConnected) {
+      await _pushItemsReady(order, [line], previous);
     }
   }
 
@@ -1770,6 +1790,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       createdAt: d.createdAt == null
           ? DateTime.now()
           : (DateTime.tryParse(d.createdAt!)?.toLocal() ?? DateTime.now()),
+      acceptedAt: d.acceptedAt == null
+          ? null
+          : DateTime.tryParse(d.acceptedAt!)?.toLocal(),
+      note: d.note,
       splitTo: d.station == 'bar' ? FeedType.bar : FeedType.kitchen,
     );
   }

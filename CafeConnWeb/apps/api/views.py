@@ -193,7 +193,9 @@ def serialize_for_flutter_order(order: Order) -> dict:
         "status": flutter_order_status(order.status),
         "station": order.station_scope,
         "createdAt": order.created_at.isoformat(),
+        "acceptedAt": order.accepted_at.isoformat() if order.accepted_at else None,
         "updatedAt": order.updated_at.isoformat(),
+        "note": order.notes,
         "items": [
             {
                 "id": str(item.id),
@@ -695,8 +697,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only a pending order can be confirmed.")
         employee = employee_for_user(request.user)
         order.status = Order.Status.NEW
+        # Prep timer starts now — when the waiter accepts — not when the guest
+        # placed the order.
+        order.accepted_at = timezone.now()
         order.employee = employee or order.employee
-        order.save(update_fields=["status", "employee", "updated_at"])
+        order.save(update_fields=["status", "accepted_at", "employee", "updated_at"])
 
         # The waiter who approved the guest order owns the table now, so its
         # sales attribute to him in the analytics.

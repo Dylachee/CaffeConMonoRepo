@@ -96,7 +96,7 @@ class CafeTable {
   Map<String, dynamic> toJson() => {
         'id': id,
         'number': number,
-        'colorValue': color.value,
+        'colorValue': color.toARGB32(),
         'status': status.name,
         'guestCount': guestCount,
         'notes': notes,
@@ -140,8 +140,9 @@ class CafeTable {
         _statusFromRaw(j['status']),
         j['guestCount'] as int,
         notes: List<String>.from(j['notes'] as List));
-    if (j['openedAt'] != null)
+    if (j['openedAt'] != null) {
       t.openedAt = DateTime.fromMillisecondsSinceEpoch(j['openedAt'] as int);
+    }
     t.waiterName = j['waiterName'] as String? ?? '—';
     t.attention = j['attention'] as String?;
     return t;
@@ -457,12 +458,24 @@ class CafeOrder {
     required this.status,
     required this.createdAt,
     required this.splitTo,
+    this.acceptedAt,
+    this.note = '',
   });
   final String id;
   final String tableId;
   final List<CartLine> items;
   OrderStatus status;
   final DateTime createdAt;
+
+  /// When the waiter accepted the order (guest orders: approval). The prep
+  /// timer runs from here when set, else from [createdAt].
+  final DateTime? acceptedAt;
+
+  /// Order-level guest comment (allergies / serving requests).
+  final String note;
+
+  /// The moment the prep clock should count from.
+  DateTime get timerStart => acceptedAt ?? createdAt;
   final FeedType splitTo;
   double get total => items.fold(0.0, (sum, line) => sum + line.total);
 

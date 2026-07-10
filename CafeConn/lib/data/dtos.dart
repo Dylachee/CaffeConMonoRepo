@@ -198,6 +198,13 @@ class OrderDto {
   /// ISO-8601 server timestamp. Nullable: old backends may omit it; the app
   /// then falls back to "now" (and the kitchen timer starts from zero).
   final String? createdAt;
+
+  /// When the waiter accepted the order (guest orders: approval time). The prep
+  /// timer counts from here when present, else from createdAt.
+  final String? acceptedAt;
+
+  /// Order-level guest comment (allergies / serving requests).
+  final String note;
   final List<OrderItemDto> items;
 
   const OrderDto({
@@ -207,6 +214,8 @@ class OrderDto {
     required this.station,
     required this.items,
     this.createdAt,
+    this.acceptedAt,
+    this.note = '',
   });
 
   factory OrderDto.fromBootstrap(Map<String, dynamic> j) => OrderDto(
@@ -215,6 +224,8 @@ class OrderDto {
         status: _asString(j['status'], 'accepted'),
         station: _asString(j['station'], 'kitchen'),
         createdAt: j['createdAt'] == null ? null : _asString(j['createdAt']),
+        acceptedAt: j['acceptedAt'] == null ? null : _asString(j['acceptedAt']),
+        note: _asString(j['note'], ''),
         items: ((j['items'] as List?) ?? const [])
             .map((e) =>
                 OrderItemDto.fromBootstrap((e as Map).cast<String, dynamic>()))
@@ -230,6 +241,8 @@ class OrderDto {
       status: flutterOrderStatusFromDjango(_asString(j['status'], 'new')),
       station: _asString(j['station_scope'], 'kitchen'),
       createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
+      acceptedAt: j['accepted_at'] == null ? null : _asString(j['accepted_at']),
+      note: _asString(j['notes'], ''),
       items: ((j['items'] as List?) ?? const [])
           .map((e) => OrderItemDto.fromDrf((e as Map).cast<String, dynamic>()))
           .toList(),

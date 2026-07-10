@@ -54,6 +54,46 @@ class PendingApprovalBanner extends StatelessWidget {
   }
 }
 
+/// Inline pending-approval list for one table's detail screen: every guest
+/// order on this table still awaiting the waiter, with the same approve/reject
+/// card used in the review sheet. Self-hides when there's nothing pending.
+class TablePendingOrders extends StatelessWidget {
+  const TablePendingOrders({super.key, required this.tableId});
+  final String tableId;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final pending =
+        state.pendingApprovalOrders.where((o) => o.tableId == tableId).toList();
+    if (pending.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.notifications_active_rounded,
+              size: 16, color: AppTheme.warning),
+          const SizedBox(width: 7),
+          Text(L.pendingApproval,
+              style: T.label.copyWith(
+                  color: AppTheme.warning, fontWeight: FontWeight.w900)),
+        ]),
+        const SizedBox(height: 10),
+        ...pending.map((o) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _pendingOrderCard(context, state, o),
+            )),
+      ]),
+    );
+  }
+}
+
 String _hhmm(DateTime ts) =>
     '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
 
@@ -115,7 +155,8 @@ Widget _pendingOrderCard(
       Row(children: [
         Expanded(
             child: Text(title,
-                style: T.h3.copyWith(fontWeight: FontWeight.w800, fontSize: 15))),
+                style:
+                    T.h3.copyWith(fontWeight: FontWeight.w800, fontSize: 15))),
         Text(_hhmm(order.createdAt),
             style: T.priceSmall.copyWith(color: AppTheme.ink2)),
       ]),

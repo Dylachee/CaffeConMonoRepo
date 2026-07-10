@@ -35,6 +35,18 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
       final okSearch = search.isEmpty || t.number.toString().contains(search);
       return okFilter && okSearch;
     }).toList();
+    // Anything the waiter must not miss floats to the top: a guest call/bill
+    // signal, a table waiting for the waiter, or a guest order pending approval.
+    bool needsAttention(CafeTable t) =>
+        t.attention != null ||
+        t.status == TableStatus.waiting ||
+        state.orders
+            .any((o) => o.tableId == t.id && o.status == OrderStatus.awaiting);
+    filtered.sort((a, b) {
+      final pa = needsAttention(a) ? 0 : 1;
+      final pb = needsAttention(b) ? 0 : 1;
+      return pa != pb ? pa - pb : a.number.compareTo(b.number);
+    });
 
     return AppScaffold(
       bottomNav: null,
@@ -180,7 +192,6 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
       ),
     );
   }
-
 
   void _showTableForm(BuildContext context, {CafeTable? table}) {
     final numController =

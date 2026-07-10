@@ -32,6 +32,9 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   /// confirmed — cancelling leaves no trace on the table's check.
   final Map<MenuItem, int> _selQty = {};
   final _searchCtrl = TextEditingController();
+  // Persistent focus node so adding an item (which rebuilds the list) doesn't
+  // drop keyboard focus; _add re-asserts it after the rebuild.
+  final _searchFocus = FocusNode();
   String _search = '';
   String _category = 'All';
   String _letter = 'All';
@@ -41,13 +44,14 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     super.initState();
     // Pull a fresh menu so a since-deleted item (e.g. after a menu cleanup)
     // can't be sent with a stale id and get rejected by the hub.
-    WidgetsBinding.instance.addPostFrameCallback(
-        (_) => context.read<CafeState>().refreshMenu());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => context.read<CafeState>().refreshMenu());
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -93,7 +97,14 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       return;
     }
     HapticFeedback.selectionClick();
+    final hadFocus = _searchFocus.hasFocus;
     setState(() => _selQty[item] = (_selQty[item] ?? 0) + 1);
+    // Keep the keyboard up while the waiter adds several items in a row.
+    if (hadFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_searchFocus.hasFocus) _searchFocus.requestFocus();
+      });
+    }
   }
 
   void _removeOne(MenuItem item) {
@@ -176,6 +187,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             padding: EdgeInsets.zero,
             child: TextField(
               controller: _searchCtrl,
+              focusNode: _searchFocus,
               onChanged: (v) => setState(() => _search = v),
               decoration: InputDecoration(
                 hintText: L.searchMenu,
