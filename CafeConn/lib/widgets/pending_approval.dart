@@ -161,6 +161,7 @@ Widget _pendingOrderCard(
             style: T.priceSmall.copyWith(color: AppTheme.ink2)),
       ]),
       const SizedBox(height: 8),
+      OrderNoteBox(note: order.note),
       ...order.items.map((l) => Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Row(children: [

@@ -856,25 +856,7 @@ class _ActiveDeliverySection extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 10),
-        if (order.note.trim().isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppTheme.warning.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.sticky_note_2_outlined,
-                  size: 15, color: AppTheme.warning),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(order.note,
-                    style: T.label.copyWith(
-                        color: AppTheme.ink, fontWeight: FontWeight.w600)),
-              ),
-            ]),
-          ),
+        OrderNoteBox(note: order.note),
         ...order.items.map((l) => _deliverRow(context, state, order, l)),
       ]),
     );

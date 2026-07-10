@@ -224,6 +224,7 @@ class _TableHistoryScreenState extends State<TableHistoryScreen> {
           ),
         ]),
         const SizedBox(height: 8),
+        OrderNoteBox(note: order.note),
         ...order.items.map((l) {
           final lineDone = l.done;
           final lineReady = l.ready;

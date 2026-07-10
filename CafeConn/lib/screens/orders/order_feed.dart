@@ -232,6 +232,7 @@ class OrderCard extends StatelessWidget {
                     LiveTimer(createdAt: order.timerStart, color: color),
                   ],
                 ),
+                OrderNoteBox(note: order.note),
                 const Divider(height: 24),
                 ...visibleItems.map((line) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),

@@ -459,6 +459,7 @@ def _guest_order_payload(order):
         "id": order.pk,
         "status": order.status,
         "statusLabel": ORDER_STATUS_LABELS.get(order.status, "Order accepted"),
+        "note": order.notes,
         "total": f"{order.total:.2f}",
         "items": [
             {

@@ -37,6 +37,35 @@ class AppButton extends StatefulWidget {
   State<AppButton> createState() => _AppButtonState();
 }
 
+class OrderNoteBox extends StatelessWidget {
+  const OrderNoteBox({super.key, required this.note});
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = note.trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.warning.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.sticky_note_2_outlined,
+            size: 15, color: AppTheme.warning),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(text,
+              style: T.label
+                  .copyWith(color: AppTheme.ink, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+}
+
 class _AppButtonState extends State<AppButton> {
   bool down = false;
 

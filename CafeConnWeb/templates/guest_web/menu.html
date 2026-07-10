@@ -158,6 +158,7 @@
   .order-mini:first-child{border-top:0;padding-top:0}
   .order-mini-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:900}
   .order-mini-status{color:var(--accent-deep)}
+  .order-mini-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fff5ec;color:rgba(30,27,22,.82);font-size:13px;font-weight:800}
   .order-mini-line{margin-top:7px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;color:rgba(30,27,22,.72);font-size:13px}
   .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:13px}
   .step{height:5px;border-radius:4px;background:#ece6db}
@@ -838,6 +839,9 @@
         ? tr("status_" + order.status)
         : (order.statusLabel || tr("accepted"));
       var html = '<div class="order-mini-head"><span>' + tr("order_label") + ' #' + escapeHtml(order.id) + '</span><span class="order-mini-status">' + escapeHtml(status) + '</span></div>';
+      if ((order.note || "").trim()) {
+        html += '<div class="order-mini-note">' + escapeHtml(order.note) + '</div>';
+      }
       (order.items || []).forEach(function(item){
         html += '<div class="order-mini-line"><b>' + Number(item.quantity || 0) + '×</b><span>' + escapeHtml(item.name || "") + '</span><b>' + money(Number(item.lineTotal || 0)) + '</b></div>';
       });
