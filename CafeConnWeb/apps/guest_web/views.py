@@ -21,30 +21,37 @@ from apps.core.services import acknowledge_signal_on_table, apply_signal_to_tabl
 # become configurable this moves to a model; keeping it in one place makes
 # that swap a one-liner in menu_page.
 VENUE = {
-    "name": "Sissi Bistro Bar",
-    "tagline": "Bistro and bar · European kitchen · cozy room",
-    "tagline_it": "Bistrot e bar · cucina europea · sala accogliente",
+    "name": "Caffè & Bistrò Sissi",
+    "tagline": "Café, bistro and bar in Madonna di Campiglio",
+    "tagline_it": "Caffè, bistrot e bar a Madonna di Campiglio",
     "about": (
-        "A small bistro in the center. We cook with seasonal products, "
-        "serve specialty coffee, and keep a short, honest bar list."
+        "A warm mountain bistro for coffee, aperitifs, cocktails, sandwiches, "
+        "sweet treats and quick dishes from the Sissi menu."
     ),
     "about_it": (
-        "Un piccolo bistrot in centro. Cuciniamo con prodotti stagionali, "
-        "serviamo specialty coffee e teniamo una carta bar breve e sincera."
+        "Un bistrot di montagna per caffetteria, aperitivi, cocktail, panini, "
+        "dolci e piatti veloci dal menu Sissi."
     ),
-    "address": "Kievskaya St. 77 · ground floor",
-    "address_it": "Via Kievskaya 77 · piano terra",
-    "hours": "Daily 10:00–23:00",
-    "hours_it": "Tutti i giorni 10:00–23:00",
+    "address": "Madonna di Campiglio · Trentino",
+    "address_it": "Madonna di Campiglio · Trentino",
+    "hours": "Ask staff for today's hours",
+    "hours_it": "Chiedi allo staff gli orari di oggi",
     "badges": [
-        {"en": "Vegan options", "it": "Opzioni vegane"},
-        {"en": "Specialty coffee", "it": "Specialty coffee"},
-        {"en": "All-day breakfast", "it": "Colazione tutto il giorno"},
+        {"en": "Coffee & hot chocolate", "it": "Caffè e cioccolata"},
+        {"en": "Aperitifs & cocktails", "it": "Aperitivi e cocktail"},
+        {"en": "Sweet and savory snacks", "it": "Dolce e salato"},
     ],
-    "rating": "4.9",
-    "reviews": "320 reviews",
-    "reviews_it": "320 recensioni",
+    "maps_url": "https://maps.app.goo.gl/L8UMd16ZXUTk5Jx28",
 }
+
+POPULAR_ITEM_NAMES = [
+    "Cappuccino",
+    "Bombardino",
+    "Aperol Spritz",
+    "Hugo",
+    "Analcolico frutta",
+    "Strudel di mele",
+]
 
 
 ORDER_STATUS_LABELS = {
@@ -170,17 +177,22 @@ def menu_page(request, table_id=None, table_number=None):
         )
     visible_items.sort(key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower()))
     sections.sort(key=lambda s: (s["name"] != "Menu del giorno", s["name_it"]))
-    featured_items = [
-        item
-        for item in visible_items
-        if item.is_available and (item.menu_category == "Menu del giorno")
-    ]
-    if not featured_items:
-        featured_items = [
+    featured_items = []
+    for name in POPULAR_ITEM_NAMES:
+        match = next(
+            (item for item in visible_items if item.is_available and item.name == name),
+            None,
+        )
+        if match is not None:
+            featured_items.append(match)
+    if len(featured_items) < 4:
+        seen = {item.pk for item in featured_items}
+        featured_items.extend(
             item
             for item in visible_items
-            if item.is_available and "popular" in (item.tags or [])
-        ]
+            if item.is_available and item.pk not in seen
+        )
+    featured_items = featured_items[:6]
 
     return render(
         request,
