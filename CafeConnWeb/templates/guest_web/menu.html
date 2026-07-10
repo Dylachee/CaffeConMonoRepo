@@ -97,9 +97,17 @@
   .chip{height:34px;padding:0 14px;border-radius:11px;background:#fff;border:1.5px solid var(--line);color:rgba(30,27,22,.72);font-size:14px;font-weight:800;white-space:nowrap}
   .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:16px}
+  /* Text-forward menu (no photos): one warm card, items as divided rows —
+     reads like a printed menu instead of a stack of chunky app cards. */
+  #menu-grid{display:block;background:#fff;border-radius:22px;box-shadow:var(--shadow);padding:4px 18px 14px}
+  /* Printed-menu category sections: a confident heading + hairline rule. */
+  .cat-head{display:flex;align-items:center;gap:13px;padding:22px 0 11px;font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+  .cat-head::after{content:"";flex:1;height:1px;background:var(--line)}
+  .menu-cat:first-child .cat-head{padding-top:10px}
   .dish{background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
-  .dish.off{opacity:.62}
-  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 12px;padding:13px 13px 13px 15px;align-items:center}
+  .dish.off{opacity:.5}
+  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 14px;padding:12px 0;align-items:baseline;background:transparent;box-shadow:none;border-radius:0;border-bottom:1px solid var(--line)}
+  .menu-cat .dish.text-only:last-child{border-bottom:0}
   .dish-hit{display:block!important;width:100%!important}
   .text-only .dish-hit{min-width:0}
   .dish .photo{aspect-ratio:1;height:auto}
@@ -107,17 +115,23 @@
   .alg{position:absolute;top:8px;right:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(252,250,245,.92);color:var(--accent-deep);font-size:11px;font-weight:800}
   .stop{position:absolute;inset:0;background:rgba(13,11,8,.42);display:grid;place-items:center;color:#fff;font-weight:900}
   .dish-name{margin-top:9px;font-size:16px;font-weight:900;line-height:1.16;letter-spacing:-.2px}
-  .text-only .dish-name{margin-top:0;font-size:17px}
+  .text-only .dish-name{margin-top:0;font-size:15.5px;font-weight:700;letter-spacing:-.1px;line-height:1.25}
   .dish-desc{margin-top:5px;color:rgba(30,27,22,.62);font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .text-only .dish-desc{margin-top:3px;font-size:12.5px;line-height:1.4;color:rgba(30,27,22,.55);-webkit-line-clamp:2}
   .dish-tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+  .text-only .dish-tags{margin-top:6px}
   .dish-tag{height:24px;padding:0 8px;border-radius:8px;background:#f8f4ed;color:rgba(30,27,22,.66);font-size:11px;font-weight:800;display:flex;align-items:center}
   .dish-tag.warn{background:rgba(217,86,74,.1);color:#c0463b}
   .dish-bottom{margin-top:7px;display:flex;align-items:center;gap:6px}
-  .text-only .dish-bottom{margin-top:0;justify-content:flex-end}
-  .text-only .price{font-size:18px;text-align:right}
+  .text-only .dish-bottom{margin:0;flex-direction:row;align-items:center;gap:11px}
+  .text-only .price{font-size:16px;font-weight:800;color:var(--accent-deep);text-align:right;font-variant-numeric:tabular-nums;letter-spacing:-.2px;white-space:nowrap}
+  .unavail-tag{font-size:11px;font-weight:800;color:var(--mut);white-space:nowrap}
   .avail{width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:auto}
   .small{font-size:12px;color:var(--mut)}
-  .add{width:32px;height:32px;border-radius:11px;background:var(--accent);color:#fff;font-weight:900;font-size:20px;margin-left:5px}
+  .add{width:33px;height:33px;border-radius:11px;background:var(--accent-soft);color:var(--accent-deep);font-weight:900;font-size:21px;display:grid;place-items:center;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
+  .add:active{transform:scale(.9);background:var(--accent);color:#fff}
+  @media(hover:hover){.add:hover{background:var(--accent);color:#fff}}
+  @media (prefers-reduced-motion: reduce){.add{transition:none}}
   .empty{padding:50px 12px;text-align:center;color:var(--mut);grid-column:1/-1}
 
   .service-card{border-radius:20px;padding:20px;background:#fff;border:1.5px solid var(--line);box-shadow:var(--shadow);display:flex;align-items:center;gap:15px;width:100%;text-align:left}
@@ -326,39 +340,31 @@
     </div>
     {% endif %}
     <div class="grid" id="menu-grid">
-      {% for item in menu_items %}
-        <article class="dish{% if not item.image_url %} text-only{% endif %}{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
+      {% for section in menu_sections %}
+      <section class="menu-cat" data-cat-section data-category="{{ section.name }}">
+        <h3 class="cat-head" data-i18n-text data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</h3>
+        {% for item in section.items %}
+        <article class="dish text-only{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
           <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}" style="all:unset;display:block;cursor:pointer">
-            {% if item.image_url %}
-            <div class="photo {{ item.visual_key }}{% if not item.image_url %} empty{% endif %}" {% if item.image_url %}style="background-image:url('{{ item.image_url }}')"{% else %}data-icon="{{ item.visual_icon }}"{% endif %}>
-              <span class="meta">◷ {{ item.preparation_minutes }} <span data-i18n="min">min</span></span>
-              {% if item.allergens %}<span class="alg">⚠ {{ item.allergens|length }}</span>{% endif %}
-              {% if not item.is_available %}<span class="stop" data-i18n="sold_out">Sold out</span>{% endif %}
-            </div>
-            {% endif %}
             <h2 class="dish-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</h2>
-            {% if not item.image_url %}
-              <p class="dish-desc" data-i18n-text data-en="{{ item.description_en }}" data-it="{{ item.description_it }}">{{ item.description_en }}</p>
-              <div class="dish-tags">
-                <span class="dish-tag">◷ {{ item.preparation_minutes }} <span data-i18n="min">min</span></span>
-                {% for allergen in item.allergens|slice:":3" %}
-                  <span class="dish-tag warn">{{ allergen }}</span>
-                {% empty %}
-                  <span class="dish-tag" data-i18n="no_allergens">No listed allergens</span>
-                {% endfor %}
-              </div>
-              {% if not item.is_available %}<span class="dish-tag warn" data-i18n="sold_out">Sold out</span>{% endif %}
+            {% if item.description_en %}<p class="dish-desc" data-i18n-text data-en="{{ item.description_en }}" data-it="{{ item.description_it }}">{{ item.description_en }}</p>{% endif %}
+            {% if item.allergens %}
+            <div class="dish-tags">
+              {% for allergen in item.allergens|slice:":3" %}<span class="dish-tag warn">{{ allergen }}</span>{% endfor %}
+            </div>
             {% endif %}
           </button>
           <div class="dish-bottom">
             <span class="price">{{ item.price_str }} €</span>
-            <span class="avail" style="background:{% if item.is_available %}var(--green){% else %}var(--danger){% endif %}"></span>
-            <span class="small">{% if item.is_available %}<span data-i18n="available">available</span>{% else %}<span data-i18n="unavailable">unavailable</span>{% endif %}</span>
             {% if item.is_available %}
               <button class="add" type="button" data-add="{{ item.pk }}" aria-label="Add {{ item.name_en }}">+</button>
+            {% else %}
+              <span class="unavail-tag" data-i18n="unavailable">unavailable</span>
             {% endif %}
           </div>
         </article>
+        {% endfor %}
+      </section>
       {% empty %}
         <p class="empty" data-i18n="menu_empty">The menu is being filled. Ask your waiter for a paper menu.</p>
       {% endfor %}
@@ -637,12 +643,18 @@
   function filterMenu(){
     var q = (search ? search.value : "").trim().toLowerCase();
     var shown = 0;
+    var visibleCats = {};
     document.querySelectorAll("[data-card]").forEach(function(card){
-      var okCat = activeCategory === "all" || card.getAttribute("data-category") === activeCategory;
+      var cat = card.getAttribute("data-category");
+      var okCat = activeCategory === "all" || cat === activeCategory;
       var okText = !q || card.getAttribute("data-name").indexOf(q) !== -1;
       var show = okCat && okText;
       card.hidden = !show;
-      if (show) shown += 1;
+      if (show) { shown += 1; visibleCats[cat] = true; }
+    });
+    // Hide a category heading whose items are all filtered out.
+    document.querySelectorAll("[data-cat-section]").forEach(function(sec){
+      sec.hidden = !visibleCats[sec.getAttribute("data-category")];
     });
     document.getElementById("no-results").hidden = shown !== 0;
   }
