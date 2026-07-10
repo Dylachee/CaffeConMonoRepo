@@ -1,3 +1,4 @@
+import 'package:alphabet_scrollbar/alphabet_scrollbar.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,12 +33,13 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   /// confirmed — cancelling leaves no trace on the table's check.
   final Map<MenuItem, int> _selQty = {};
   final _searchCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
   // Persistent focus node so adding an item (which rebuilds the list) doesn't
   // drop keyboard focus; _add re-asserts it after the rebuild.
   final _searchFocus = FocusNode();
   String _search = '';
   String _category = 'All';
-  String _letter = 'All';
+  static const double _tileExtent = 82;
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
@@ -77,16 +80,26 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         .toSet()
         .toList()
       ..sort();
-    return ['All', ...letters];
+    return letters;
   }
 
   List<MenuItem> _filtered(CafeState state) {
-    final items = _baseFiltered(state).where((m) {
-      if (_letter == 'All') return true;
-      final name = m.displayName.trim();
-      return name.isNotEmpty && name.substring(0, 1).toUpperCase() == _letter;
+    return state.sortedMenuItems(_baseFiltered(state));
+  }
+
+  void _jumpToLetter(String letter, List<MenuItem> items) {
+    final target = letter.toUpperCase();
+    final index = items.indexWhere((item) {
+      final name = item.displayName.trim();
+      return name.isNotEmpty && name.substring(0, 1).toUpperCase() == target;
     });
-    return state.sortedMenuItems(items);
+    if (index < 0 || !_scrollCtrl.hasClients) return;
+    HapticFeedback.selectionClick();
+    _scrollCtrl.animateTo(
+      index * _tileExtent,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _add(BuildContext context, MenuItem item) {
@@ -157,7 +170,6 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     }
     final items = _filtered(state);
     final letters = _letters(state);
-    if (_letter != 'All' && !letters.contains(_letter)) _letter = 'All';
     final count = _selQty.values.fold(0, (s, v) => s + v);
     final total =
         _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
@@ -224,41 +236,46 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                   .toList(),
             ),
           ),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 32,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: letters
-                  .map((letter) => CategoryChip(
-                        label: letter == 'All' ? L.all : letter,
-                        active: _letter == letter,
-                        onTap: () => setState(() => _letter = letter),
-                      ))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Expanded(
             child: items.isEmpty
                 ? EmptyState(
                     icon: Icons.search_off,
                     title: L.nothingFound,
                     sub: L.changeSearch)
-                : ListView.builder(
-                    padding:
-                        EdgeInsets.only(top: 6, bottom: count > 0 ? 130 : 40),
-                    itemCount: items.length,
-                    itemBuilder: (ctx, i) {
-                      final item = items[i];
-                      return _OrderComposerTile(
-                        item: item,
-                        qty: _selQty[item] ?? 0,
-                        onAdd: () => _add(ctx, item),
-                        onRemove: () => _removeOne(item),
-                        onInfo: () => showStaffDishDetails(ctx, item),
-                      );
-                    },
+                : Stack(
+                    children: [
+                      ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: EdgeInsets.only(
+                            top: 2,
+                            right: letters.length > 1 ? 38 : 0,
+                            bottom: count > 0 ? 130 : 40),
+                        itemExtent: _tileExtent,
+                        itemCount: items.length,
+                        itemBuilder: (ctx, i) {
+                          final item = items[i];
+                          return _OrderComposerTile(
+                            item: item,
+                            qty: _selQty[item] ?? 0,
+                            onAdd: () => _add(ctx, item),
+                            onRemove: () => _removeOne(item),
+                            onInfo: () => showStaffDishDetails(ctx, item),
+                          );
+                        },
+                      ),
+                      if (letters.length > 1)
+                        Positioned(
+                          top: 6,
+                          right: 0,
+                          bottom: count > 0 ? 96 : 10,
+                          child: _OrderAlphabetRail(
+                            letters: letters,
+                            onLetterChange: (letter) =>
+                                _jumpToLetter(letter, items),
+                          ),
+                        ),
+                    ],
                   ),
           ),
         ]),
@@ -275,6 +292,44 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             ),
           ),
       ]),
+    );
+  }
+}
+
+class _OrderAlphabetRail extends StatelessWidget {
+  const _OrderAlphabetRail({
+    required this.letters,
+    required this.onLetterChange,
+  });
+
+  final List<String> letters;
+  final ValueChanged<String> onLetterChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTheme.card.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.separator),
+        boxShadow: const [AppTheme.shadowCard],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: AlphabetScrollbar(
+          onLetterChange: onLetterChange,
+          letterCollection: letters,
+          selectedLetterColor: AppTheme.cta,
+          selectedLetterAdditionalSpace: 8,
+          factor: 14,
+          padding: EdgeInsets.zero,
+          style: T.label.copyWith(
+            color: AppTheme.ink3,
+            fontWeight: FontWeight.w900,
+            fontSize: 10.5,
+          ),
+        ),
+      ),
     );
   }
 }

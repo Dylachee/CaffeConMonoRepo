@@ -13,7 +13,19 @@
 .DS_Store
 Thumbs.db
 
+# Python generated files
+__pycache__/
+*.py[cod]
+
 # IDE (already tracked as of this writing — this only stops *new* noise;
 # see the Docker audit notes for the one-time `git rm --cached` step if you
 # want it untracked going forward).
 .idea/
+
+# Node / Playwright E2E artifacts
+node_modules/
+playwright-report/
+test-results/
+
+# Generated staff web bundle, regenerated during deploy builds.
+static/staff/

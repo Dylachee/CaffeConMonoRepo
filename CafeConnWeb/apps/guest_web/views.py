@@ -53,6 +53,30 @@ POPULAR_ITEM_NAMES = [
     "Strudel di mele",
 ]
 
+GUEST_CATEGORY_ORDER = [
+    "Menu del giorno",
+    "Caffetteria",
+    "Colazione",
+    "Bevande",
+    "Bibite",
+    "Analcolici",
+    "Aperitivi",
+    "Cocktails",
+    "Premium Cocktails",
+    "Birra",
+    "Vino",
+    "Vino al calice e bottiglie",
+    "Food",
+    "Cucina",
+    "Panini",
+    "Spuntino Salato",
+    "Da stuzzicare",
+    "Dolci",
+    "Gelati",
+    "Grappe e liquori",
+    "Liquori",
+]
+
 
 ORDER_STATUS_LABELS = {
     Order.Status.AWAITING: "Sent — waiting for staff to confirm",
@@ -176,7 +200,7 @@ def menu_page(request, table_id=None, table_number=None):
             key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower())
         )
     visible_items.sort(key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower()))
-    sections.sort(key=lambda s: (s["name"] != "Menu del giorno", s["name_it"]))
+    sections.sort(key=lambda s: (_guest_category_rank(s["name"]), s["name_it"]))
     featured_items = []
     for name in POPULAR_ITEM_NAMES:
         match = next(
@@ -457,6 +481,13 @@ def _menu_item_client_visible(item):
 
 def _menu_item_is_daily(item):
     return item.category == "Menu del giorno" or "daily" in (item.tags or [])
+
+
+def _guest_category_rank(category):
+    try:
+        return GUEST_CATEGORY_ORDER.index(category)
+    except ValueError:
+        return len(GUEST_CATEGORY_ORDER)
 
 
 def _remember_guest_order(request, order_id):
