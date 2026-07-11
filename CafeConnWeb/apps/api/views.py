@@ -548,6 +548,23 @@ class MenuItemViewSet(viewsets.ModelViewSet):
             raise Http404
         return obj
 
+    @decorators.action(detail=True, methods=["post"], url_path="toggle-popular")
+    def toggle_popular(self, request, pk=None):
+        """Pin/unpin an item on the waiter 'Popular' shelf (hold on a tile in
+        the app). Deliberately open to ANY authenticated staff — pinning a
+        bestseller is floor work, not menu management."""
+        if not request.user or not request.user.is_authenticated:
+            raise PermissionDenied("Sign in to pin items.")
+        item = self.get_object()
+        tags = list(item.tags or [])
+        if "popular" in tags:
+            tags.remove("popular")
+        else:
+            tags.append("popular")
+        item.tags = tags
+        item.save(update_fields=["tags", "updated_at"])
+        return Response(MenuItemSerializer(item).data)
+
     def _require_menu_cap(self):
         # Changing the menu (e.g. the in/out-of-stock toggle) is a granted
         # capability now, not a free-for-all for anyone with a token.

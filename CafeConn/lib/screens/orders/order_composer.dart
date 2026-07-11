@@ -48,7 +48,11 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           DateTime.now().difference(_searchFocusLostAt!) <
               const Duration(milliseconds: 700));
   String _search = '';
-  String _category = 'All';
+  // Family filter: the Popular shelf ('popular'), 'All', or one of
+  // MenuFamilies.all. Landing on Popular = the most-sold items are one tap
+  // away the moment the screen opens.
+  static const _popularFilter = 'popular';
+  String _category = _popularFilter;
   // R-Keeper-style 2-column grid: twice the items per screen versus the old
   // full-width rows, so composing an order needs far less scrolling.
   static const int _gridCols = 2;
@@ -75,10 +79,26 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     super.dispose();
   }
 
+  /// The effective filter: the Popular shelf is the landing view, but falls
+  /// back to Tutti while nothing is pinned yet (empty landing = confused
+  /// waiter). Searching always searches the whole menu.
+  String _effectiveFilter(CafeState state) {
+    if (_search.trim().isNotEmpty) return 'All';
+    if (_category == _popularFilter && !state.menu.any((m) => m.isPopular)) {
+      return 'All';
+    }
+    return _category;
+  }
+
   List<MenuItem> _baseFiltered(CafeState state) {
     final q = _search.trim().toLowerCase();
+    final filter = _effectiveFilter(state);
     return state.menu.where((m) {
-      final okCat = _category == 'All' || m.category == _category;
+      final okCat = switch (filter) {
+        'All' => true,
+        _popularFilter => m.isPopular,
+        _ => m.family == filter,
+      };
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
@@ -155,6 +175,85 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       }
     });
     if (keepKeyboard) _keepKeyboardUp();
+  }
+
+  /// One compact colored family button. Light family colors (yellow, light
+  /// blue/green) get ink text when active so the label stays readable.
+  Widget _familyBtn(String label, String value, Color color,
+      {IconData? icon}) {
+    final active = _category == value;
+    final onColor =
+        color.computeLuminance() > 0.45 ? AppColors.ink : Colors.white;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _category = value);
+      },
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: active ? color : color.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+              color: active ? color : color.withValues(alpha: 0.5)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: active ? onColor : color),
+            const SizedBox(width: 4),
+          ],
+          Text(label,
+              style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: active ? onColor : AppColors.ink)),
+        ]),
+      ),
+    );
+  }
+
+  /// Long-press on a tile: pin/unpin on the Popular shelf, or open details.
+  void _showItemActions(BuildContext context, CafeState state, MenuItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+            color: AppTheme.surfaceAlt,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(item.displayName, style: T.h2.copyWith(fontSize: 18)),
+            const SizedBox(height: 16),
+            AppButton(
+              label: item.isPopular ? L.unpinPopular : L.pinPopular,
+              icon: item.isPopular
+                  ? Icons.star_rounded
+                  : Icons.star_border_rounded,
+              onPressed: () {
+                state.togglePopular(item);
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 8),
+            AppButton(
+              label: L.dishDetails,
+              icon: Icons.info_outline,
+              kind: ButtonKind.secondary,
+              onPressed: () {
+                Navigator.pop(context);
+                showStaffDishDetails(context, item);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _openPrecheck(BuildContext context, String tableId) {
@@ -253,26 +352,27 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // Category chips stay visible at every moment of the selection —
-          // switching categories must never drop what's already picked.
-          SizedBox(
-            height: 38,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: state.categories
-                  .map((c) => CategoryChip(
-                        label: state.categoryDisplay(c),
-                        active: _category == c,
-                        // Same color family as the tiles below, so a waiter
-                        // binds chip ↔ items at a glance.
-                        dotColor: c == 'All'
-                            ? null
-                            : AppColors.categoryColor(c, isBar: false),
-                        onTap: () => setState(() => _category = c),
-                      ))
-                  .toList(),
-            ),
+          // Family bar, R-Keeper style: ALL buttons visible at once (no
+          // horizontal scrolling — that was what made switching slow), one tap
+          // to any family, colors matching the tiles below.
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _familyBtn(L.popular, _popularFilter, AppColors.famPopular,
+                  icon: Icons.star_rounded),
+              _familyBtn(L.all, 'All', AppColors.espresso),
+              for (final f in MenuFamilies.all)
+                _familyBtn(f, f, AppColors.familyColor(f)),
+            ],
           ),
+          if (_category == _popularFilter &&
+              !state.menu.any((m) => m.isPopular))
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(L.popularEmpty,
+                  style: T.label.copyWith(color: AppTheme.ink2)),
+            ),
           const SizedBox(height: 10),
           Expanded(
             child: items.isEmpty
@@ -303,7 +403,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                             qty: _selQty[item] ?? 0,
                             onAdd: () => _add(ctx, item),
                             onRemove: () => _removeOne(item),
-                            onInfo: () => showStaffDishDetails(ctx, item),
+                            onInfo: () => _showItemActions(ctx, state, item),
                           );
                         },
                       ),
@@ -399,8 +499,7 @@ class _OrderComposerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final catColor =
-        AppColors.categoryColor(item.category, isBar: item.isBar);
+    final catColor = AppColors.familyColor(item.family);
     final selected = qty > 0;
 
     return GestureDetector(
@@ -439,6 +538,12 @@ class _OrderComposerTile extends StatelessWidget {
                               fontSize: 13.5, height: 1.18)),
                     ),
                     Row(children: [
+                      if (item.isPopular)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 3),
+                          child: Icon(Icons.star_rounded,
+                              size: 13, color: AppColors.gold),
+                        ),
                       if (!item.available)
                         Container(
                           margin: const EdgeInsets.only(right: 5),

@@ -149,6 +149,50 @@ class CafeTable {
   }
 }
 
+/// The owner's 8 POS families (matching the R-Keeper layout) that every DB
+/// category collapses into for the waiter composer: one color + one button per
+/// family, however fine-grained the guest-menu categories get.
+class MenuFamilies {
+  const MenuFamilies._();
+
+  static const all = [
+    'Caffetteria',
+    'Bevande',
+    'Liquori',
+    'Vino',
+    'Gelati',
+    'Food',
+    'Dolci',
+    'Aperitivi',
+  ];
+
+  /// DB category → family. Mirrors the backend's menu_catalog scheme (the
+  /// fine categories were split FROM these raw families, so this inverts it).
+  static String of(String category, {required bool isBar}) {
+    final c = category.toLowerCase();
+    bool has(List<String> keys) => keys.any(c.contains);
+    if (has(const ['caffett', 'coffee'])) return 'Caffetteria';
+    if (has(const ['gelat', 'ice cream'])) return 'Gelati';
+    if (has(const ['dolc', 'dessert'])) return 'Dolci';
+    if (has(const ['liquor', 'grapp', 'amari'])) return 'Liquori';
+    if (has(const ['vino', 'wine'])) return 'Vino';
+    // Beer and cocktails were raw-APERITIVI in the owner's POS export.
+    if (has(const ['aperitiv', 'cocktail', 'birra', 'spritz', 'beer'])) {
+      return 'Aperitivi';
+    }
+    if (has(const ['bibit', 'bevand', 'analcolic', 'succ', 'drink'])) {
+      return 'Bevande';
+    }
+    if (has(const [
+      'food', 'panin', 'colazion', 'cucina', 'spuntin', 'stuzzic', 'toast',
+      'tost', 'menu del',
+    ])) {
+      return 'Food';
+    }
+    return isBar ? 'Bevande' : 'Food';
+  }
+}
+
 class MenuItem {
   MenuItem({
     required this.id,
@@ -214,6 +258,12 @@ class MenuItem {
 
   bool get isBar =>
       station.isNotEmpty ? station == 'bar' : _barCategories.contains(category);
+
+  /// Pinned on the waiter composer's Popular shelf (hold a tile to toggle).
+  bool get isPopular => tags.contains('popular');
+
+  /// The owner's POS family this item belongs to (color + fast filter).
+  String get family => MenuFamilies.of(category, isBar: isBar);
 
   List<String> get notePresets {
     final presets = <String>[];

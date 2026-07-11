@@ -42,51 +42,29 @@ class AppColors {
   // Occupied table blue
   static const occupied = Color(0xFF5B86B0);
 
-  // ── Menu category families (order composer) ──────────────────────────────
-  // R-Keeper-style quick recognition: the waiter reads the color before the
-  // name. Five families cover the whole menu; resolver below maps a category
-  // to its family.
-  static const catCoffee = Color(0xFF8C6239); // roast brown — caffetteria/hot
-  static const catSoft = bar; //                 blue — bibite/analcolici
-  static const catAlcohol = bill; //             violet — birra/vino/cocktails
-  static const catFood = kitchen; //             orange — cucina/panini/colazione
-  static const catSweet = Color(0xFFC95D8F); //  berry — dolci/gelati
+  // ── Menu families (waiter composer, R-Keeper style) ──────────────────────
+  // The owner's 8 POS families with their fixed colors. The waiter reads the
+  // color before the name. MenuFamilies.of (models.dart) maps a DB category to
+  // one of these family names.
+  static const famCaffetteria = kitchen; //          orange
+  static const famBevande = Color(0xFF5BAEDC); //    light blue
+  static const famLiquori = ok; //                   green
+  static const famVino = Color(0xFFC0463B); //       red (wine)
+  static const famGelati = bar; //                   blue
+  static const famFood = Color(0xFFDFAF2B); //       yellow
+  static const famDolci = bill; //                   purple
+  static const famAperitivi = Color(0xFF7CC488); //  light green
+  static const famPopular = gold; //                 ★ the Popular shelf
 
-  /// Category → color family. Matches the Italian category names the menu
-  /// uses (plus English fallbacks); unknown categories fall back by station.
-  static Color categoryColor(String category, {required bool isBar}) {
-    final c = category.toLowerCase();
-    bool has(List<String> keys) => keys.any(c.contains);
-    if (has(const ['dolc', 'gelat', 'dessert', 'sweet'])) return catSweet;
-    if (has(const ['caff', 'tè', 'tisan', 'coffee', 'tea'])) return catCoffee;
-    if (has(const [
-      'birra',
-      'vino',
-      'aperitiv',
-      'cocktail',
-      'liquor',
-      'grapp',
-      'amari',
-      'beer',
-      'wine',
-      'spritz',
-    ])) {
-      return catAlcohol;
-    }
-    if (has(const ['bibit', 'bevand', 'analcolic', 'succ', 'soft', 'drink'])) {
-      return catSoft;
-    }
-    if (has(const [
-      'panin',
-      'cucina',
-      'spuntin',
-      'stuzzic',
-      'colazion',
-      'food',
-      'menu del',
-    ])) {
-      return catFood;
-    }
-    return isBar ? catSoft : catFood;
-  }
+  static Color familyColor(String family) => switch (family) {
+        'Caffetteria' => famCaffetteria,
+        'Bevande' => famBevande,
+        'Liquori' => famLiquori,
+        'Vino' => famVino,
+        'Gelati' => famGelati,
+        'Food' => famFood,
+        'Dolci' => famDolci,
+        'Aperitivi' => famAperitivi,
+        _ => famFood,
+      };
 }

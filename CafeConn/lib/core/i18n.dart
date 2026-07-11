@@ -158,6 +158,17 @@ class L {
       t('Could not load', 'Caricamento non riuscito');
   static String get retry => t('Retry', 'Riprova');
 
+  // ---- composer: popular shelf ----
+  static String get popular => t('Popular', 'Popolari');
+  static String get pinPopular =>
+      t('Add to Popular', 'Aggiungi ai Popolari');
+  static String get unpinPopular =>
+      t('Remove from Popular', 'Rimuovi dai Popolari');
+  static String get popularEmpty => t(
+      'No pinned items yet. Hold any item to pin it here.',
+      'Nessun preferito. Tieni premuto un piatto per aggiungerlo qui.');
+  static String get dishDetails => t('Details', 'Dettagli');
+
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');
   static String get kitchenU => t('KITCHEN', 'CUCINA');

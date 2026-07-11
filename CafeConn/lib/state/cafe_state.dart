@@ -867,6 +867,37 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Pin/unpin an item on the waiter Popular shelf (hold a tile). Optimistic:
+  /// flips the tag locally, pushes to the hub, rolls back on failure. Open to
+  /// any staff — pinning a bestseller is floor work, not menu management.
+  void togglePopular(MenuItem item) {
+    if (item.isPopular) {
+      item.tags.remove('popular');
+    } else {
+      item.tags.add('popular');
+    }
+    HapticFeedback.selectionClick();
+    _saveMenu();
+    notifyListeners();
+    if (backendConnected) _pushPopular(item);
+  }
+
+  Future<void> _pushPopular(MenuItem item) async {
+    try {
+      await _remoteApi.toggleMenuItemPopular(item.id);
+    } on ApiException catch (e) {
+      if (item.isPopular) {
+        item.tags.remove('popular'); // rollback
+      } else {
+        item.tags.add('popular');
+      }
+      backendError = e.message;
+      debugPrint('togglePopular push failed: $e');
+      _saveMenu();
+      notifyListeners();
+    }
+  }
+
   void addTable(int number, Color color) {
     // Unique id even after deletions ("t${length+1}" collided with an
     // existing id as soon as any table had been removed).

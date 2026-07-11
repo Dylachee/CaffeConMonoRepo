@@ -5,5 +5,7 @@ extension DurationNum on int {
 }
 
 extension Money on double {
-  String get rub => '${toStringAsFixed(2)} \$';
+  // The café bills in euro; every price/total in the app renders through this
+  // single getter. (Name is legacy — kept to avoid churn across ~40 call sites.)
+  String get rub => '${toStringAsFixed(2)} €';
 }

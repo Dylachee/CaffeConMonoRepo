@@ -68,6 +68,8 @@ class ApiConfig {
   static Uri orderEvents(String id) =>
       Uri.parse('$apiRoot/orders/$id/events/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
+  static Uri toggleMenuItemPopular(String id) =>
+      Uri.parse('$apiRoot/menu-items/$id/toggle-popular/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
   static Uri orderItem(String itemId) =>
       Uri.parse('$apiRoot/order-items/$itemId/');

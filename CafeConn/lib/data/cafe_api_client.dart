@@ -223,6 +223,10 @@ class CafeApiClient {
       () => _http.post(ApiConfig.ackAttention(signalId), headers: _headers()));
 
   /// Set a menu item's availability (stop-list on/off).
+  /// Any staff: pin/unpin an item on the waiter Popular shelf.
+  Future<void> toggleMenuItemPopular(String id) => _send(() =>
+      _http.post(ApiConfig.toggleMenuItemPopular(id), headers: _headers()));
+
   Future<void> updateMenuAvailability(String id, bool available) async {
     await _send(() => _http.patch(
           Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),
