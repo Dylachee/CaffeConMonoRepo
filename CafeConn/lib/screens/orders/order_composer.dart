@@ -131,19 +131,16 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     HapticFeedback.selectionClick();
     final keepKeyboard = _keyboardWasUp;
     setState(() => _selQty[item] = (_selQty[item] ?? 0) + 1);
-    if (keepKeyboard) _refocusSearch();
+    if (keepKeyboard) _keepKeyboardUp();
   }
 
-  /// Keep the keyboard up while the waiter adds several items in a row.
-  /// A full unfocus→refocus cycle (not a bare requestFocus): on web the node
-  /// can still report focus while the browser already closed the keyboard, and
-  /// only re-attaching the text-input connection reliably brings it back.
-  void _refocusSearch() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _searchFocus.unfocus();
-      _searchFocus.requestFocus();
-    });
+  /// Belt-and-suspenders next to the TextField's neutralized onTapOutside
+  /// (the actual fix): if anything else stole focus, take it back and re-show
+  /// the keyboard — synchronously, still inside this tap's user gesture, which
+  /// is when mobile browsers allow programmatic keyboards.
+  void _keepKeyboardUp() {
+    if (!_searchFocus.hasFocus) _searchFocus.requestFocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
   }
 
   void _removeOne(MenuItem item) {
@@ -157,7 +154,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         _selQty[item] = current - 1;
       }
     });
-    if (keepKeyboard) _refocusSearch();
+    if (keepKeyboard) _keepKeyboardUp();
   }
 
   void _openPrecheck(BuildContext context, String tableId) {
@@ -229,6 +226,13 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               controller: _searchCtrl,
               focusNode: _searchFocus,
               onChanged: (v) => setState(() => _search = v),
+              // THE keyboard fix. Flutter's default onTapOutside unfocuses a
+              // TextField on any outside touch **on mobile web** (see
+              // EditableText._defaultOnTapOutside), firing on pointer-down —
+              // before any tile tap handler. That's what kept closing the
+              // keyboard between adds. Neutralize it: while composing, only
+              // the keyboard's own done/back dismisses.
+              onTapOutside: (_) {},
               decoration: InputDecoration(
                 hintText: L.searchMenu,
                 prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
