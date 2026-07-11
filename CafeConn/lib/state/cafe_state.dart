@@ -939,6 +939,40 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Panel save: apply locally AND persist to the hub (upsertMenuItem alone
+  /// was local-only — panel edits silently never reached the server). Returns
+  /// null on success, an error message otherwise; on success the menu is
+  /// re-pulled so server-side ids/labels are canonical.
+  Future<String?> saveMenuItem(MenuItem item, {required bool isNew}) async {
+    upsertMenuItem(item); // optimistic — the panel reflects the edit at once
+    if (!backendConnected) return null;
+    final fields = <String, dynamic>{
+      'name': item.name,
+      'description': item.description,
+      'price': item.price.toStringAsFixed(2),
+      'category': item.category,
+      'station': item.station.isEmpty ? 'kitchen' : item.station,
+      'tags': item.tags,
+      'is_available': item.available,
+      'is_promoted': item.promo,
+      'preparation_minutes': item.prepTime,
+    };
+    try {
+      if (isNew) {
+        await _remoteApi.createMenuItem(fields);
+      } else {
+        await _remoteApi.updateMenuItem(item.id, fields);
+      }
+      await refreshMenu();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('saveMenuItem push failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
   Future<String?> deleteMenuItem(MenuItem item) async {
     try {
       if (backendConnected) {

@@ -227,6 +227,20 @@ class CafeApiClient {
   Future<void> toggleMenuItemPopular(String id) => _send(() =>
       _http.post(ApiConfig.toggleMenuItemPopular(id), headers: _headers()));
 
+  /// Manager: create a menu item on the hub. `fields` uses the DRF wire names
+  /// (name, description, price, category, station, tags, is_available,
+  /// is_promoted, preparation_minutes).
+  Future<void> createMenuItem(Map<String, dynamic> fields) =>
+      _send(() => _http.post(ApiConfig.menuItems(),
+          headers: _headers(), body: jsonEncode(fields)));
+
+  /// Manager: update any menu-item fields on the hub (same wire names).
+  Future<void> updateMenuItem(String id, Map<String, dynamic> fields) =>
+      _send(() => _http.patch(
+          Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),
+          headers: _headers(),
+          body: jsonEncode(fields)));
+
   Future<void> updateMenuAvailability(String id, bool available) async {
     await _send(() => _http.patch(
           Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),

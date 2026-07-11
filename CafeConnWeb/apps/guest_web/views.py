@@ -116,6 +116,44 @@ MENU_VISUALS = {
 }
 
 
+# The owner's 8 POS family colors (same values as the staff app's AppColors
+# family palette) — category chips and section headings carry them so the
+# guest menu reads like the rest of the brand.
+_FAMILY_COLORS = {
+    "caffetteria": "#E0823A",
+    "bevande": "#5BAEDC",
+    "liquori": "#3E9C63",
+    "vino": "#C0463B",
+    "gelati": "#3C7BCF",
+    "food": "#DFAF2B",
+    "dolci": "#8A6FC0",
+    "aperitivi": "#7CC488",
+}
+
+
+def _family_color(category):
+    c = (category or "").lower()
+
+    def has(*keys):
+        return any(k in c for k in keys)
+
+    if has("caffett", "coffee"):
+        return _FAMILY_COLORS["caffetteria"]
+    if has("gelat"):
+        return _FAMILY_COLORS["gelati"]
+    if has("dolc", "dessert"):
+        return _FAMILY_COLORS["dolci"]
+    if has("liquor", "grapp", "amari"):
+        return _FAMILY_COLORS["liquori"]
+    if has("vino", "wine"):
+        return _FAMILY_COLORS["vino"]
+    if has("aperitiv", "cocktail", "birra", "spritz"):
+        return _FAMILY_COLORS["aperitivi"]
+    if has("bibit", "bevand", "analcolic", "succ"):
+        return _FAMILY_COLORS["bevande"]
+    return _FAMILY_COLORS["food"]
+
+
 def menu_page(request, table_id=None, table_number=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
     menu_items = MenuItem.objects.order_by("category", "-is_available", "name")
@@ -189,6 +227,7 @@ def menu_page(request, table_id=None, table_number=None):
                     "name": display_category,
                     "name_en": cat_labels["en"],
                     "name_it": cat_labels["it"],
+                    "color": _family_color(display_category),
                     "items": [],
                 }
             )
@@ -201,16 +240,27 @@ def menu_page(request, table_id=None, table_number=None):
         )
     visible_items.sort(key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower()))
     sections.sort(key=lambda s: (_guest_category_rank(s["name"]), s["name_it"]))
-    featured_items = []
+    # Featured rail: owner-promoted items first (is_promoted — the GUEST
+    # popularity flag, deliberately separate from the staff 'popular' tag so
+    # the owner can push a product to guests without touching the waiter
+    # shelf), then the curated name list, then anything to reach 4+.
+    featured_items = [
+        item for item in visible_items if item.is_available and item.is_promoted
+    ]
+    seen = {item.pk for item in featured_items}
     for name in POPULAR_ITEM_NAMES:
         match = next(
-            (item for item in visible_items if item.is_available and item.name == name),
+            (
+                item
+                for item in visible_items
+                if item.is_available and item.name == name and item.pk not in seen
+            ),
             None,
         )
         if match is not None:
             featured_items.append(match)
+            seen.add(match.pk)
     if len(featured_items) < 4:
-        seen = {item.pk for item in featured_items}
         featured_items.extend(
             item
             for item in visible_items

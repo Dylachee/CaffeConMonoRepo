@@ -169,6 +169,20 @@ class L {
       'Nessun preferito. Tieni premuto un piatto per aggiungerlo qui.');
   static String get dishDetails => t('Details', 'Dettagli');
 
+  // ---- panel: menu management ----
+  static String get guestVisible =>
+      t('Visible to guests', 'Visibile agli ospiti');
+  static String get waiterShelf =>
+      t('Waiter Popular shelf', 'Popolari camerieri');
+  static String get promoGuests =>
+      t('Promote to guests', 'Promuovi agli ospiti');
+  static String get promoTag => t('PROMO', 'PROMO');
+  static String get savedToHub => t('Saved', 'Salvato');
+  static String get notSavedErr =>
+      t('Not saved — check connection', 'Non salvato — controlla la rete');
+  static String itemsCount(int n) =>
+      t(n == 1 ? '1 item' : '$n items', n == 1 ? '1 articolo' : '$n articoli');
+
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');
   static String get kitchenU => t('KITCHEN', 'CUCINA');
@@ -238,7 +252,6 @@ class L {
   static String get noTables => t('No tables', 'Nessun tavolo');
   static String get addTableFirst =>
       t('Add a table first', 'Aggiungi prima un tavolo');
-  static String itemsCount(int n) => t('$n items', '$n articoli');
   static String get clear => t('Clear', 'Svuota');
   static String get precheck => t('Precheck →', 'Preconto →');
   static String get newOrder => t('New order', 'Nuovo ordine');

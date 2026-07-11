@@ -106,7 +106,11 @@
   .menu-cat{background:#fffdfa;border:1px solid rgba(231,226,216,.9);border-radius:24px;padding:0;margin-top:16px;box-shadow:var(--shadow);overflow:hidden}
   .menu-cat:first-child{margin-top:0}
   .cat-head{display:flex;align-items:center;gap:10px;padding:18px 16px 14px;font-size:18px;font-weight:950;letter-spacing:-.3px;color:var(--ink);border-bottom:1px solid rgba(231,226,216,.72);background:linear-gradient(180deg,#fffdfa,#fbf6ed)}
-  .cat-head::before{content:"";width:9px;height:9px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 5px rgba(200,130,30,.12);flex:0 0 auto}
+  .cat-head::before{content:"";width:9px;height:9px;border-radius:999px;background:var(--cat,var(--accent));box-shadow:0 0 0 5px rgba(43,36,24,.07);flex:0 0 auto}
+  /* family dot on category chips — a pseudo-element so the i18n text swap
+     (el.textContent = …) can't wipe it */
+  .chip[data-cat]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--cat);margin-right:7px;vertical-align:1px}
+  .promo-star{color:#B98A3C;font-size:14px;font-weight:900;margin-right:2px}
   .cat-head::after{content:"";flex:1;height:1px;background:transparent}
   .cat-count{margin-left:auto;height:25px;min-width:25px;padding:0 8px;border-radius:999px;background:#f6efe4;color:var(--accent-deep);font-size:12px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
   .dish{background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
@@ -349,14 +353,14 @@
     <div class="chips" id="category-chips">
       <button class="chip active" type="button" data-category="all" data-i18n="all">All</button>
       {% for section in menu_sections %}
-        <button class="chip" type="button" data-category="{{ section.name }}" data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</button>
+        <button class="chip" type="button" data-category="{{ section.name }}" data-cat data-en="{{ section.name_en }}" data-it="{{ section.name_it }}" style="--cat:{{ section.color }}">{{ section.name_en }}</button>
       {% endfor %}
     </div>
     {% endif %}
     <div class="grid" id="menu-grid">
       {% for section in menu_sections %}
       <section class="menu-cat" data-cat-section data-category="{{ section.name }}">
-        <h3 class="cat-head"><span data-i18n-text data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</span><span class="cat-count">{{ section.items|length }}</span></h3>
+        <h3 class="cat-head" style="--cat:{{ section.color }}"><span data-i18n-text data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</span><span class="cat-count">{{ section.items|length }}</span></h3>
         {% for item in section.items %}
         <article class="dish text-only{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
           <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}" style="all:unset;display:block;cursor:pointer">
@@ -369,6 +373,7 @@
             {% endif %}
           </button>
           <div class="dish-bottom">
+            {% if item.is_promoted %}<span class="promo-star" aria-label="popular">★</span>{% endif %}
             <span class="price">{{ item.price_str }} €</span>
             {% if item.is_available %}
               <button class="add" type="button" data-add="{{ item.pk }}" aria-label="Add {{ item.name_en }}">+</button>

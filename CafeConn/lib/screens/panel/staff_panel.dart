@@ -794,11 +794,75 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
   }
 }
 
-class MenuManagementScreen extends StatelessWidget {
+class MenuManagementScreen extends StatefulWidget {
   const MenuManagementScreen({super.key});
+  @override
+  State<MenuManagementScreen> createState() => _MenuManagementScreenState();
+}
+
+class _MenuManagementScreenState extends State<MenuManagementScreen> {
+  String _search = '';
+  String _family = 'All';
+
+  List<MenuItem> _filtered(CafeState state) {
+    final q = _search.trim().toLowerCase();
+    return state.menu.where((m) {
+      final okFam = _family == 'All' || m.family == _family;
+      final okSearch = q.isEmpty ||
+          m.name.toLowerCase().contains(q) ||
+          m.nameIt.toLowerCase().contains(q) ||
+          m.category.toLowerCase().contains(q);
+      return okFam && okSearch;
+    }).toList()
+      ..sort((a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+  }
+
+  Widget _famBtn(String label, String value, Color color) {
+    final active = _family == value;
+    final onColor =
+        color.computeLuminance() > 0.45 ? AppColors.ink : Colors.white;
+    return GestureDetector(
+      onTap: () => setState(() => _family = value),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: active ? color : color.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(8),
+          border:
+              Border.all(color: active ? color : color.withValues(alpha: 0.5)),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: active ? onColor : AppColors.ink)),
+      ),
+    );
+  }
+
+  Widget _badge(String text, Color color) => Container(
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Text(text,
+            style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                color: color)),
+      );
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
+    final items = _filtered(state);
     return ListView(children: [
       Row(children: [
         Expanded(child: SectionTitle(L.items)),
@@ -808,40 +872,97 @@ class MenuManagementScreen extends StatelessWidget {
             icon: Icons.add,
             onPressed: () => _showMenuForm(context)),
       ]),
-      ...state.menu.map((item) => AppCard(
-            padding: const EdgeInsets.all(12),
-            onTap: () => _showMenuForm(context, item: item),
-            child: Row(
-              children: [
-                Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                        color: item.isBar ? AppTheme.bar : AppTheme.warning,
-                        shape: BoxShape.circle)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.displayName,
-                          style: T.h3.copyWith(
-                              fontWeight: FontWeight.w700, fontSize: 16)),
-                      Text(
-                          '${item.price.rub} · ${item.displayCategory} · ${item.isBar ? L.bar.toLowerCase() : L.kitchen.toLowerCase()}${item.tags.contains('client') ? ' · ${L.clientMenu}' : ''}',
-                          style: T.smallSemi.copyWith(color: AppTheme.ink2)),
-                    ],
-                  ),
+      AppCard(
+        padding: EdgeInsets.zero,
+        child: TextField(
+          onChanged: (v) => setState(() => _search = v),
+          decoration: InputDecoration(
+            hintText: L.searchItem,
+            prefixIcon: const Icon(Icons.search, color: AppTheme.ink3),
+            border: InputBorder.none,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      Wrap(spacing: 5, runSpacing: 5, children: [
+        _famBtn(L.all, 'All', AppColors.espresso),
+        for (final f in MenuFamilies.all)
+          _famBtn(f, f, AppColors.familyColor(f)),
+      ]),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(L.itemsCount(items.length),
+            style: T.label.copyWith(color: AppTheme.ink3)),
+      ),
+      ...items.map((item) {
+        final famColor = AppColors.familyColor(item.family);
+        return AppCard(
+          padding: const EdgeInsets.all(12),
+          onTap: () => _showMenuForm(context, item: item),
+          child: Row(
+            children: [
+              Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                      color: famColor, shape: BoxShape.circle)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: T.h3.copyWith(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
+                    const SizedBox(height: 3),
+                    Text(
+                        '${item.price.rub} · ${item.displayCategory} · ${item.isBar ? L.bar.toLowerCase() : L.kitchen.toLowerCase()}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: T.smallSemi.copyWith(color: AppTheme.ink2)),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      if (item.tags.contains('client'))
+                        _badge(L.clientMenu, AppTheme.bar),
+                      if (item.isPopular) _badge('★', AppColors.gold),
+                      if (item.promo) _badge(L.promoTag, AppTheme.success),
+                    ]),
+                  ],
                 ),
-                CupertinoSwitch(
-                    value: item.available,
-                    activeTrackColor: AppTheme.success,
-                    onChanged: (v) => state.toggleAvailability(item)),
-              ],
-            ),
-          )),
+              ),
+              CupertinoSwitch(
+                  value: item.available,
+                  activeTrackColor: AppTheme.success,
+                  onChanged: (v) => state.toggleAvailability(item)),
+            ],
+          ),
+        );
+      }),
     ]);
   }
+}
+
+Widget _menuFormSwitch({
+  required IconData icon,
+  required Color color,
+  required String label,
+  required bool value,
+  required ValueChanged<bool> onChanged,
+}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(children: [
+      Icon(icon, size: 18, color: color),
+      const SizedBox(width: 10),
+      Expanded(child: Text(label, style: T.bodySemi.copyWith(fontSize: 14))),
+      CupertinoSwitch(
+          value: value, activeTrackColor: color, onChanged: onChanged),
+    ]),
+  );
 }
 
 void _showMenuForm(BuildContext context, {MenuItem? item}) {
@@ -851,6 +972,12 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
   final category = TextEditingController(text: item?.category ?? 'Kitchen');
   final prep = TextEditingController(text: item?.prepTime.toString() ?? '10');
   var station = item == null ? 'kitchen' : (item.isBar ? 'bar' : 'kitchen');
+  // The three visibility/promotion switches. Guest-popular (is_promoted) and
+  // waiter-popular ('popular' tag) are DELIBERATELY separate fields: the owner
+  // can promote a product to guests without touching the waiter shelf.
+  var guestVisible = item?.tags.contains('client') ?? true;
+  var waiterPopular = item?.isPopular ?? false;
+  var guestPromo = item?.promo ?? false;
 
   showModalBottomSheet(
     context: context,
@@ -920,7 +1047,29 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                     ),
                   ),
                 ]),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                _menuFormSwitch(
+                  icon: Icons.storefront_outlined,
+                  color: AppTheme.bar,
+                  label: L.guestVisible,
+                  value: guestVisible,
+                  onChanged: (v) => setModalState(() => guestVisible = v),
+                ),
+                _menuFormSwitch(
+                  icon: Icons.star_rounded,
+                  color: AppColors.gold,
+                  label: L.waiterShelf,
+                  value: waiterPopular,
+                  onChanged: (v) => setModalState(() => waiterPopular = v),
+                ),
+                _menuFormSwitch(
+                  icon: Icons.campaign_outlined,
+                  color: AppTheme.success,
+                  label: L.promoGuests,
+                  value: guestPromo,
+                  onChanged: (v) => setModalState(() => guestPromo = v),
+                ),
+                const SizedBox(height: 20),
                 Row(children: [
                   if (item != null) ...[
                     Expanded(
@@ -937,37 +1086,65 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                   Expanded(
                     child: AppButton(
                       label: L.save,
-                      onPressed: () {
+                      onPressed: () async {
                         final state = context.read<CafeState>();
+                        final messenger = ScaffoldMessenger.of(context);
                         if (name.text.trim().isEmpty) return;
-                        if (item == null) {
-                          state.upsertMenuItem(MenuItem(
+
+                        final tags = List<String>.of(item?.tags ?? const []);
+                        void setTag(String tag, bool on) {
+                          if (on) {
+                            if (!tags.contains(tag)) tags.add(tag);
+                          } else {
+                            tags.remove(tag);
+                          }
+                        }
+
+                        setTag('client', guestVisible);
+                        setTag('popular', waiterPopular);
+
+                        final MenuItem target;
+                        final isNew = item == null;
+                        if (isNew) {
+                          target = MenuItem(
                             id: 'm${DateTime.now().millisecondsSinceEpoch}',
                             name: name.text.trim(),
                             description: desc.text.trim(),
                             price: double.tryParse(price.text) ?? 0.0,
                             category: category.text.trim().isEmpty
-                                ? 'Kitchen'
+                                ? 'Food'
                                 : category.text.trim(),
                             imageUrl: '',
-                            tags: [],
+                            tags: tags,
                             prepTime: int.tryParse(prep.text) ?? 10,
                             station: station,
-                          ));
+                            promo: guestPromo,
+                          );
                         } else {
-                          item.name = name.text.trim();
-                          item.description = desc.text.trim();
-                          item.price =
-                              double.tryParse(price.text) ?? item.price;
-                          item.category = category.text.trim().isEmpty
-                              ? item.category
+                          target = item;
+                          target.name = name.text.trim();
+                          target.description = desc.text.trim();
+                          target.price =
+                              double.tryParse(price.text) ?? target.price;
+                          target.category = category.text.trim().isEmpty
+                              ? target.category
                               : category.text.trim();
-                          item.prepTime =
-                              int.tryParse(prep.text) ?? item.prepTime;
-                          item.station = station;
-                          state.upsertMenuItem(item);
+                          target.prepTime =
+                              int.tryParse(prep.text) ?? target.prepTime;
+                          target.station = station;
+                          target.tags = tags;
+                          target.promo = guestPromo;
                         }
                         Navigator.pop(context);
+                        final err =
+                            await state.saveMenuItem(target, isNew: isNew);
+                        messenger.showSnackBar(SnackBar(
+                          content: Text(err == null
+                              ? L.savedToHub
+                              : '${L.notSavedErr}: $err'),
+                          backgroundColor:
+                              err == null ? AppTheme.success : AppTheme.danger,
+                        ));
                       },
                     ),
                   ),
