@@ -11,15 +11,97 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "station", "price", "is_client_visible", "is_available", "updated_at")
-    list_display_links = ("name",)
-    list_editable = ("price", "is_available")
-    list_filter = ("category", "station", "is_available")
-    search_fields = ("name", "description", "category")
+    """The owner's menu console: every field editable, category/price/flags
+    right in the list, bulk actions for the common tag flips so nobody has to
+    hand-edit the tags JSON."""
 
-    @admin.display(boolean=True, description="Client")
+    list_display = (
+        "name",
+        "category",
+        "station",
+        "price",
+        "is_client_visible",
+        "is_waiter_popular",
+        "is_promoted",
+        "is_available",
+        "updated_at",
+    )
+    list_display_links = ("name",)
+    list_editable = ("category", "station", "price", "is_promoted", "is_available")
+    list_filter = ("category", "station", "is_available", "is_promoted")
+    search_fields = ("name", "description", "category")
+    ordering = ("category", "name")
+    list_per_page = 200
+    actions = [
+        "make_available",
+        "make_unavailable",
+        "show_to_guests",
+        "hide_from_guests",
+        "pin_waiter_popular",
+        "unpin_waiter_popular",
+    ]
+    fieldsets = (
+        (None, {"fields": ("name", "description", "price", "category", "station")}),
+        ("Visibilità", {"fields": ("is_available", "is_promoted", "tags")}),
+        (
+            "Dettagli piatto",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    "composition",
+                    "allergens",
+                    "image_url",
+                    "preparation_minutes",
+                    "portion_weight",
+                    "calories",
+                ),
+            },
+        ),
+    )
+
+    @admin.display(boolean=True, description="Cliente")
     def is_client_visible(self, obj):
         return "client" in (obj.tags or [])
+
+    @admin.display(boolean=True, description="★ Camerieri")
+    def is_waiter_popular(self, obj):
+        return "popular" in (obj.tags or [])
+
+    def _set_tag(self, queryset, tag, on):
+        for item in queryset:
+            tags = list(item.tags or [])
+            if on and tag not in tags:
+                tags.append(tag)
+            elif not on and tag in tags:
+                tags.remove(tag)
+            else:
+                continue
+            item.tags = tags
+            item.save(update_fields=["tags", "updated_at"])
+
+    @admin.action(description="Rendi disponibili")
+    def make_available(self, request, queryset):
+        queryset.update(is_available=True)
+
+    @admin.action(description="Rendi NON disponibili")
+    def make_unavailable(self, request, queryset):
+        queryset.update(is_available=False)
+
+    @admin.action(description="Mostra agli ospiti (tag cliente)")
+    def show_to_guests(self, request, queryset):
+        self._set_tag(queryset, "client", True)
+
+    @admin.action(description="Nascondi agli ospiti")
+    def hide_from_guests(self, request, queryset):
+        self._set_tag(queryset, "client", False)
+
+    @admin.action(description="Aggiungi ai Popolari camerieri (★)")
+    def pin_waiter_popular(self, request, queryset):
+        self._set_tag(queryset, "popular", True)
+
+    @admin.action(description="Rimuovi dai Popolari camerieri")
+    def unpin_waiter_popular(self, request, queryset):
+        self._set_tag(queryset, "popular", False)
 
 
 @admin.register(Table)

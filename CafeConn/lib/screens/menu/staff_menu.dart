@@ -39,7 +39,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     final items = state.menu.where((m) {
-      final okCat = _category == 'All' || m.category == _category;
+      final okCat = _category == 'All' || m.family == _category;
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
@@ -48,6 +48,32 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
       return okCat && okSearch;
     });
     return state.sortedMenuItems(items);
+  }
+
+  Widget _familyBtn(String label, String value, Color color) {
+    final active = _category == value;
+    final onColor =
+        color.computeLuminance() > 0.45 ? AppColors.ink : Colors.white;
+    return GestureDetector(
+      onTap: () => setState(() => _category = value),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(
+          color: active ? color : color.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(8),
+          border:
+              Border.all(color: active ? color : color.withValues(alpha: 0.5)),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: active ? onColor : AppColors.ink)),
+      ),
+    );
   }
 
   void _pickTableAndOrder(BuildContext context) {
@@ -100,19 +126,13 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 38,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: state.categories
-                  .map((c) => CategoryChip(
-                        label: state.categoryDisplay(c),
-                        active: _category == c,
-                        onTap: () => setState(() => _category = c),
-                      ))
-                  .toList(),
-            ),
-          ),
+          // Same family bar as the composer/panel: every family visible at
+          // once, colors matching the cards below — no chip scrolling.
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            _familyBtn(L.all, 'All', AppColors.espresso),
+            for (final f in MenuFamilies.all)
+              _familyBtn(f, f, AppColors.familyColor(f)),
+          ]),
           const SizedBox(height: 4),
           Expanded(
             child: items.isEmpty
@@ -163,7 +183,7 @@ class _MenuShowcaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = item.isBar ? AppTheme.bar : AppTheme.warning;
+    final famColor = AppColors.familyColor(item.family);
     return Opacity(
       opacity: item.available ? 1 : 0.55,
       child: AppCard(
@@ -175,7 +195,7 @@ class _MenuShowcaseCard extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration:
-                    BoxDecoration(color: zoneColor, shape: BoxShape.circle)),
+                    BoxDecoration(color: famColor, shape: BoxShape.circle)),
             const SizedBox(width: 6),
             Expanded(
               child: Text(item.displayCategory.toUpperCase(),
@@ -183,6 +203,12 @@ class _MenuShowcaseCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: T.label.copyWith(color: AppTheme.ink3)),
             ),
+            if (item.isPopular)
+              const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child:
+                    Icon(Icons.star_rounded, size: 13, color: AppColors.gold),
+              ),
             if (item.tags.contains('client'))
               Container(
                 margin: const EdgeInsets.only(right: 4),
