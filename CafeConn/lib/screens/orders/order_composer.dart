@@ -16,7 +16,13 @@ import '../../widgets/app_widgets.dart';
 import '../menu/dish_details.dart';
 
 class WaiterOrderScreen extends StatefulWidget {
-  const WaiterOrderScreen({super.key});
+  const WaiterOrderScreen({super.key, this.pickTableLater = false});
+
+  /// Menu-tab mode: exactly the same composer, but with no table bound yet —
+  /// the table is chosen when the waiter proceeds to the precheck. Also hides
+  /// the back arrow (the screen lives inside the shell's Menu tab).
+  final bool pickTableLater;
+
   @override
   State<WaiterOrderScreen> createState() => _WaiterOrderScreenState();
 }
@@ -284,8 +290,10 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final table = state.currentTable ?? state.tables.firstOrNull;
-    if (table == null) {
+    final table = widget.pickTableLater
+        ? null
+        : (state.currentTable ?? state.tables.firstOrNull);
+    if (!widget.pickTableLater && table == null) {
       return AppScaffold(
           child: EmptyState(
               icon: Icons.table_restaurant_outlined,
@@ -304,15 +312,17 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 8),
             child: Row(children: [
-              IconButton(
-                onPressed: () => context.pop(),
-                icon: const Icon(Icons.arrow_back, color: AppTheme.ink),
-              ),
+              if (!widget.pickTableLater)
+                IconButton(
+                  onPressed: () => context.pop(),
+                  icon: const Icon(Icons.arrow_back, color: AppTheme.ink),
+                ),
               Expanded(
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(L.tableOrder(table.number),
+                      Text(
+                          table == null ? L.menu : L.tableOrder(table.number),
                           style: T.screenTitle.copyWith(fontSize: 24)),
                       Text(L.tapToAdd, style: T.subtitle),
                     ]),
@@ -431,7 +441,14 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               count: count,
               total: total,
               onClear: () => setState(() => _selQty.clear()),
-              onNext: () => _openPrecheck(context, table.id),
+              // Tableless (Menu tab) mode: THE one difference — pick the
+              // table now, then the exact same precheck flow.
+              onNext: table != null
+                  ? () => _openPrecheck(context, table.id)
+                  : () => showTablePicker(context, (t) {
+                        context.read<CafeState>().currentTable = t;
+                        _openPrecheck(context, t.id);
+                      }),
             ),
           ),
       ]),

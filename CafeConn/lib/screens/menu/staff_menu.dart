@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/theme/app_typography.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
@@ -65,30 +63,26 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
           border:
               Border.all(color: active ? color : color.withValues(alpha: 0.5)),
         ),
-        alignment: Alignment.center,
-        child: Text(label,
-            style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: active ? onColor : AppColors.ink)),
+        // NB: no `alignment:` here — Container with alignment expands to the
+        // full row width inside a Wrap; a min-size Row keeps it chip-sized.
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(label,
+              style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: active ? onColor : AppColors.ink)),
+        ]),
       ),
     );
   }
 
   void _pickTableAndOrder(BuildContext context) {
     final state = context.read<CafeState>();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _TablePickerSheet(
-        onPicked: (table) {
-          state.currentTable = table;
-          GoRouter.of(context).push('/waiter-menu');
-        },
-      ),
-    );
+    showTablePicker(context, (table) {
+      state.currentTable = table;
+      GoRouter.of(context).push('/waiter-menu');
+    });
   }
 
   @override
@@ -253,77 +247,3 @@ class _MenuShowcaseCard extends StatelessWidget {
 }
 
 /// «Which table?» — the entry into the unified order flow from the menu tab.
-class _TablePickerSheet extends StatelessWidget {
-  const _TablePickerSheet({required this.onPicked});
-  final ValueChanged<CafeTable> onPicked;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<CafeState>();
-    return Container(
-      constraints:
-          BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
-      decoration: const BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          width: 40,
-          height: 4,
-          margin: const EdgeInsets.only(bottom: 14),
-          decoration: BoxDecoration(
-              color: AppTheme.separator,
-              borderRadius: BorderRadius.circular(2)),
-        ),
-        Text(L.whichTable, style: T.h2.copyWith(fontSize: 20)),
-        const SizedBox(height: 16),
-        Flexible(
-          child: GridView.builder(
-            shrinkWrap: true,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.1),
-            itemCount: state.tables.length,
-            itemBuilder: (_, i) {
-              final t = state.tables[i];
-              final color = statusColor(t.status);
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  Navigator.pop(context);
-                  onPicked(t);
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppTheme.card,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: color.withValues(alpha: 0.5)),
-                  ),
-                  child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(t.number.toString().padLeft(2, '0'),
-                            style: AppTypography.mono(
-                                size: 18,
-                                weight: FontWeight.w800,
-                                color: AppColors.ink)),
-                        const SizedBox(height: 4),
-                        Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                                color: color, shape: BoxShape.circle)),
-                      ]),
-                ),
-              );
-            },
-          ),
-        ),
-      ]),
-    );
-  }
-}

@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../chat/chat.dart';
 import '../menu/staff_menu.dart';
+import '../orders/order_composer.dart';
 import '../orders/order_feed.dart';
 import '../panel/staff_panel.dart';
 import '../tables/table_grid.dart';
@@ -51,7 +52,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
           _ShellTab(L.tables, Icons.table_bar, const WaiterTableGridScreen(),
               badge: state.pendingApprovalOrders.length),
         _ShellTab(L.orders, Icons.assignment, const UnifiedOrderFeedScreen()),
-        _ShellTab(L.menu, Icons.restaurant_menu, const StaffMenuScreen()),
+        // Floor staff get the SAME order composer as inside a table — the only
+        // difference is the table is picked at the end. Stations (cook/bar)
+        // keep the read-only showcase/stop-list: they don't take orders.
+        _ShellTab(
+            L.menu,
+            Icons.restaurant_menu,
+            state.isStationRole
+                ? const StaffMenuScreen()
+                : const WaiterOrderScreen(pickTableLater: true)),
         _ShellTab(L.chats, Icons.chat_bubble, const StaffChatListScreen()),
         if (state.canSeePanel)
           _ShellTab(L.panel, Icons.analytics, const StaffPanelScreen()),

@@ -1014,3 +1014,89 @@ class _CenterToastState extends State<_CenterToast> {
     );
   }
 }
+
+/// «Which table?» — shared table picker used by the Menu tab's tableless
+/// order flow and the menu showcase. Pops itself, then calls [onPicked].
+void showTablePicker(BuildContext context, ValueChanged<CafeTable> onPicked) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => TablePickerSheet(onPicked: onPicked),
+  );
+}
+
+class TablePickerSheet extends StatelessWidget {
+  const TablePickerSheet({super.key, required this.onPicked});
+  final ValueChanged<CafeTable> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    return Container(
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 40,
+          height: 4,
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+              color: AppTheme.separator,
+              borderRadius: BorderRadius.circular(2)),
+        ),
+        Text(L.whichTable, style: T.h2.copyWith(fontSize: 20)),
+        const SizedBox(height: 16),
+        Flexible(
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.1),
+            itemCount: state.tables.length,
+            itemBuilder: (_, i) {
+              final t = state.tables[i];
+              final color = statusColor(t.status);
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  Navigator.pop(context);
+                  onPicked(t);
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.5)),
+                  ),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(t.number.toString().padLeft(2, '0'),
+                            style: AppTypography.mono(
+                                size: 18,
+                                weight: FontWeight.w800,
+                                color: AppColors.ink)),
+                        const SizedBox(height: 4),
+                        Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle)),
+                      ]),
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}

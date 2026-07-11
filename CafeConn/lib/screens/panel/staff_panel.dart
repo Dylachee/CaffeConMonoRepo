@@ -833,13 +833,16 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
           border:
               Border.all(color: active ? color : color.withValues(alpha: 0.5)),
         ),
-        alignment: Alignment.center,
-        child: Text(label,
-            style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: active ? onColor : AppColors.ink)),
+        // No `alignment:` — Container with alignment expands to full width
+        // inside a Wrap; a min-size Row keeps it chip-sized.
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(label,
+              style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: active ? onColor : AppColors.ink)),
+        ]),
       ),
     );
   }
