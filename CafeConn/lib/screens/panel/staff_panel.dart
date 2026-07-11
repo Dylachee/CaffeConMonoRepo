@@ -166,57 +166,77 @@ class _OverviewTabState extends State<_OverviewTab> {
               padding: EdgeInsets.only(bottom: 12),
               child: LinearProgressIndicator(minHeight: 2),
             ),
-          LayoutBuilder(builder: (context, constraints) {
-            final compact = constraints.maxWidth < 520;
-            return GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: compact ? 1 : 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: compact ? 2.45 : 1.28,
-              children: [
-                MetricCard(
-                    label: L.revenue,
-                    value: revenue.rub,
-                    delta: s?.revenueDeltaPct != null
-                        ? L.vsYesterday(s!.revenueDeltaPct!)
-                        : L.todayOrders(ordersToday),
-                    isPositive: (s?.revenueDeltaPct ?? 0) >= 0,
-                    color: AppTheme.success,
-                    detail: _MetricDetail(rows: [
-                      _MetricRow(L.orders, '$ordersToday'),
-                      _MetricRow(L.bestHour, '${bestHour.hour}:00'),
-                    ])),
-                MetricCard(
-                    label: L.avgCheck,
-                    value: avgCheck.rub,
-                    delta: s?.avgCheckDeltaPct != null
-                        ? L.deltaPct(s!.avgCheckDeltaPct!)
-                        : L.acrossTables(servedTables),
-                    isPositive: (s?.avgCheckDeltaPct ?? 0) >= 0,
-                    color: AppTheme.gold,
-                    detail: _MetricDetail(rows: [
-                      _MetricRow(L.tables, '$servedTables'),
-                      _MetricRow(L.avgPrepTime,
-                          L.minutesShort(s?.avgPrepMinutes ?? 0)),
-                    ]),
-                    index: 1),
-                MetricCard(
-                    label: L.tables,
-                    value: '$activeTables / $totalTables',
-                    delta: L.freeCount(freeTables),
-                    isPositive: true,
-                    color: AppTheme.tOccupied,
-                    detail: _OccupancyDetail(
-                        occupancy: occupancy,
-                        activeTables: activeTables,
-                        freeTables: freeTables),
-                    index: 2),
-                _fourthCard(s, activeOrders.length, localOldestMin, delayed),
-              ],
-            );
-          }),
+          // The day's number is the hero (impeccable product register: money
+          // leads, chrome recedes) — no more four identical metric cards.
+          AppCard(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(L.revenue,
+                    style: T.label.copyWith(
+                        color: AppTheme.ink2, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                if (s?.revenueDeltaPct != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: ((s!.revenueDeltaPct ?? 0) >= 0
+                              ? AppTheme.success
+                              : AppTheme.danger)
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(L.vsYesterday(s.revenueDeltaPct!),
+                        style: T.label.copyWith(
+                            color: (s.revenueDeltaPct ?? 0) >= 0
+                                ? AppTheme.success
+                                : AppTheme.danger,
+                            fontWeight: FontWeight.w800)),
+                  ),
+              ]),
+              const SizedBox(height: 6),
+              Text(revenue.rub,
+                  style: AppTypography.mono(
+                      size: 34, weight: FontWeight.w800, color: AppColors.ink)),
+              const SizedBox(height: 8),
+              Text(
+                  '$ordersToday ${L.orders.toLowerCase()} · '
+                  '${L.avgCheck.toLowerCase()} ${avgCheck.rub} · '
+                  '${L.bestHour.toLowerCase()} ${bestHour.hour}:00',
+                  style: T.smallSemi.copyWith(color: AppTheme.ink2)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: _StatCell(
+                label: L.tables,
+                value: '$activeTables/$totalTables',
+                sub: '${L.freeCount(freeTables)} · $servedTables ✓',
+                color: AppTheme.tOccupied,
+                progress: occupancy,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCell(
+                label: L.avgPrepTime,
+                value: L.minutesShort(s?.avgPrepMinutes ?? 0),
+                sub: '${L.inProgress}: ${activeOrders.length}',
+                color: AppTheme.warning,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _StatCell(
+                label: L.delayedLabel,
+                value: '$delayed',
+                sub: delayed == 0 ? L.onTime : L.oldestMin(localOldestMin),
+                color: delayed == 0 ? AppTheme.success : AppTheme.danger,
+              ),
+            ),
+          ]),
           const SizedBox(height: 20),
           SectionTitle(L.revenueByHour),
           AppCard(
@@ -243,7 +263,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                                       decoration: BoxDecoration(
                                           color: e.value == maxHour
                                               ? AppTheme.cta
-                                              : const Color(0xFFE4D7C2),
+                                              : AppColors.sunken,
                                           borderRadius:
                                               BorderRadius.circular(4)),
                                     ),
@@ -258,6 +278,52 @@ class _OverviewTabState extends State<_OverviewTab> {
                         .toList(),
                   ),
           ),
+          // What's actually selling today — top 5 by quantity, family-colored.
+          if (s != null && s.topItems.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            SectionTitle(L.topDishesToday),
+            AppCard(
+              child: Column(children: [
+                for (var i = 0; i < s.topItems.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                        bottom: i == s.topItems.length - 1 ? 0 : 12),
+                    child: Row(children: [
+                      Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                              color: AppColors.familyColor(MenuFamilies.of(
+                                  s.topItems[i].category,
+                                  isBar: false)),
+                              shape: BoxShape.circle)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(s.topItems[i].name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: T.bodySemi),
+                      ),
+                      Text('${s.topItems[i].qty}×',
+                          style: AppTypography.mono(
+                              size: 13,
+                              weight: FontWeight.w800,
+                              color: AppColors.ink55)),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 76,
+                        child: Text(s.topItems[i].revenue.rub,
+                            textAlign: TextAlign.right,
+                            style: AppTypography.mono(
+                                size: 13,
+                                weight: FontWeight.w800,
+                                color: AppColors.ink)),
+                      ),
+                    ]),
+                  ),
+              ]),
+            ),
+          ],
           if (s != null && s.byWaiter.isNotEmpty) ...[
             const SizedBox(height: 20),
             SectionTitle(L.byWaiter),
@@ -268,104 +334,55 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
-  /// Fourth metric card: with the hub aggregate it mirrors the design's
-  /// "Avg prep time" (real timing from the DB); on the local fallback it shows
-  /// the live "In progress" queue instead.
-  Widget _fourthCard(StatsDto? s, int inProgress, int oldestMin, int delayed) {
-    if (s != null) {
-      return MetricCard(
-          label: L.avgPrepTime,
-          value: L.minutesShort(s.avgPrepMinutes),
-          delta: delayed > 0 ? L.delayedCount(delayed) : L.onTime,
-          isPositive: delayed == 0,
-          color: AppTheme.warning,
-          detail: _MetricDetail(rows: [
-            _MetricRow(L.inProgress, '$inProgress'),
-            _MetricRow(
-                L.delayedCount(delayed), delayed == 0 ? L.onTime : '$delayed'),
-          ]),
-          index: 3);
-    }
-    return MetricCard(
-        label: L.inProgress,
-        value: '$inProgress',
-        delta: oldestMin > 0 ? L.oldestMin(oldestMin) : L.noQueue,
-        isPositive: oldestMin <= 20,
-        color: AppTheme.warning,
-        detail: _MetricDetail(rows: [
-          _MetricRow(L.oldestMin(oldestMin),
-              oldestMin > 0 ? L.minutesShort(oldestMin) : L.noQueue),
-          _MetricRow(L.delayedCount(delayed), '$delayed'),
-        ]),
-        index: 3);
-  }
 }
 
-class _MetricRow {
-  const _MetricRow(this.label, this.value);
+/// One compact supporting stat under the revenue hero: label, mono value,
+/// colored sub-line, optional occupancy bar.
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.label,
+    required this.value,
+    required this.sub,
+    required this.color,
+    this.progress,
+  });
   final String label;
   final String value;
-}
-
-class _MetricDetail extends StatelessWidget {
-  const _MetricDetail({required this.rows});
-  final List<_MetricRow> rows;
+  final String sub;
+  final Color color;
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: rows
-          .map((row) => Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: Row(children: [
-                  Expanded(
-                    child: Text(row.label,
-                        overflow: TextOverflow.ellipsis,
-                        style: T.small.copyWith(color: AppTheme.ink3)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(row.value,
-                      style: T.smallSemi.copyWith(
-                          color: AppTheme.ink, fontWeight: FontWeight.w800)),
-                ]),
-              ))
-          .toList(),
-    );
-  }
-}
-
-class _OccupancyDetail extends StatelessWidget {
-  const _OccupancyDetail({
-    required this.occupancy,
-    required this.activeTables,
-    required this.freeTables,
-  });
-  final double occupancy;
-  final int activeTables;
-  final int freeTables;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: LinearProgressIndicator(
-            minHeight: 8,
-            value: occupancy.clamp(0.0, 1.0),
-            backgroundColor: AppTheme.surfaceSunken,
-            valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.tOccupied),
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: T.label.copyWith(color: AppTheme.ink3)),
+        const SizedBox(height: 6),
+        Text(value,
+            style: AppTypography.mono(
+                size: 20, weight: FontWeight.w800, color: AppColors.ink)),
+        if (progress != null) ...[
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: progress!.clamp(0.0, 1.0),
+              backgroundColor: AppTheme.surfaceSunken,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        _MetricDetail(rows: [
-          _MetricRow(L.active, '$activeTables'),
-          _MetricRow(L.free, '$freeTables'),
-        ]),
-      ],
+        ],
+        const SizedBox(height: 5),
+        Text(sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: T.label.copyWith(color: color, fontWeight: FontWeight.w800)),
+      ]),
     );
   }
 }
@@ -756,7 +773,10 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final staff = state.staffAccounts;
+    // Owner (admin) accounts are super-users managed from /system-admin/ —
+    // they don't belong on the floor team list and managers can't edit them.
+    final staff =
+        state.staffAccounts.where((e) => e.role != 'admin').toList();
     return RefreshIndicator(
       onRefresh: () => context.read<CafeState>().refreshStaffAccounts(),
       child: ListView(
@@ -1338,6 +1358,7 @@ class StaffMemberRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      onTap: () => _showStaffEditSheet(context, employee),
       child: Row(children: [
         Avatar(label: employee.name),
         const SizedBox(width: 12),
@@ -1350,6 +1371,8 @@ class StaffMemberRow extends StatelessWidget {
               '${roleLabel(roleFromWire(employee.role))} · @${employee.username}',
               style: T.priceSmall.copyWith(color: AppTheme.ink2)),
         ])),
+        const Icon(Icons.edit_outlined, size: 16, color: AppTheme.ink3),
+        const SizedBox(width: 8),
         Container(
             width: 8,
             height: 8,
@@ -1358,6 +1381,100 @@ class StaffMemberRow extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Manager taps a member: edit name and role, see the username, change the
+/// login (username / new password). Owner accounts never reach this sheet —
+/// they're filtered out of the list and the hub refuses them anyway.
+void _showStaffEditSheet(BuildContext context, EmployeeDto employee) {
+  final name = TextEditingController(text: employee.name);
+  final username = TextEditingController(text: employee.username);
+  final password = TextEditingController();
+  var role = roleFromWire(employee.role);
+  var busy = false;
+  final roleOptions =
+      UserRole.values.where((r) => r != UserRole.admin).toList();
+  if (!roleOptions.contains(role)) role = UserRole.waiter;
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => StatefulBuilder(
+      builder: (context, set) => Container(
+        decoration: const BoxDecoration(
+            color: AppTheme.surfaceAlt,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(L.editStaffMember, style: T.h2),
+            const SizedBox(height: 20),
+            AppTextField(controller: name, label: L.name),
+            const SizedBox(height: 12),
+            DropdownButtonFormField(
+                initialValue: role,
+                items: roleOptions
+                    .map((r) =>
+                        DropdownMenuItem(value: r, child: Text(roleLabel(r))))
+                    .toList(),
+                onChanged: (v) => set(() => role = v!)),
+            const SizedBox(height: 12),
+            AppTextField(
+                controller: username,
+                label: L.username,
+                keyboardType: TextInputType.visiblePassword),
+            const SizedBox(height: 12),
+            AppTextField(
+                controller: password,
+                label: L.password,
+                hint: L.newPasswordHint,
+                obscure: true),
+            const SizedBox(height: 20),
+            AppButton(
+                label: L.save,
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final state = context.read<CafeState>();
+                        final messenger = ScaffoldMessenger.of(context);
+                        final nm = name.text.trim();
+                        final un = username.text.trim();
+                        final pw = password.text;
+                        if (nm.isEmpty || un.isEmpty) {
+                          messenger.showSnackBar(
+                              SnackBar(content: Text(L.fillAllFields)));
+                          return;
+                        }
+                        set(() => busy = true);
+                        // Profile (name/role) and login (username/password)
+                        // travel on separate endpoints.
+                        var err = await state.updateStaffProfile(employee.id,
+                            name: nm, role: roleToWire(role));
+                        if (err == null &&
+                            (un != employee.username || pw.isNotEmpty)) {
+                          err = await state.setStaffCredentials(employee.id,
+                              username: un != employee.username ? un : null,
+                              password: pw.isNotEmpty ? pw : null);
+                        }
+                        if (!context.mounted) return;
+                        if (err != null) {
+                          set(() => busy = false);
+                          messenger
+                              .showSnackBar(SnackBar(content: Text(err)));
+                          return;
+                        }
+                        messenger.showSnackBar(SnackBar(
+                            content: Text(L.savedToHub),
+                            backgroundColor: AppTheme.success));
+                        Navigator.pop(context);
+                      }),
+          ]),
+        ),
+      ),
+    ),
+  );
 }
 
 void _showStaffForm(BuildContext context) {

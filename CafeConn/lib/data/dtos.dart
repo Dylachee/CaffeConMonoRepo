@@ -532,6 +532,7 @@ class StatsDto {
   final int delayedOrders;
   final List<double> revenueByHour; // length 24, indexed by hour of day
   final List<WaiterStatDto> byWaiter; // today's sales attributed per waiter
+  final List<TopItemDto> topItems; // today's best sellers, by quantity
 
   const StatsDto({
     required this.revenueToday,
@@ -547,6 +548,7 @@ class StatsDto {
     required this.delayedOrders,
     required this.revenueByHour,
     required this.byWaiter,
+    this.topItems = const [],
   });
 
   factory StatsDto.fromJson(Map<String, dynamic> j) {
@@ -572,8 +574,32 @@ class StatsDto {
       delayedOrders: _asInt(j['delayedOrders']),
       revenueByHour: hours,
       byWaiter: waiters,
+      topItems: ((j['topItems'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => TopItemDto.fromJson(e.cast<String, dynamic>()))
+          .toList(),
     );
   }
+}
+
+/// One of today's best-selling positions (manager overview).
+class TopItemDto {
+  final String name;
+  final String category;
+  final int qty;
+  final double revenue;
+  const TopItemDto({
+    required this.name,
+    required this.category,
+    required this.qty,
+    required this.revenue,
+  });
+  factory TopItemDto.fromJson(Map<String, dynamic> j) => TopItemDto(
+        name: _asString(j['name']),
+        category: _asString(j['category'], ''),
+        qty: _asInt(j['qty']),
+        revenue: _asDouble(j['revenue']),
+      );
 }
 
 /// One waiter's attributed sales for today (manager analytics breakdown).

@@ -17,6 +17,7 @@ from django.db.models.functions import ExtractHour
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -400,6 +401,23 @@ class StaffStatsView(APIView):
                 return None
             return round((today_value - prev_value) / prev_value * 100)
 
+        # What's actually selling today — top positions by quantity, so the
+        # manager sees at a glance what to push and what to prep.
+        top_items = list(
+            OrderItem.objects.filter(order__created_at__date=today)
+            .exclude(order__status=Order.Status.CANCELLED)
+            .values("menu_item__name", "menu_item__category")
+            .annotate(
+                qty=Sum("quantity"),
+                item_revenue=Sum(
+                    ExpressionWrapper(
+                        F("unit_price") * F("quantity"), output_field=self._MONEY
+                    )
+                ),
+            )
+            .order_by("-qty")[:5]
+        )
+
         return Response(
             {
                 "revenueToday": round(revenue_today, 2),
@@ -416,6 +434,15 @@ class StaffStatsView(APIView):
                 "delayedOrders": delayed,
                 "revenueByHour": by_hour,
                 "byWaiter": by_waiter,
+                "topItems": [
+                    {
+                        "name": r["menu_item__name"],
+                        "category": r["menu_item__category"] or "",
+                        "qty": int(r["qty"] or 0),
+                        "revenue": float(r["item_revenue"] or 0),
+                    }
+                    for r in top_items
+                ],
                 "generatedAt": now.isoformat(),
             }
         )
@@ -863,6 +890,60 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         super().initial(request, *args, **kwargs)
         if not caps_for_user(request.user)["manage"]:
             raise PermissionDenied("Only a manager or admin can manage staff.")
+
+    def _guard_owner_target(self, employee):
+        """Owner (admin/superuser) accounts are managed from /system-admin/
+        only — a manager must not be able to edit, demote or lock out the
+        owner from the app."""
+        if employee.role == Employee.Role.ADMIN or employee.user.is_superuser:
+            raise PermissionDenied(
+                "Owner accounts are managed from the system admin."
+            )
+
+    def perform_update(self, serializer):
+        self._guard_owner_target(self.get_object())
+        # A manager may re-role staff between floor/station/manager, but
+        # cannot mint admins from the app.
+        if serializer.validated_data.get("role") == Employee.Role.ADMIN:
+            raise PermissionDenied("The admin role is granted from the system admin.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._guard_owner_target(instance)
+        instance.delete()
+
+    @decorators.action(detail=True, methods=["post"], url_path="credentials")
+    def credentials(self, request, pk=None):
+        """Manager/admin: change a staff member's login — username and/or a
+        new password. Blank fields are left unchanged. Changing the password
+        also revokes the member's auth token so stale sessions drop."""
+        employee = self.get_object()
+        self._guard_owner_target(employee)
+        user = employee.user
+        username = (request.data.get("username") or "").strip()
+        password = request.data.get("password") or ""
+
+        if username and username.lower() != user.username.lower():
+            if (
+                User.objects.filter(username__iexact=username)
+                .exclude(pk=user.pk)
+                .exists()
+            ):
+                return Response(
+                    {"detail": "That username is already taken."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.username = username
+        if password:
+            if len(password) < 6:
+                return Response(
+                    {"detail": "Password must be at least 6 characters."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.set_password(password)
+            Token.objects.filter(user=user).delete()
+        user.save()
+        return Response(EmployeeSerializer(employee).data)
 
 
 class StaffAccountCreateView(APIView):

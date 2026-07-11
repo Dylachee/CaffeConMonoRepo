@@ -1722,6 +1722,43 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Manager: update a member's profile (name / role). Returns null on
+  /// success, an error message otherwise.
+  Future<String?> updateStaffProfile(String id,
+      {String? name, String? role}) async {
+    try {
+      final updated = await _remoteApi.updateEmployee(id, {
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (role != null && role.isNotEmpty) 'role': role,
+      });
+      final i = staffAccounts.indexWhere((e) => e.id == id);
+      if (i >= 0) staffAccounts[i] = updated;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('updateStaffProfile failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  /// Manager: change a member's login (username and/or a new password).
+  Future<String?> setStaffCredentials(String id,
+      {String? username, String? password}) async {
+    try {
+      await _remoteApi.setEmployeeCredentials(id,
+          username: username, password: password);
+      await refreshStaffAccounts();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('setStaffCredentials failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
   /// Fetch an order's audit trail (who did what). Empty offline / on error.
   Future<List<OrderEventDto>> orderActivity(String orderId) async {
     if (!backendConnected) return const [];

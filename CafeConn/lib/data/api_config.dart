@@ -60,6 +60,8 @@ class ApiConfig {
   static Uri staffAccounts() => Uri.parse('$apiRoot/staff/accounts/');
   static Uri employees() => Uri.parse('$apiRoot/employees/');
   static Uri employee(String id) => Uri.parse('$apiRoot/employees/$id/');
+  static Uri employeeCredentials(String id) =>
+      Uri.parse('$apiRoot/employees/$id/credentials/');
   static Uri orders() => Uri.parse('$apiRoot/orders/');
   static Uri order(String id) => Uri.parse('$apiRoot/orders/$id/');
   static Uri confirmOrder(String id) =>

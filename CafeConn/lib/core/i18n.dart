@@ -183,6 +183,15 @@ class L {
   static String itemsCount(int n) =>
       t(n == 1 ? '1 item' : '$n items', n == 1 ? '1 articolo' : '$n articoli');
 
+  // ---- panel: team management ----
+  static String get editStaffMember => t('Edit member', 'Modifica membro');
+  static String get newPasswordHint => t(
+      'New password (leave empty to keep the current one)',
+      'Nuova password (vuota = invariata)');
+  static String get topDishesToday =>
+      t("Today's top sellers", 'Più venduti oggi');
+  static String get delayedLabel => t('Delayed', 'In ritardo');
+
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');
   static String get kitchenU => t('KITCHEN', 'CUCINA');

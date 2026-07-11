@@ -169,6 +169,21 @@ class CafeApiClient {
     return EmployeeDto.fromJson(_decodeMap(res));
   }
 
+  /// Manager: change a staff member's login (username and/or new password;
+  /// blank/absent fields stay unchanged).
+  Future<void> setEmployeeCredentials(String id,
+          {String? username, String? password}) =>
+      _send(() => _http.post(
+            ApiConfig.employeeCredentials(id),
+            headers: _headers(),
+            body: jsonEncode({
+              if (username != null && username.isNotEmpty)
+                'username': username,
+              if (password != null && password.isNotEmpty)
+                'password': password,
+            }),
+          ));
+
   /// Patch an order's status (e.g. 'ready', 'completed').
   Future<OrderDto> updateOrderStatus(String orderId, String status) async {
     final res = await _send(() => _http.patch(
