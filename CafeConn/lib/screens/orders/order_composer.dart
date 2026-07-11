@@ -37,13 +37,30 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
   // Persistent focus node so adding an item (which rebuilds the list) doesn't
   // drop keyboard focus; _add re-asserts it after the rebuild.
   final _searchFocus = FocusNode();
+  // On the web build the browser blurs the input (closing the keyboard) BEFORE
+  // the tile's tap handler runs, so checking hasFocus inside _add is already
+  // too late. Track when focus was lost: a loss within this window means the
+  // keyboard was up for this very tap and must be brought back.
+  DateTime? _searchFocusLostAt;
+  bool get _keyboardWasUp =>
+      _searchFocus.hasFocus ||
+      (_searchFocusLostAt != null &&
+          DateTime.now().difference(_searchFocusLostAt!) <
+              const Duration(milliseconds: 700));
   String _search = '';
   String _category = 'All';
-  static const double _tileExtent = 82;
+  // R-Keeper-style 2-column grid: twice the items per screen versus the old
+  // full-width rows, so composing an order needs far less scrolling.
+  static const int _gridCols = 2;
+  static const double _gridTileHeight = 92;
+  static const double _gridSpacing = 8;
 
   @override
   void initState() {
     super.initState();
+    _searchFocus.addListener(() {
+      if (!_searchFocus.hasFocus) _searchFocusLostAt = DateTime.now();
+    });
     // Pull a fresh menu so a since-deleted item (e.g. after a menu cleanup)
     // can't be sent with a stale id and get rejected by the hub.
     WidgetsBinding.instance
@@ -95,8 +112,10 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     });
     if (index < 0 || !_scrollCtrl.hasClients) return;
     HapticFeedback.selectionClick();
+    final row = index ~/ _gridCols;
     _scrollCtrl.animateTo(
-      index * _tileExtent,
+      (row * (_gridTileHeight + _gridSpacing))
+          .clamp(0.0, _scrollCtrl.position.maxScrollExtent),
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
@@ -110,19 +129,27 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       return;
     }
     HapticFeedback.selectionClick();
-    final hadFocus = _searchFocus.hasFocus;
+    final keepKeyboard = _keyboardWasUp;
     setState(() => _selQty[item] = (_selQty[item] ?? 0) + 1);
-    // Keep the keyboard up while the waiter adds several items in a row.
-    if (hadFocus) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_searchFocus.hasFocus) _searchFocus.requestFocus();
-      });
-    }
+    if (keepKeyboard) _refocusSearch();
+  }
+
+  /// Keep the keyboard up while the waiter adds several items in a row.
+  /// A full unfocus→refocus cycle (not a bare requestFocus): on web the node
+  /// can still report focus while the browser already closed the keyboard, and
+  /// only re-attaching the text-input connection reliably brings it back.
+  void _refocusSearch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _searchFocus.unfocus();
+      _searchFocus.requestFocus();
+    });
   }
 
   void _removeOne(MenuItem item) {
     final current = _selQty[item] ?? 0;
     HapticFeedback.selectionClick();
+    final keepKeyboard = _keyboardWasUp;
     setState(() {
       if (current <= 1) {
         _selQty.remove(item);
@@ -130,6 +157,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         _selQty[item] = current - 1;
       }
     });
+    if (keepKeyboard) _refocusSearch();
   }
 
   void _openPrecheck(BuildContext context, String tableId) {
@@ -231,6 +259,11 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                   .map((c) => CategoryChip(
                         label: state.categoryDisplay(c),
                         active: _category == c,
+                        // Same color family as the tiles below, so a waiter
+                        // binds chip ↔ items at a glance.
+                        dotColor: c == 'All'
+                            ? null
+                            : AppColors.categoryColor(c, isBar: false),
                         onTap: () => setState(() => _category = c),
                       ))
                   .toList(),
@@ -245,13 +278,19 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                     sub: L.changeSearch)
                 : Stack(
                     children: [
-                      ListView.builder(
+                      GridView.builder(
                         controller: _scrollCtrl,
                         padding: EdgeInsets.only(
                             top: 2,
                             right: letters.length > 1 ? 38 : 0,
                             bottom: count > 0 ? 130 : 40),
-                        itemExtent: _tileExtent,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: _gridCols,
+                          mainAxisExtent: _gridTileHeight,
+                          crossAxisSpacing: _gridSpacing,
+                          mainAxisSpacing: _gridSpacing,
+                        ),
                         itemCount: items.length,
                         itemBuilder: (ctx, i) {
                           final item = items[i];
@@ -336,10 +375,10 @@ class _OrderAlphabetRail extends StatelessWidget {
 
 // ===== ORDER COMPOSER WIDGETS (photo-less, built for speed) =====
 
-/// One menu position in the order composer. The whole row is a tap target
-/// («+1»); a stepper appears once the dish is selected; long-press (or the
-/// info icon) opens dish details. No photos — a colored zone bar tells
-/// kitchen from bar at a glance.
+/// One menu position in the order composer — a compact grid tile, R-Keeper
+/// style. The whole tile is a tap target («+1»); the top edge and background
+/// tint carry the category color family (coffee/soft/alcohol/food/sweet) so a
+/// waiter reads the type before the name. Long-press opens dish details.
 class _OrderComposerTile extends StatelessWidget {
   const _OrderComposerTile({
     required this.item,
@@ -356,7 +395,8 @@ class _OrderComposerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = item.isBar ? AppTheme.bar : AppTheme.warning;
+    final catColor =
+        AppColors.categoryColor(item.category, isBar: item.isBar);
     final selected = qty > 0;
 
     return GestureDetector(
@@ -364,107 +404,104 @@ class _OrderComposerTile extends StatelessWidget {
       onLongPress: onInfo,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.fromLTRB(0, 0, 10, 0),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color:
-              selected ? AppTheme.cta.withValues(alpha: 0.04) : AppTheme.card,
+          color: selected
+              ? AppTheme.cta.withValues(alpha: 0.05)
+              : catColor.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-              color: selected ? AppTheme.cta : const Color(0xFFF0EBE1),
+              color: selected ? AppTheme.cta : AppTheme.separator,
               width: selected ? 1.4 : 1),
           boxShadow: const [AppTheme.shadowCard],
         ),
         child: Opacity(
           opacity: item.available ? 1 : 0.5,
-          child: Row(children: [
-            // Zone bar: orange = kitchen, blue = bar.
-            Container(
-              width: 4,
-              height: 62,
-              decoration: BoxDecoration(
-                color: zoneColor,
-                borderRadius:
-                    const BorderRadius.horizontal(left: Radius.circular(13)),
-              ),
-            ),
-            const SizedBox(width: 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Category color bar along the top edge (same idiom as the table
+            // cards' color tag).
+            Container(height: 4, color: catColor),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.displayName,
-                          maxLines: 1,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(item.displayName,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: T.bodySemi.copyWith(fontSize: 15)),
-                      const SizedBox(height: 3),
-                      Row(children: [
-                        Text(
-                            '${L.minutes(item.prepTime)} · ${item.displayCategory}',
-                            style: T.label.copyWith(color: AppTheme.ink3)),
-                        if (!item.available) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                                color: AppTheme.danger,
-                                borderRadius: BorderRadius.circular(5)),
-                            child: Text(L.stop,
-                                style: T.label.copyWith(
-                                    color: Colors.white, fontSize: 8.5)),
+                          style: T.bodySemi.copyWith(
+                              fontSize: 13.5, height: 1.18)),
+                    ),
+                    Row(children: [
+                      if (!item.available)
+                        Container(
+                          margin: const EdgeInsets.only(right: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                              color: AppTheme.danger,
+                              borderRadius: BorderRadius.circular(5)),
+                          child: Text(L.stop,
+                              style: T.label.copyWith(
+                                  color: Colors.white, fontSize: 8.5)),
+                        ),
+                      Expanded(
+                        child: Text(item.price.rub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: T.priceSmall.copyWith(
+                                fontSize: 13,
+                                color:
+                                    selected ? AppTheme.cta : AppTheme.ink2)),
+                      ),
+                      if (!selected)
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                              color: AppTheme.cta, shape: BoxShape.circle),
+                          child: const Icon(Icons.add,
+                              color: Colors.white, size: 16),
+                        )
+                      else
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          GestureDetector(
+                            onTap: onRemove,
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              width: 26,
+                              height: 26,
+                              decoration: const BoxDecoration(
+                                  color: AppTheme.surfaceSunken,
+                                  shape: BoxShape.circle),
+                              child: const Icon(Icons.remove, size: 15),
+                            ),
                           ),
-                        ],
-                      ]),
+                          SizedBox(
+                            width: 24,
+                            child: Center(
+                                child: Text('$qty',
+                                    style: AppTypography.mono(
+                                        size: 14,
+                                        weight: FontWeight.w800,
+                                        color: AppColors.ink))),
+                          ),
+                          Container(
+                            width: 26,
+                            height: 26,
+                            decoration: const BoxDecoration(
+                                color: AppTheme.cta, shape: BoxShape.circle),
+                            child: const Icon(Icons.add,
+                                color: Colors.white, size: 15),
+                          ),
+                        ]),
                     ]),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(item.price.rub,
-                style: T.priceSmall.copyWith(
-                    fontSize: 14,
-                    color: selected ? AppTheme.cta : AppTheme.ink)),
-            const SizedBox(width: 10),
-            if (!selected)
-              Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
-                    color: AppTheme.cta, shape: BoxShape.circle),
-                child: const Icon(Icons.add, color: Colors.white, size: 18),
-              )
-            else
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                GestureDetector(
-                  onTap: onRemove,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                        color: AppTheme.surfaceSunken, shape: BoxShape.circle),
-                    child: const Icon(Icons.remove, size: 18),
-                  ),
-                ),
-                SizedBox(
-                  width: 30,
-                  child: Center(
-                      child: Text('$qty',
-                          style: AppTypography.mono(
-                              size: 16,
-                              weight: FontWeight.w800,
-                              color: AppColors.ink))),
-                ),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: const BoxDecoration(
-                      color: AppTheme.cta, shape: BoxShape.circle),
-                  child: const Icon(Icons.add, color: Colors.white, size: 18),
-                ),
-              ]),
           ]),
         ),
       ),

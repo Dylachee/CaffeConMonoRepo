@@ -41,4 +41,52 @@ class AppColors {
 
   // Occupied table blue
   static const occupied = Color(0xFF5B86B0);
+
+  // ── Menu category families (order composer) ──────────────────────────────
+  // R-Keeper-style quick recognition: the waiter reads the color before the
+  // name. Five families cover the whole menu; resolver below maps a category
+  // to its family.
+  static const catCoffee = Color(0xFF8C6239); // roast brown — caffetteria/hot
+  static const catSoft = bar; //                 blue — bibite/analcolici
+  static const catAlcohol = bill; //             violet — birra/vino/cocktails
+  static const catFood = kitchen; //             orange — cucina/panini/colazione
+  static const catSweet = Color(0xFFC95D8F); //  berry — dolci/gelati
+
+  /// Category → color family. Matches the Italian category names the menu
+  /// uses (plus English fallbacks); unknown categories fall back by station.
+  static Color categoryColor(String category, {required bool isBar}) {
+    final c = category.toLowerCase();
+    bool has(List<String> keys) => keys.any(c.contains);
+    if (has(const ['dolc', 'gelat', 'dessert', 'sweet'])) return catSweet;
+    if (has(const ['caff', 'tè', 'tisan', 'coffee', 'tea'])) return catCoffee;
+    if (has(const [
+      'birra',
+      'vino',
+      'aperitiv',
+      'cocktail',
+      'liquor',
+      'grapp',
+      'amari',
+      'beer',
+      'wine',
+      'spritz',
+    ])) {
+      return catAlcohol;
+    }
+    if (has(const ['bibit', 'bevand', 'analcolic', 'succ', 'soft', 'drink'])) {
+      return catSoft;
+    }
+    if (has(const [
+      'panin',
+      'cucina',
+      'spuntin',
+      'stuzzic',
+      'colazion',
+      'food',
+      'menu del',
+    ])) {
+      return catFood;
+    }
+    return isBar ? catSoft : catFood;
+  }
 }
