@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from rest_framework.authtoken.models import Token
 
-from apps.core.menu_catalog import catalog_items
-from apps.core.models import Employee, MenuItem, Table
+from apps.core.models import Employee, MenuFamily, MenuItem, Table
+from apps.core.sissi_menu import catalog_items, menu_families
 
 User = get_user_model()
 
@@ -63,9 +63,12 @@ class Command(BaseCommand):
     def _create_menu(self):
         active_keys = set()
         created = updated = 0
+        families = self._sync_menu_families()
         for item in catalog_items():
+            family_key = item.pop("family_key")
+            item["family"] = families[family_key]
             self._enrich_menu_item(item)
-            active_keys.add((item["name"], item["category"]))
+            active_keys.add((item["station"], item["category"], item["name"]))
             was_created = self._upsert_menu_item(item)
             created += int(was_created)
             updated += int(not was_created)
@@ -77,7 +80,9 @@ class Command(BaseCommand):
 
     def _upsert_menu_item(self, data):
         matches = list(
-            MenuItem.objects.filter(name=data["name"], category=data["category"]).order_by("id")
+            MenuItem.objects.filter(
+                station=data["station"], category=data["category"], name=data["name"]
+            ).order_by("id")
         )
         active = [item for item in matches if "archived" not in (item.tags or [])]
         if not active:
@@ -95,7 +100,7 @@ class Command(BaseCommand):
     def _archive_missing_menu_items(self, active_keys):
         removed = 0
         for item in list(MenuItem.objects.all()):
-            if (item.name, item.category) in active_keys:
+            if (item.station, item.category, item.name) in active_keys:
                 continue
             if "archived" in (item.tags or []):
                 continue
@@ -229,3 +234,17 @@ class Command(BaseCommand):
             except MenuItem.DoesNotExist:
                 continue
             self._archive_or_delete(item)
+
+    def _sync_menu_families(self):
+        families = {}
+        for family in menu_families():
+            obj, _ = MenuFamily.objects.update_or_create(
+                key=family["key"],
+                defaults={
+                    "name": family["name"],
+                    "color": family["color"],
+                    "sort_order": family["sort_order"],
+                },
+            )
+            families[family["key"]] = obj
+        return families

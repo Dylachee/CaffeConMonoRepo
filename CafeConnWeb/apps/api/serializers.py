@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Max
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from apps.core.menu_i18n import menu_item_labels
@@ -17,16 +19,48 @@ User = get_user_model()
 
 
 class MenuFamilySerializer(serializers.ModelSerializer):
+    item_count = serializers.SerializerMethodField()
+
     class Meta:
         model = MenuFamily
-        fields = ["id", "key", "name", "color", "sort_order", "updated_at"]
+        fields = [
+            "id",
+            "key",
+            "name",
+            "color",
+            "sort_order",
+            "item_count",
+            "updated_at",
+        ]
         read_only_fields = ["key", "updated_at"]
+
+    def create(self, validated_data):
+        name = validated_data.get("name", "").strip()
+        validated_data["name"] = name
+        if "sort_order" not in validated_data:
+            validated_data["sort_order"] = (
+                MenuFamily.objects.aggregate(max_order=Max("sort_order"))["max_order"]
+                or 0
+            ) + 1
+        base = slugify(name)[:40] or "category"
+        key = base
+        suffix = 2
+        while MenuFamily.objects.filter(key=key).exists():
+            tail = f"-{suffix}"
+            key = f"{base[:40 - len(tail)]}{tail}"
+            suffix += 1
+        return MenuFamily.objects.create(key=key, **validated_data)
+
+    def get_item_count(self, obj):
+        item_count = getattr(obj, "item_count", None)
+        return item_count if item_count is not None else obj.items.count()
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
     family = serializers.PrimaryKeyRelatedField(
         queryset=MenuFamily.objects.all(), allow_null=True, required=False
     )
+    category = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = MenuItem
@@ -51,6 +85,20 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def validate(self, attrs):
+        family = attrs.get("family")
+        if family is not None:
+            attrs["category"] = family.name
+        elif not self.instance and not attrs.get("category", "").strip():
+            raise serializers.ValidationError({"category": "Choose a category."})
+        return attrs
+
+    def update(self, instance, validated_data):
+        family = validated_data.get("family", serializers.empty)
+        if family not in (serializers.empty, None):
+            validated_data["category"] = family.name
+        return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

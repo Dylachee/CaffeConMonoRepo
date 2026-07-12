@@ -397,6 +397,29 @@ textarea:focus {
   grid-template-columns: 14px 1fr auto;
 }
 
+.menu-family-row {
+  display: grid;
+  grid-template-columns: 22px minmax(120px, 1fr) 120px 40px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.menu-family-delete {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 8px;
+}
+
+.family-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid rgba(23, 18, 15, 0.14);
+}
+
 .zone-dot {
   width: 10px;
   height: 10px;
@@ -421,6 +444,11 @@ textarea:focus {
   color: var(--muted);
   font-weight: 800;
   cursor: pointer;
+}
+
+.availability-pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .availability-pill.is-on {

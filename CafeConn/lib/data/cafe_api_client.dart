@@ -88,8 +88,8 @@ class CafeApiClient {
   /// One table's history for a day (default: newest day with orders), plus the
   /// list of days that have orders so the UI can page day-by-day.
   Future<TableHistoryDto> tableHistory(String tableId, {String? date}) async {
-    final res = await _send(() =>
-        _http.get(ApiConfig.tableHistory(tableId, date: date), headers: _headers()));
+    final res = await _send(() => _http
+        .get(ApiConfig.tableHistory(tableId, date: date), headers: _headers()));
     return TableHistoryDto.fromJson(_decodeMap(res));
   }
 
@@ -177,10 +177,8 @@ class CafeApiClient {
             ApiConfig.employeeCredentials(id),
             headers: _headers(),
             body: jsonEncode({
-              if (username != null && username.isNotEmpty)
-                'username': username,
-              if (password != null && password.isNotEmpty)
-                'password': password,
+              if (username != null && username.isNotEmpty) 'username': username,
+              if (password != null && password.isNotEmpty) 'password': password,
             }),
           ));
 
@@ -247,6 +245,15 @@ class CafeApiClient {
       _send(() => _http.patch(ApiConfig.menuFamily(id),
           headers: _headers(), body: jsonEncode(fields)));
 
+  /// Manager: create a POS/menu category.
+  Future<void> createMenuFamily(Map<String, dynamic> fields) =>
+      _send(() => _http.post(ApiConfig.menuFamilies(),
+          headers: _headers(), body: jsonEncode(fields)));
+
+  /// Manager: delete an unused POS/menu category.
+  Future<void> deleteMenuFamily(String id) =>
+      _send(() => _http.delete(ApiConfig.menuFamily(id), headers: _headers()));
+
   /// Manager: create a menu item on the hub. `fields` uses the DRF wire names
   /// (name, description, price, category, station, tags, is_available,
   /// is_promoted, preparation_minutes).
@@ -256,10 +263,8 @@ class CafeApiClient {
 
   /// Manager: update any menu-item fields on the hub (same wire names).
   Future<void> updateMenuItem(String id, Map<String, dynamic> fields) =>
-      _send(() => _http.patch(
-          Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),
-          headers: _headers(),
-          body: jsonEncode(fields)));
+      _send(() => _http.patch(Uri.parse('${ApiConfig.apiRoot}/menu-items/$id/'),
+          headers: _headers(), body: jsonEncode(fields)));
 
   Future<void> updateMenuAvailability(String id, bool available) async {
     await _send(() => _http.patch(

@@ -67,13 +67,12 @@ class ApiConfig {
   static Uri confirmOrder(String id) =>
       Uri.parse('$apiRoot/orders/$id/confirm/');
   static Uri rejectOrder(String id) => Uri.parse('$apiRoot/orders/$id/reject/');
-  static Uri orderEvents(String id) =>
-      Uri.parse('$apiRoot/orders/$id/events/');
+  static Uri orderEvents(String id) => Uri.parse('$apiRoot/orders/$id/events/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
   static Uri toggleMenuItemPopular(String id) =>
       Uri.parse('$apiRoot/menu-items/$id/toggle-popular/');
-  static Uri menuFamily(String id) =>
-      Uri.parse('$apiRoot/menu-families/$id/');
+  static Uri menuFamilies() => Uri.parse('$apiRoot/menu-families/');
+  static Uri menuFamily(String id) => Uri.parse('$apiRoot/menu-families/$id/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
   static Uri orderItem(String itemId) =>
       Uri.parse('$apiRoot/order-items/$itemId/');

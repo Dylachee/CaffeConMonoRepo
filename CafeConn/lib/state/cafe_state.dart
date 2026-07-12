@@ -918,11 +918,43 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
           f.color = CafeFamily.parseHex(color, f.color);
         }
       }
+      await refreshMenu();
       notifyListeners();
       return null;
     } on ApiException catch (e) {
       backendError = e.message;
       debugPrint('updateMenuFamily failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  Future<String?> createMenuFamily(
+      {required String name, String? color}) async {
+    try {
+      await _remoteApi.createMenuFamily({
+        'name': name,
+        if (color != null && color.isNotEmpty) 'color': color,
+      });
+      await refreshMenu();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('createMenuFamily failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  Future<String?> deleteMenuFamily(String id) async {
+    try {
+      await _remoteApi.deleteMenuFamily(id);
+      families.removeWhere((f) => f.id == id);
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('deleteMenuFamily failed: $e');
       notifyListeners();
       return e.message;
     }
@@ -1012,6 +1044,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       'description': item.description,
       'price': item.price.toStringAsFixed(2),
       'category': item.category,
+      'family': item.familyId.isEmpty ? null : item.familyId,
       'station': item.station.isEmpty ? 'kitchen' : item.station,
       'tags': item.tags,
       'is_available': item.available,
@@ -1756,11 +1789,21 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     if (!backendConnected) return;
     try {
       final data = await _remoteApi.bootstrap();
-      if (data.menu.isEmpty) return;
-      menu
+      if (data.menu.isEmpty && data.families.isEmpty) return;
+      if (data.menu.isNotEmpty) {
+        menu
+          ..clear()
+          ..addAll(data.menu.map(_menuFromDto));
+        _saveMenu();
+      }
+      families
         ..clear()
-        ..addAll(data.menu.map(_menuFromDto));
-      _saveMenu();
+        ..addAll(data.families.map((f) => CafeFamily(
+              id: f.id,
+              key: f.key,
+              name: f.name,
+              color: CafeFamily.parseHex(f.color, AppColors.famFood),
+            )));
       final liveIds = menu.map((m) => m.id).toSet();
       var pruned = false;
       for (final lines in tableChecks.values) {

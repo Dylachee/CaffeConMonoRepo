@@ -16,7 +16,7 @@ from django.db.models import (
 from django.db.models.functions import ExtractHour
 from django.utils import timezone
 from rest_framework import decorators, permissions, status, viewsets
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.response import Response
@@ -550,7 +550,7 @@ class MenuFamilyViewSet(viewsets.ModelViewSet):
     them (the app colors everything with them); renaming/recoloring is a
     manager/admin action, same as the rest of the panel."""
 
-    queryset = MenuFamily.objects.all()
+    queryset = MenuFamily.objects.annotate(item_count=Count("items"))
     serializer_class = MenuFamilySerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -564,10 +564,15 @@ class MenuFamilyViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         self._require_manage()
-        serializer.save()
+        family = serializer.save()
+        MenuItem.objects.filter(family=family).update(category=family.name)
 
     def perform_destroy(self, instance):
         self._require_manage()
+        if instance.items.exists():
+            raise ValidationError(
+                "Reassign or delete menu items before deleting this category."
+            )
         instance.delete()
 
 

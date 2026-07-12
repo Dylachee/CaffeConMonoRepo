@@ -160,8 +160,7 @@ class L {
 
   // ---- composer: popular shelf ----
   static String get popular => t('Popular', 'Popolari');
-  static String get pinPopular =>
-      t('Add to Popular', 'Aggiungi ai Popolari');
+  static String get pinPopular => t('Add to Popular', 'Aggiungi ai Popolari');
   static String get unpinPopular =>
       t('Remove from Popular', 'Rimuovi dai Popolari');
   static String get popularEmpty => t(
@@ -194,8 +193,12 @@ class L {
   static String get familiesTitle =>
       t('Categories & colors', 'Categorie e colori');
   static String get familiesSub => t(
-      'Tap a category to rename it or pick its color — every device follows.',
-      'Tocca una categoria per rinominarla o cambiarne il colore — vale su tutti i dispositivi.');
+      'Add, remove, rename, or recolor categories — every device follows.',
+      'Aggiungi, elimina, rinomina o cambia colore alle categorie — vale su tutti i dispositivi.');
+  static String get addCategory => t('Add category', 'Aggiungi categoria');
+  static String get deleteCategory => t('Delete category', 'Elimina categoria');
+  static String get noCategories =>
+      t('No categories yet.', 'Ancora nessuna categoria.');
 
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');

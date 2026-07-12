@@ -178,8 +178,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                 const Spacer(),
                 if (s?.revenueDeltaPct != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: ((s!.revenueDeltaPct ?? 0) >= 0
                               ? AppTheme.success
@@ -332,7 +332,6 @@ class _OverviewTabState extends State<_OverviewTab> {
       ),
     );
   }
-
 }
 
 /// One compact supporting stat under the revenue hero: label, mono value,
@@ -774,8 +773,7 @@ class _TeamManagementScreenState extends State<TeamManagementScreen> {
     final state = context.watch<CafeState>();
     // Owner (admin) accounts are super-users managed from /system-admin/ —
     // they don't belong on the floor team list and managers can't edit them.
-    final staff =
-        state.staffAccounts.where((e) => e.role != 'admin').toList();
+    final staff = state.staffAccounts.where((e) => e.role != 'admin').toList();
     return RefreshIndicator(
       onRefresh: () => context.read<CafeState>().refreshStaffAccounts(),
       child: ListView(
@@ -937,8 +935,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               Container(
                   width: 10,
                   height: 10,
-                  decoration: BoxDecoration(
-                      color: famColor, shape: BoxShape.circle)),
+                  decoration:
+                      BoxDecoration(color: famColor, shape: BoxShape.circle)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -996,15 +994,25 @@ void _showFamilyEditor(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(L.familiesTitle, style: T.h2),
+            Row(children: [
+              Expanded(child: Text(L.familiesTitle, style: T.h2)),
+              IconButton(
+                onPressed: state.backendConnected
+                    ? () => _createFamily(context)
+                    : null,
+                tooltip: L.addCategory,
+                icon:
+                    const Icon(Icons.add_circle_outline, color: AppTheme.ink2),
+              ),
+            ]),
             const SizedBox(height: 4),
-            Text(L.familiesSub,
-                style: T.small.copyWith(color: AppTheme.ink2)),
+            Text(L.familiesSub, style: T.small.copyWith(color: AppTheme.ink2)),
             const SizedBox(height: 14),
             if (state.families.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(L.connectToManage,
+                child: Text(
+                    state.backendConnected ? L.noCategories : L.connectToManage,
                     style: T.body.copyWith(color: AppTheme.ink2)),
               )
             else
@@ -1039,13 +1047,109 @@ void _showFamilyEditor(BuildContext context) {
   );
 }
 
+void _createFamily(BuildContext context) {
+  final state = context.read<CafeState>();
+  final name = TextEditingController();
+  var selected = _familyPalette[state.families.length % _familyPalette.length];
+  var busy = false;
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => StatefulBuilder(
+      builder: (context, set) => Container(
+        decoration: const BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(L.addCategory, style: T.h2),
+            const SizedBox(height: 16),
+            AppTextField(controller: name, label: L.name),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final hex in _familyPalette)
+                  GestureDetector(
+                    onTap: () => set(() => selected = hex),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: CafeFamily.parseHex(hex, AppColors.free),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: selected == hex
+                                ? AppColors.ink
+                                : AppTheme.separator,
+                            width: selected == hex ? 2.5 : 1),
+                      ),
+                      child: selected == hex
+                          ? const Icon(Icons.check,
+                              size: 16, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            AppButton(
+              label: L.addCategory,
+              icon: Icons.add,
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final nm = name.text.trim();
+                      if (nm.isEmpty) return;
+                      set(() => busy = true);
+                      final err = await context
+                          .read<CafeState>()
+                          .createMenuFamily(name: nm, color: selected);
+                      if (!context.mounted) return;
+                      if (err != null) {
+                        set(() => busy = false);
+                        messenger.showSnackBar(SnackBar(content: Text(err)));
+                        return;
+                      }
+                      messenger.showSnackBar(SnackBar(
+                          content: Text(L.savedToHub),
+                          backgroundColor: AppTheme.success));
+                      Navigator.pop(context);
+                    },
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 // Curated swatches: the 8 defaults plus 8 extras, all readable on the cream
 // surface. The owner picks; hex lands in the DB and every surface follows.
 const _familyPalette = [
-  '#E0823A', '#5BAEDC', '#3E9C63', '#C0463B',
-  '#3C7BCF', '#DFAF2B', '#8A6FC0', '#7CC488',
-  '#B98A3C', '#D9564A', '#5B86B0', '#C95D8F',
-  '#8C6239', '#2E8B8B', '#6B7F3A', '#4A4238',
+  '#E0823A',
+  '#5BAEDC',
+  '#3E9C63',
+  '#C0463B',
+  '#3C7BCF',
+  '#DFAF2B',
+  '#8A6FC0',
+  '#7CC488',
+  '#B98A3C',
+  '#D9564A',
+  '#5B86B0',
+  '#C95D8F',
+  '#8C6239',
+  '#2E8B8B',
+  '#6B7F3A',
+  '#4A4238',
 ];
 
 String _hexOf(Color c) =>
@@ -1102,31 +1206,64 @@ void _editFamily(BuildContext context, CafeFamily fam) {
               ],
             ),
             const SizedBox(height: 20),
-            AppButton(
-              label: L.save,
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final state = context.read<CafeState>();
-                      final messenger = ScaffoldMessenger.of(context);
-                      final nm = name.text.trim();
-                      if (nm.isEmpty) return;
-                      set(() => busy = true);
-                      final err = await state.updateMenuFamily(fam.id,
-                          name: nm, color: selected);
-                      if (!context.mounted) return;
-                      if (err != null) {
-                        set(() => busy = false);
-                        messenger
-                            .showSnackBar(SnackBar(content: Text(err)));
-                        return;
-                      }
-                      messenger.showSnackBar(SnackBar(
-                          content: Text(L.savedToHub),
-                          backgroundColor: AppTheme.success));
-                      Navigator.pop(context);
-                    },
-            ),
+            Row(children: [
+              Expanded(
+                child: AppButton(
+                  label: L.deleteCategory,
+                  kind: ButtonKind.ghost,
+                  icon: Icons.delete_outline,
+                  color: AppTheme.danger.withValues(alpha: 0.08),
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          set(() => busy = true);
+                          final err = await context
+                              .read<CafeState>()
+                              .deleteMenuFamily(fam.id);
+                          if (!context.mounted) return;
+                          if (err != null) {
+                            set(() => busy = false);
+                            messenger
+                                .showSnackBar(SnackBar(content: Text(err)));
+                            return;
+                          }
+                          messenger.showSnackBar(SnackBar(
+                              content: Text(L.savedToHub),
+                              backgroundColor: AppTheme.success));
+                          Navigator.pop(context);
+                        },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppButton(
+                  label: L.save,
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final state = context.read<CafeState>();
+                          final messenger = ScaffoldMessenger.of(context);
+                          final nm = name.text.trim();
+                          if (nm.isEmpty) return;
+                          set(() => busy = true);
+                          final err = await state.updateMenuFamily(fam.id,
+                              name: nm, color: selected);
+                          if (!context.mounted) return;
+                          if (err != null) {
+                            set(() => busy = false);
+                            messenger
+                                .showSnackBar(SnackBar(content: Text(err)));
+                            return;
+                          }
+                          messenger.showSnackBar(SnackBar(
+                              content: Text(L.savedToHub),
+                              backgroundColor: AppTheme.success));
+                          Navigator.pop(context);
+                        },
+                ),
+              ),
+            ]),
           ],
         ),
       ),
@@ -1154,10 +1291,21 @@ Widget _menuFormSwitch({
 }
 
 void _showMenuForm(BuildContext context, {MenuItem? item}) {
+  final state = context.read<CafeState>();
+  final families = List<CafeFamily>.of(state.families);
+  var selectedFamilyId = item?.familyId ?? '';
+  if (selectedFamilyId.isEmpty && item != null) {
+    selectedFamilyId = state.familyFor(item)?.id ?? '';
+  }
+  if (selectedFamilyId.isEmpty && item == null && families.isNotEmpty) {
+    selectedFamilyId = families.first.id;
+  }
   final name = TextEditingController(text: item?.name ?? '');
   final desc = TextEditingController(text: item?.description ?? '');
   final price = TextEditingController(text: item?.price.toString() ?? '');
-  final category = TextEditingController(text: item?.category ?? 'Kitchen');
+  final category = TextEditingController(
+      text: item?.category ??
+          (families.isNotEmpty ? families.first.name : 'Kitchen'));
   final prep = TextEditingController(text: item?.prepTime.toString() ?? '10');
   var station = item == null ? 'kitchen' : (item.isBar ? 'bar' : 'kitchen');
   // The three visibility/promotion switches. Guest-popular (is_promoted) and
@@ -1211,7 +1359,44 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                   ],
                 ),
                 const SizedBox(height: 12),
-                AppTextField(controller: category, label: L.category),
+                if (families.isNotEmpty) ...[
+                  Text(L.category, style: T.label),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: families.any((f) => f.id == selectedFamilyId)
+                        ? selectedFamilyId
+                        : null,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: AppTheme.surfaceAlt,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                    ),
+                    items: [
+                      for (final f in families)
+                        DropdownMenuItem(
+                          value: f.id,
+                          child: Row(children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                  color: f.color, shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(child: Text(f.name)),
+                          ]),
+                        ),
+                    ],
+                    onChanged: (value) => setModalState(
+                        () => selectedFamilyId = value ?? selectedFamilyId),
+                  ),
+                ] else
+                  AppTextField(controller: category, label: L.category),
                 const SizedBox(height: 16),
                 // Where the position is prepared — this is what routes the
                 // order to the kitchen or bar screen.
@@ -1291,6 +1476,18 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                         setTag('client', guestVisible);
                         setTag('popular', waiterPopular);
 
+                        CafeFamily? selectedFamily;
+                        for (final f in families) {
+                          if (f.id == selectedFamilyId) {
+                            selectedFamily = f;
+                            break;
+                          }
+                        }
+                        final categoryName = selectedFamily?.name ??
+                            (category.text.trim().isEmpty
+                                ? (item?.category ?? 'Food')
+                                : category.text.trim());
+
                         final MenuItem target;
                         final isNew = item == null;
                         if (isNew) {
@@ -1299,14 +1496,13 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                             name: name.text.trim(),
                             description: desc.text.trim(),
                             price: double.tryParse(price.text) ?? 0.0,
-                            category: category.text.trim().isEmpty
-                                ? 'Food'
-                                : category.text.trim(),
+                            category: categoryName,
                             imageUrl: '',
                             tags: tags,
                             prepTime: int.tryParse(prep.text) ?? 10,
                             station: station,
                             promo: guestPromo,
+                            familyId: selectedFamily?.id ?? '',
                           );
                         } else {
                           target = item;
@@ -1314,14 +1510,14 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                           target.description = desc.text.trim();
                           target.price =
                               double.tryParse(price.text) ?? target.price;
-                          target.category = category.text.trim().isEmpty
-                              ? target.category
-                              : category.text.trim();
+                          target.category = categoryName;
+                          target.categoryIt = '';
                           target.prepTime =
                               int.tryParse(prep.text) ?? target.prepTime;
                           target.station = station;
                           target.tags = tags;
                           target.promo = guestPromo;
+                          target.familyId = selectedFamily?.id ?? '';
                         }
                         Navigator.pop(context);
                         final err =
@@ -1626,8 +1822,7 @@ void _showStaffEditSheet(BuildContext context, EmployeeDto employee) {
                         if (!context.mounted) return;
                         if (err != null) {
                           set(() => busy = false);
-                          messenger
-                              .showSnackBar(SnackBar(content: Text(err)));
+                          messenger.showSnackBar(SnackBar(content: Text(err)));
                           return;
                         }
                         messenger.showSnackBar(SnackBar(
