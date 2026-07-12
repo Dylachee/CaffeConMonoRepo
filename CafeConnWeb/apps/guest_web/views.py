@@ -13,7 +13,6 @@ from apps.api.events import broadcast_attention_event, broadcast_order_event, br
 from apps.core.menu_i18n import category_labels, menu_item_labels
 from apps.core.menu_visibility import (
     guest_visible_menu_items,
-    menu_has_client_items,
     menu_item_guest_visible,
 )
 from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table
@@ -57,27 +56,23 @@ POPULAR_ITEM_NAMES = [
 ]
 
 GUEST_CATEGORY_ORDER = [
-    "Menu del giorno",
     "Caffetteria",
-    "Colazione",
     "Bevande",
-    "Bibite",
     "Analcolici",
-    "Aperitivi",
-    "Cocktails",
-    "Premium Cocktails",
     "Birra",
     "Vino",
-    "Vino al calice e bottiglie",
-    "Food",
-    "Cucina",
-    "Panini",
-    "Spuntino Salato",
-    "Da stuzzicare",
+    "Cocktail & Aperitivi",
+    "Liquori/Grappe/Amari",
+    "Pasticceria",
     "Dolci",
     "Gelati",
-    "Grappe e liquori",
-    "Liquori",
+    "Panini",
+    "Piadine",
+    "Tortel",
+    "Secondi",
+    "Uova/colazione salata",
+    "Toast",
+    "Fritti/stuzzichini",
 ]
 
 
@@ -93,26 +88,22 @@ ORDER_STATUS_LABELS = {
 
 MENU_VISUALS = {
     "analcolici": ("drink", "🥤"),
-    "aperitivi": ("drink", "🍹"),
     "bevande": ("drink", "🥤"),
-    "bibite": ("drink", "🥤"),
     "birra": ("drink", "🍺"),
     "caffetteria": ("coffee", "☕"),
-    "cocktails": ("drink", "🍸"),
-    "colazione": ("breakfast", "🥐"),
-    "cucina": ("hot", "🍽"),
-    "da stuzzicare": ("hot", "🍟"),
+    "cocktail & aperitivi": ("drink", "🍸"),
     "dolci": ("dessert", "🍰"),
+    "fritti/stuzzichini": ("hot", "🍟"),
     "gelati": ("dessert", "🍨"),
-    "food": ("hot", "🍽"),
-    "grappe e liquori": ("drink", "🥃"),
-    "liquori": ("drink", "🥃"),
-    "menu del giorno": ("hot", "🍽"),
+    "liquori/grappe/amari": ("drink", "🥃"),
     "panini": ("hot", "🍔"),
-    "premium cocktails": ("drink", "🍸"),
-    "spuntino salato": ("hot", "🍽"),
+    "pasticceria": ("breakfast", "🥐"),
+    "piadine": ("hot", "🫓"),
+    "secondi": ("hot", "🍽"),
+    "toast": ("hot", "🥪"),
+    "tortel": ("hot", "🍽"),
+    "uova/colazione salata": ("breakfast", "🍳"),
     "vino": ("drink", "🍷"),
-    "vino al calice e bottiglie": ("drink", "🍷"),
 }
 
 
@@ -121,12 +112,21 @@ MENU_VISUALS = {
 _CATEGORY_COLORS = {
     "caffetteria": "#E0823A",
     "bevande": "#5BAEDC",
-    "liquori": "#3E9C63",
+    "analcolici": "#3E9C63",
+    "birra": "#DFAF2B",
     "vino": "#C0463B",
+    "cocktail": "#7CC488",
+    "liquori": "#8A6FC0",
+    "pasticceria": "#B88746",
+    "dolci": "#C95F8A",
     "gelati": "#3C7BCF",
-    "food": "#DFAF2B",
-    "dolci": "#8A6FC0",
-    "aperitivi": "#7CC488",
+    "panini": "#DFAF2B",
+    "piadine": "#C9A227",
+    "tortel": "#B97832",
+    "secondi": "#A94D3E",
+    "uova": "#6F8F42",
+    "toast": "#9A7A45",
+    "fritti": "#B66A2D",
 }
 
 
@@ -138,19 +138,37 @@ def _category_color(category):
 
     if has("caffett", "coffee"):
         return _CATEGORY_COLORS["caffetteria"]
+    if has("analcolic"):
+        return _CATEGORY_COLORS["analcolici"]
+    if has("birra"):
+        return _CATEGORY_COLORS["birra"]
     if has("gelat"):
         return _CATEGORY_COLORS["gelati"]
     if has("dolc", "dessert"):
         return _CATEGORY_COLORS["dolci"]
+    if has("pasticc", "colazione"):
+        return _CATEGORY_COLORS["pasticceria"]
     if has("liquor", "grapp", "amari"):
         return _CATEGORY_COLORS["liquori"]
     if has("vino", "wine"):
         return _CATEGORY_COLORS["vino"]
-    if has("aperitiv", "cocktail", "birra", "spritz"):
-        return _CATEGORY_COLORS["aperitivi"]
+    if has("aperitiv", "cocktail", "spritz"):
+        return _CATEGORY_COLORS["cocktail"]
     if has("bibit", "bevand", "analcolic", "succ"):
         return _CATEGORY_COLORS["bevande"]
-    return _CATEGORY_COLORS["food"]
+    if has("piadine"):
+        return _CATEGORY_COLORS["piadine"]
+    if has("tortel"):
+        return _CATEGORY_COLORS["tortel"]
+    if has("secondi"):
+        return _CATEGORY_COLORS["secondi"]
+    if has("uova"):
+        return _CATEGORY_COLORS["uova"]
+    if has("toast"):
+        return _CATEGORY_COLORS["toast"]
+    if has("fritti", "stuzzichini"):
+        return _CATEGORY_COLORS["fritti"]
+    return _CATEGORY_COLORS["panini"]
 
 
 def menu_page(request, table_id=None, table_number=None):
@@ -180,7 +198,7 @@ def menu_page(request, table_id=None, table_number=None):
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
         raw_category = item.category.name
-        display_category = "Menu del giorno" if _menu_item_is_daily(item) else raw_category
+        display_category = raw_category
         item.menu_category = display_category
         item.visual_key, item.visual_icon = _menu_visual(display_category)
         labels = menu_item_labels(item)
@@ -352,11 +370,10 @@ def create_guest_order(request):
             messages.error(request, "Table not found. Please scan the QR code again.")
             return _redirect_menu(None)
 
-        has_client_menu = menu_has_client_items(MenuItem.objects.only("tags", "is_available"))
         menu_items = [
             item
             for item in MenuItem.objects.filter(pk__in=selected_ids).select_related("category")
-            if menu_item_guest_visible(item, has_client_menu=has_client_menu)
+            if menu_item_guest_visible(item)
         ]
         order_items = []
         for item in menu_items:
@@ -503,10 +520,6 @@ def _redirect_menu(table_id):
 
 def _menu_visual(category):
     return MENU_VISUALS.get((category or "").strip().lower(), ("default", "🍽"))
-
-
-def _menu_item_is_daily(item):
-    return item.category.name == "Menu del giorno" or "daily" in (item.tags or [])
 
 
 def _guest_category_rank(category):

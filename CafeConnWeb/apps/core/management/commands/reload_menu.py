@@ -91,7 +91,9 @@ class Command(BaseCommand):
 
     def _sync_menu_categories(self):
         categories = {}
+        active_keys = set()
         for category in menu_categories():
+            active_keys.add(category["key"])
             obj, _ = MenuCategory.objects.update_or_create(
                 key=category["key"],
                 defaults={
@@ -101,6 +103,7 @@ class Command(BaseCommand):
                 },
             )
             categories[category["key"]] = obj
+        MenuCategory.objects.exclude(key__in=active_keys).filter(items__isnull=True).delete()
         return categories
 
     def _upsert_menu_item(self, data):

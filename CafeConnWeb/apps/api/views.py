@@ -11,6 +11,7 @@ from django.db.models import (
     ExpressionWrapper,
     F,
     Prefetch,
+    Q,
     Sum,
 )
 from django.db.models.functions import ExtractHour
@@ -42,7 +43,6 @@ from apps.api.serializers import (
 )
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.menu_visibility import (
-    menu_has_client_items,
     menu_item_archived,
     menu_item_guest_visible,
 )
@@ -553,7 +553,9 @@ class MenuCategoryViewSet(viewsets.ModelViewSet):
     """The owner's menu categories (name + color + order). Any staff can read
     them; renaming/recoloring is a manager/admin action."""
 
-    queryset = MenuCategory.objects.annotate(item_count=Count("items"))
+    queryset = MenuCategory.objects.annotate(
+        item_count=Count("items", filter=Q(items__is_available=True))
+    )
     serializer_class = MenuCategorySerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -586,22 +588,12 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description", "category__name"]
     ordering_fields = ["name", "category__name", "price", "updated_at"]
 
-    def _public_menu_has_client_items(self):
-        if not hasattr(self, "_has_public_client_menu"):
-            self._has_public_client_menu = menu_has_client_items(
-                MenuItem.objects.only("tags", "is_available")
-            )
-        return self._has_public_client_menu
-
     def _visible_to_request(self, item):
         if menu_item_archived(item):
             return False
         if self.request.user and self.request.user.is_authenticated:
             return True
-        return menu_item_guest_visible(
-            item,
-            has_client_menu=self._public_menu_has_client_items(),
-        )
+        return menu_item_guest_visible(item)
 
     def list(self, request, *args, **kwargs):
         queryset = [

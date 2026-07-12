@@ -89,6 +89,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final items = _filtered(state);
+    final visibleCategories = state.menuCategoriesWithItems();
 
     return AppScaffold(
       bottomNav: null,
@@ -124,8 +125,8 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
           // once, colors matching the cards below — no chip scrolling.
           Wrap(spacing: 6, runSpacing: 6, children: [
             _categoryBtn(L.all, 'All', AppColors.espresso),
-            if (state.menuCategories.isNotEmpty)
-              for (final category in state.menuCategories)
+            if (visibleCategories.isNotEmpty)
+              for (final category in visibleCategories)
                 _categoryBtn(category.name, category.id, category.color)
             else
               for (final category in MenuCategories.all)

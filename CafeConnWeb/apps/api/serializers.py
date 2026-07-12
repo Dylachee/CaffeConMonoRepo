@@ -3,6 +3,7 @@ from django.db.models import Max
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import (
     AttentionSignal,
@@ -53,7 +54,7 @@ class MenuCategorySerializer(serializers.ModelSerializer):
 
     def get_item_count(self, obj):
         item_count = getattr(obj, "item_count", None)
-        return item_count if item_count is not None else obj.items.count()
+        return item_count if item_count is not None else obj.items.filter(is_available=True).count()
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
@@ -81,6 +82,23 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def _tags_for_clients(self, tags):
+        tags = list(tags or [])
+        if CLIENT_MENU_TAG not in tags:
+            tags.append(CLIENT_MENU_TAG)
+        return tags
+
+    def create(self, validated_data):
+        validated_data["tags"] = self._tags_for_clients(validated_data.get("tags"))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if "tags" in validated_data:
+            validated_data["tags"] = self._tags_for_clients(validated_data["tags"])
+        else:
+            validated_data["tags"] = self._tags_for_clients(instance.tags)
+        return super().update(instance, validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

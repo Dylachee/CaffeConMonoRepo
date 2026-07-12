@@ -21,6 +21,8 @@
     background:var(--bg); color:var(--ink);
     font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     padding-bottom:calc(88px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
   }
   button,input,textarea{font:inherit}
   button{cursor:pointer;border:0}
@@ -49,7 +51,7 @@
   .logo{width:62px;height:62px;border-radius:18px;background:var(--accent);box-shadow:0 10px 24px -12px rgba(40,32,20,.42);display:grid;place-items:center;color:#fff;overflow:hidden;flex:0 0 auto}
   .logo img{width:100%;height:100%;object-fit:cover}
   .title-row{display:flex;align-items:center;gap:7px}
-  h1{font-size:29px;line-height:1.05;font-weight:900;letter-spacing:-1px}
+  h1{font-size:29px;line-height:1.05;font-weight:900;letter-spacing:-1px;text-wrap:balance}
   .tagline{margin-top:4px;color:var(--mut);font-size:14px}
   .rating{margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--mut);font-size:12px}
   .fact-pill{min-height:38px;border:1px solid var(--line);border-radius:13px;background:#faf8f3;padding:8px 10px;display:flex;align-items:center;gap:8px;font-weight:750;color:rgba(30,27,22,.72);text-decoration:none}
@@ -90,41 +92,42 @@
   .about h2{font-size:16px;margin-bottom:8px}
   .about p{color:var(--mut);font-size:14px}
 
-  .page-title{font-size:34px;font-weight:900;letter-spacing:-1px}
+  .page-title{font-size:32px;font-weight:950;letter-spacing:-1px}
   .menu-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
-  .menu-count-pill{height:32px;padding:0 11px;border-radius:999px;background:#fff;border:1px solid rgba(231,226,216,.9);color:rgba(30,27,22,.58);font-size:12px;font-weight:900;display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .menu-count-pill{height:30px;padding:0 10px;border-radius:8px;background:#fff;box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 6px -4px rgba(43,36,24,.35);color:rgba(30,27,22,.58);font-size:12px;font-weight:900;display:flex;align-items:center;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .sub{margin-top:3px;color:var(--mut);font-size:15px}
-  .menu-lead{margin-top:11px;max-width:34rem;color:rgba(30,27,22,.64);font-size:14px;line-height:1.5}
-  .search{margin-top:16px;height:50px;border-radius:16px;background:#fffdfa;box-shadow:0 1px 2px rgba(43,36,24,.04);display:flex;align-items:center;gap:10px;padding:0 14px;border:1px solid rgba(231,226,216,.95)}
+  .menu-lead{margin-top:9px;max-width:34rem;color:rgba(30,27,22,.64);font-size:14px;line-height:1.45;text-wrap:pretty}
+  .search{margin-top:14px;height:46px;border-radius:8px;background:#fffdfa;box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 8px -6px rgba(43,36,24,.35);display:flex;align-items:center;gap:10px;padding:0 13px}
   .search input{border:0;outline:0;background:transparent;flex:1;font-size:16px;color:var(--ink);min-width:0}
-  .chips{position:sticky;top:48px;z-index:20;display:flex;gap:8px;overflow-x:auto;margin:15px -18px 0;padding:10px 18px 9px;background:linear-gradient(180deg,rgba(242,239,232,.98),rgba(242,239,232,.9));backdrop-filter:blur(18px);scrollbar-width:none;border-bottom:1px solid rgba(231,226,216,.62)}
-  .chip{height:38px;padding:0 15px;border-radius:999px;background:#fffdfa;border:1px solid rgba(231,226,216,.95);color:rgba(30,27,22,.66);font-size:14px;font-weight:850;white-space:nowrap;box-shadow:0 1px 2px rgba(43,36,24,.03)}
-  .chip.active{background:var(--dark);border-color:var(--dark);color:#fff;box-shadow:0 10px 20px -14px rgba(34,31,26,.55)}
+  .chips{position:sticky;top:48px;z-index:20;display:flex;gap:6px;overflow-x:auto;margin:12px -18px 0;padding:9px 18px;background:rgba(242,239,232,.96);backdrop-filter:blur(18px);scrollbar-width:none;border-bottom:1px solid rgba(231,226,216,.62)}
+  .chip{height:32px;padding:0 10px;border-radius:8px;background:#fffdfa;box-shadow:0 0 0 1px rgba(43,36,24,.08);color:rgba(30,27,22,.68);font-size:12px;font-weight:900;white-space:nowrap;transition-property:background-color,color,box-shadow,transform;transition-duration:.14s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
+  .chip.active{background:var(--cat,var(--dark));color:#fff;box-shadow:0 0 0 1px rgba(43,36,24,.1),0 8px 18px -14px rgba(34,31,26,.65)}
+  .chip:active{transform:scale(.96)}
   .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:16px}
-  /* Text-forward menu (no photos): separate category cards and clear price/add column. */
-  #menu-grid{display:block;background:transparent;border-radius:0;box-shadow:none;padding:0;margin-top:16px}
-  .menu-cat{background:#fffdfa;border:1px solid rgba(231,226,216,.9);border-radius:24px;padding:0;margin-top:16px;box-shadow:var(--shadow);overflow:hidden}
-  .menu-cat:first-child{margin-top:0}
-  .cat-head{display:flex;align-items:center;gap:10px;padding:18px 16px 14px;font-size:18px;font-weight:950;letter-spacing:-.3px;color:var(--ink);border-bottom:1px solid rgba(231,226,216,.72);background:linear-gradient(180deg,#fffdfa,#fbf6ed)}
-  .cat-head::before{content:"";width:9px;height:9px;border-radius:999px;background:var(--cat,var(--accent));box-shadow:0 0 0 5px rgba(43,36,24,.07);flex:0 0 auto}
+  /* Staff-like menu: compact rows, category color as structure, no empty folders. */
+  #menu-grid{display:flex;flex-direction:column;gap:12px;background:transparent;border-radius:0;box-shadow:none;padding:0;margin-top:14px}
+  .menu-cat{background:#fffdfa;border-radius:8px;padding:0;box-shadow:0 0 0 1px rgba(43,36,24,.08),0 10px 22px -20px rgba(43,36,24,.5);overflow:hidden}
+  .cat-head{display:flex;align-items:center;gap:9px;padding:10px 12px;font-size:15px;font-weight:950;letter-spacing:-.15px;color:var(--ink);border-bottom:1px solid rgba(231,226,216,.86);background:linear-gradient(90deg,var(--cat,var(--accent)) 0 6px,#fffdfa 6px,#fbf6ed 100%)}
+  .cat-head::before{content:"";width:8px;height:8px;border-radius:999px;background:var(--cat,var(--accent));box-shadow:0 0 0 4px rgba(43,36,24,.06);flex:0 0 auto;margin-left:5px}
   /* category dot on category chips — a pseudo-element so the i18n text swap
      (el.textContent = …) can't wipe it */
   .chip[data-cat]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--cat);margin-right:7px;vertical-align:1px}
+  .chip.active[data-cat]::before{background:#fff}
   .promo-star{color:#B98A3C;font-size:14px;font-weight:900;margin-right:2px}
   .cat-head::after{content:"";flex:1;height:1px;background:transparent}
-  .cat-count{margin-left:auto;height:25px;min-width:25px;padding:0 8px;border-radius:999px;background:#f6efe4;color:var(--accent-deep);font-size:12px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+  .cat-count{margin-left:auto;height:24px;min-width:24px;padding:0 7px;border-radius:7px;background:#f6efe4;color:var(--accent-deep);font-size:12px;font-weight:950;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
   .dish{background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
   .dish.off{opacity:.5}
-  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(72px,auto);gap:4px 16px;padding:16px 16px;align-items:center;background:transparent;box-shadow:none;border-radius:0;border-bottom:1px solid rgba(231,226,216,.72)}
+  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) 98px;gap:8px 12px;min-height:58px;padding:10px 10px 10px 13px;align-items:center;background:transparent;box-shadow:none;border-radius:0;border-bottom:1px solid rgba(231,226,216,.76)}
   .menu-cat .dish.text-only:last-child{border-bottom:0}
-  .dish-hit{display:block!important;width:100%!important}
+  .dish-hit{appearance:none;background:transparent;border:0;padding:0;text-align:left;color:inherit;display:block!important;width:100%!important;cursor:pointer!important}
   .text-only .dish-hit{min-width:0}
   .dish .photo{aspect-ratio:1;height:auto}
   .meta{position:absolute;top:8px;left:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(13,11,8,.65);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;gap:4px}
   .alg{position:absolute;top:8px;right:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(252,250,245,.92);color:var(--accent-deep);font-size:11px;font-weight:800}
   .stop{position:absolute;inset:0;background:rgba(13,11,8,.42);display:grid;place-items:center;color:#fff;font-weight:900}
-  .dish-name{margin-top:9px;font-size:16px;font-weight:900;line-height:1.16;letter-spacing:-.2px}
-  .text-only .dish-name{margin-top:0;font-size:17px;font-weight:900;letter-spacing:-.15px;line-height:1.24}
+  .dish-name{margin-top:9px;font-size:16px;font-weight:900;line-height:1.16;letter-spacing:-.2px;text-wrap:pretty}
+  .text-only .dish-name{margin-top:0;font-size:15px;font-weight:900;letter-spacing:0;line-height:1.22}
   .dish-desc{margin-top:5px;color:rgba(30,27,22,.62);font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .text-only .dish-desc{margin-top:5px;font-size:14px;line-height:1.42;color:rgba(30,27,22,.6);-webkit-line-clamp:2}
   .dish-tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
@@ -132,15 +135,15 @@
   .dish-tag{height:23px;padding:0 8px;border-radius:8px;background:#f8f4ed;color:rgba(30,27,22,.66);font-size:11px;font-weight:800;display:flex;align-items:center}
   .dish-tag.warn{background:rgba(217,86,74,.1);color:#c0463b}
   .dish-bottom{margin-top:7px;display:flex;align-items:center;gap:6px}
-  .text-only .dish-bottom{margin:0;flex-direction:column;align-items:flex-end;justify-content:center;gap:8px;min-width:64px}
-  .text-only .price{font-size:16px;font-weight:950;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums;letter-spacing:-.2px;white-space:nowrap}
+  .text-only .dish-bottom{margin:0;display:grid;grid-template-columns:1fr 38px;align-items:center;justify-items:end;gap:8px;min-width:0}
+  .text-only .price{margin:0;font-size:15px;font-weight:950;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums;letter-spacing:0;white-space:nowrap}
   .unavail-tag{font-size:11px;font-weight:800;color:var(--mut);white-space:nowrap}
   .avail{width:7px;height:7px;border-radius:50%;background:var(--green);margin-left:auto}
   .small{font-size:12px;color:var(--mut)}
   .text-only .avail{display:none}
-  .add{width:34px;height:34px;border-radius:12px;background:var(--accent-soft);color:var(--accent-deep);font-weight:900;font-size:21px;display:grid;place-items:center;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
-  .text-only .add{width:40px;height:40px;border-radius:14px;background:var(--accent);color:#fff;box-shadow:0 8px 16px -10px rgba(200,130,30,.7)}
-  .add:active{transform:scale(.9);background:var(--accent);color:#fff}
+  .add{width:34px;height:34px;border-radius:8px;background:var(--accent-soft);color:var(--accent-deep);font-weight:950;font-size:21px;display:grid;place-items:center;transition-property:transform,background-color,color;transition-duration:.12s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
+  .text-only .add{width:38px;height:38px;border-radius:8px;background:var(--accent);color:#fff;box-shadow:0 8px 16px -10px rgba(200,130,30,.7)}
+  .add:active{transform:scale(.96);background:var(--accent);color:#fff}
   @media(hover:hover){.add:hover{background:var(--accent);color:#fff}}
   @media (prefers-reduced-motion: reduce){.add{transition:none}}
   .empty{padding:50px 12px;text-align:center;color:var(--mut);grid-column:1/-1}
@@ -363,7 +366,7 @@
         <h3 class="cat-head" style="--cat:{{ section.color }}"><span data-i18n-text data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</span><span class="cat-count">{{ section.items|length }}</span></h3>
         {% for item in section.items %}
         <article class="dish text-only{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
-          <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}" style="all:unset;display:block;cursor:pointer">
+          <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}">
             <h2 class="dish-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</h2>
             {% if item.description_en %}<p class="dish-desc" data-i18n-text data-en="{{ item.description_en }}" data-it="{{ item.description_it }}">{{ item.description_en }}</p>{% endif %}
             {% if item.allergens %}

@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Max, Sum
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Max, Q, Sum
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
@@ -34,7 +34,7 @@ def dashboard(request):
         "tables": Table.objects.select_related("waiter").all(),
         "menu_list": menu_list[:80],
         "menu_categories": MenuCategory.objects.annotate(
-            item_count=Count("items")
+            item_count=Count("items", filter=Q(items__is_available=True))
         ).order_by("sort_order", "name"),
         "order_statuses": Order.Status.choices,
         "stations": MenuItem._meta.get_field("station").choices,
@@ -77,7 +77,6 @@ def toggle_menu_item(request, item_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def create_menu_item(request):
-    tags = [CLIENT_MENU_TAG] if request.POST.get("is_client_visible") == "on" else []
     category_id = request.POST.get("category")
     if not category_id:
         messages.error(request, "Create a category before adding menu items.")
@@ -90,7 +89,7 @@ def create_menu_item(request):
         price=request.POST.get("price") or 0,
         category=category,
         station=request.POST.get("station") or "kitchen",
-        tags=tags,
+        tags=[CLIENT_MENU_TAG],
         is_available=request.POST.get("is_available") == "on",
     )
     messages.success(request, f"Item {item.name} added.")

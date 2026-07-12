@@ -302,6 +302,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     }
     final items = _filtered(state);
     final letters = _letters(state);
+    final visibleCategories = state.menuCategoriesWithItems();
     final count = _selQty.values.fold(0, (s, v) => s + v);
     final total =
         _selQty.entries.fold(0.0, (s, e) => s + e.key.price * e.value);
@@ -373,8 +374,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               _categoryBtn(L.all, 'All', AppColors.espresso),
               // Owner-defined categories when the hub provides them; the
               // hardcoded list is only an offline fallback.
-              if (state.menuCategories.isNotEmpty)
-                for (final category in state.menuCategories)
+              if (visibleCategories.isNotEmpty)
+                for (final category in visibleCategories)
                   _categoryBtn(category.name, category.id, category.color)
               else
                 for (final category in MenuCategories.all)

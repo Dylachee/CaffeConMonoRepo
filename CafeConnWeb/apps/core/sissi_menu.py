@@ -469,7 +469,7 @@ def catalog_items():
                 "tags": tags,
                 "composition": composition,
                 "allergens": [],
-                "is_available": SEASONAL_TAG not in tags,
+                "is_available": True,
                 "is_promoted": False,
                 "preparation_minutes": 12 if station == "kitchen" else 5,
                 "portion_weight": "",

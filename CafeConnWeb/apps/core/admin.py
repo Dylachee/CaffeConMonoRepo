@@ -40,7 +40,6 @@ class MenuItemAdmin(admin.ModelAdmin):
         "category",
         "station",
         "price",
-        "is_client_visible",
         "is_waiter_popular",
         "is_promoted",
         "is_available",
@@ -62,8 +61,6 @@ class MenuItemAdmin(admin.ModelAdmin):
     actions = [
         "make_available",
         "make_unavailable",
-        "show_to_guests",
-        "hide_from_guests",
         "pin_waiter_popular",
         "unpin_waiter_popular",
     ]
@@ -86,10 +83,6 @@ class MenuItemAdmin(admin.ModelAdmin):
         ),
     )
 
-    @admin.display(boolean=True, description="Cliente")
-    def is_client_visible(self, obj):
-        return "client" in (obj.tags or [])
-
     @admin.display(boolean=True, description="★ Camerieri")
     def is_waiter_popular(self, obj):
         return "popular" in (obj.tags or [])
@@ -108,19 +101,17 @@ class MenuItemAdmin(admin.ModelAdmin):
 
     @admin.action(description="Rendi disponibili")
     def make_available(self, request, queryset):
-        queryset.update(is_available=True)
+        for item in queryset:
+            tags = list(item.tags or [])
+            if "client" not in tags:
+                tags.append("client")
+            item.tags = tags
+            item.is_available = True
+            item.save(update_fields=["tags", "is_available", "updated_at"])
 
     @admin.action(description="Rendi NON disponibili")
     def make_unavailable(self, request, queryset):
         queryset.update(is_available=False)
-
-    @admin.action(description="Mostra agli ospiti (tag cliente)")
-    def show_to_guests(self, request, queryset):
-        self._set_tag(queryset, "client", True)
-
-    @admin.action(description="Nascondi agli ospiti")
-    def hide_from_guests(self, request, queryset):
-        self._set_tag(queryset, "client", False)
 
     @admin.action(description="Aggiungi ai Popolari camerieri (★)")
     def pin_waiter_popular(self, request, queryset):

@@ -74,6 +74,7 @@ class Command(BaseCommand):
             updated += int(not was_created)
 
         removed = self._archive_missing_menu_items(active_keys)
+        self._cleanup_empty_categories(categories)
         self.stdout.write(
             f"  menu: {created} created, {updated} updated, {removed} old rows removed/archived"
         )
@@ -231,7 +232,6 @@ class Command(BaseCommand):
             "Uova/colazione salata",
             "Toast",
             "Fritti/stuzzichini",
-            "Menu del giorno",
         }:
             return 650
         return 360
@@ -245,7 +245,6 @@ class Command(BaseCommand):
             "Uova/colazione salata",
             "Toast",
             "Fritti/stuzzichini",
-            "Menu del giorno",
         }:
             return 12
         if item["category"].name in {"Pasticceria", "Dolci", "Gelati"}:
@@ -281,3 +280,8 @@ class Command(BaseCommand):
             )
             categories[category["key"]] = obj
         return categories
+
+    def _cleanup_empty_categories(self, active_categories):
+        MenuCategory.objects.exclude(
+            key__in=active_categories.keys()
+        ).filter(items__isnull=True).delete()

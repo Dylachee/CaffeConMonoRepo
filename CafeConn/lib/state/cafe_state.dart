@@ -944,6 +944,18 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         AppColors.categoryColor(legacy);
   }
 
+  List<CafeCategory> menuCategoriesWithItems({bool availableOnly = false}) {
+    final usedIds = <String>{};
+    for (final item in menu) {
+      if (availableOnly && !item.available) continue;
+      final category = categoryFor(item);
+      if (category != null) usedIds.add(category.id);
+    }
+    return menuCategories
+        .where((category) => usedIds.contains(category.id))
+        .toList(growable: false);
+  }
+
   bool itemInCategory(MenuItem m, String value) {
     final category = categoryFor(m);
     if (category != null) return category.id == value || category.name == value;
