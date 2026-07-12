@@ -757,18 +757,21 @@ class AppTextField extends StatelessWidget {
       this.hint,
       this.obscure = false,
       this.keyboardType,
+      this.inputFormatters,
       this.onChanged});
   final TextEditingController controller;
   final String label;
   final String? hint;
   final bool obscure;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
   final ValueChanged<String>? onChanged;
   @override
   Widget build(BuildContext context) => TextField(
         controller: controller,
         obscureText: obscure,
         keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         onChanged: onChanged,
         style: T.body.copyWith(color: AppTheme.ink),
         cursorColor: AppTheme.cta,
@@ -990,8 +993,7 @@ class _CenterToastState extends State<_CenterToast> {
             duration: const Duration(milliseconds: 220),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 40),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
                 color: widget.color,
                 borderRadius: BorderRadius.circular(18),

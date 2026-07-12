@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -1306,6 +1307,9 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
   if (selectedCategoryId.isEmpty && item == null && categories.isNotEmpty) {
     selectedCategoryId = categories.first.id;
   }
+  final priceInputFormatters = [
+    FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+  ];
   final name = TextEditingController(text: item?.name ?? '');
   final desc = TextEditingController(text: item?.description ?? '');
   final price = TextEditingController(text: item?.price.toString() ?? '');
@@ -1355,7 +1359,9 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                         child: AppTextField(
                             controller: price,
                             label: L.price,
-                            keyboardType: TextInputType.number)),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            inputFormatters: priceInputFormatters)),
                     const SizedBox(width: 12),
                     Expanded(
                         child: AppTextField(
@@ -1496,6 +1502,8 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                                 ? (item?.category ?? 'Panini')
                                 : category.text.trim());
                         final categoryId = selectedCategory?.id ?? '';
+                        final parsedPrice = double.tryParse(
+                            price.text.trim().replaceAll(',', '.'));
 
                         final MenuItem target;
                         final isNew = item == null;
@@ -1504,7 +1512,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                             id: 'm${DateTime.now().millisecondsSinceEpoch}',
                             name: name.text.trim(),
                             description: desc.text.trim(),
-                            price: double.tryParse(price.text) ?? 0.0,
+                            price: parsedPrice ?? 0.0,
                             category: categoryName,
                             imageUrl: '',
                             tags: tags,
@@ -1517,8 +1525,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                           target = item;
                           target.name = name.text.trim();
                           target.description = desc.text.trim();
-                          target.price =
-                              double.tryParse(price.text) ?? target.price;
+                          target.price = parsedPrice ?? target.price;
                           target.category = categoryName;
                           target.categoryIt = '';
                           target.prepTime =
