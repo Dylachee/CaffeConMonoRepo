@@ -191,6 +191,11 @@ class L {
   static String get topDishesToday =>
       t("Today's top sellers", 'Più venduti oggi');
   static String get delayedLabel => t('Delayed', 'In ritardo');
+  static String get familiesTitle =>
+      t('Categories & colors', 'Categorie e colori');
+  static String get familiesSub => t(
+      'Tap a category to rename it or pick its color — every device follows.',
+      'Tocca una categoria per rinominarla o cambiarne il colore — vale su tutti i dispositivi.');
 
   // ---- order feed ----
   static String activeCount(int n) => t('$n active', '$n attivi');

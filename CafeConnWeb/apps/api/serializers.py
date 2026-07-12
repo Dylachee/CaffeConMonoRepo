@@ -2,12 +2,32 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from apps.core.menu_i18n import menu_item_labels
-from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
+from apps.core.models import (
+    AttentionSignal,
+    Employee,
+    MenuFamily,
+    MenuItem,
+    Order,
+    OrderItem,
+    StaffPreference,
+    Table,
+)
 
 User = get_user_model()
 
 
+class MenuFamilySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MenuFamily
+        fields = ["id", "key", "name", "color", "sort_order", "updated_at"]
+        read_only_fields = ["key", "updated_at"]
+
+
 class MenuItemSerializer(serializers.ModelSerializer):
+    family = serializers.PrimaryKeyRelatedField(
+        queryset=MenuFamily.objects.all(), allow_null=True, required=False
+    )
+
     class Meta:
         model = MenuItem
         fields = [
@@ -16,6 +36,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "description",
             "price",
             "category",
+            "family",
             "image_url",
             "station",
             "tags",

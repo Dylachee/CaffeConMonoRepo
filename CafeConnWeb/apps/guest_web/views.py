@@ -156,7 +156,9 @@ def _family_color(category):
 
 def menu_page(request, table_id=None, table_number=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
-    menu_items = MenuItem.objects.order_by("category", "-is_available", "name")
+    menu_items = MenuItem.objects.select_related("family").order_by(
+        "category", "-is_available", "name"
+    )
     # Two ways to address a table:
     #   /menu/t/<pk>/     — legacy, internal DB id (kept for old links);
     #   /menu/n/<number>/ — the printed table number. QR codes should use this
@@ -227,7 +229,13 @@ def menu_page(request, table_id=None, table_number=None):
                     "name": display_category,
                     "name_en": cat_labels["en"],
                     "name_it": cat_labels["it"],
-                    "color": _family_color(display_category),
+                    # Owner-set family color when assigned; keyword fallback
+                    # keeps unassigned/legacy items colored sensibly.
+                    "color": (
+                        item.family.color
+                        if item.family_id
+                        else _family_color(display_category)
+                    ),
                     "items": [],
                 }
             )

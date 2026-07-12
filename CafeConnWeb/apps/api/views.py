@@ -33,6 +33,7 @@ from apps.core.services import (
 from apps.api.serializers import (
     AttentionSignalSerializer,
     EmployeeSerializer,
+    MenuFamilySerializer,
     MenuItemSerializer,
     OrderItemSerializer,
     OrderSerializer,
@@ -41,7 +42,7 @@ from apps.api.serializers import (
 )
 from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import menu_item_labels
-from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
+from apps.core.models import AttentionSignal, Employee, MenuFamily, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
 
 User = get_user_model()
 
@@ -145,6 +146,7 @@ def serialize_for_flutter_menu(item: MenuItem) -> dict:
         "price": float(item.price),
         "category": labels["category_en"],
         "categoryIt": labels["category_it"],
+        "familyId": str(item.family_id) if item.family_id else "",
         "imageUrl": item.image_url,
         "tags": item.tags,
         "prepTime": item.preparation_minutes,
@@ -262,6 +264,9 @@ class StaffBootstrapView(APIView):
                     for item in MenuItem.objects.all()
                     if "archived" not in (item.tags or [])
                 ],
+                "families": MenuFamilySerializer(
+                    MenuFamily.objects.all(), many=True
+                ).data,
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "history": [serialize_for_flutter_order(order) for order in history],
                 "preferences": StaffPreferenceSerializer(preferences).data,
@@ -538,6 +543,32 @@ class StaffTableHistoryView(APIView):
                 "orders": [serialize_for_flutter_order(o) for o in day_orders],
             }
         )
+
+
+class MenuFamilyViewSet(viewsets.ModelViewSet):
+    """The owner's POS families (name + color + order). Any staff can read
+    them (the app colors everything with them); renaming/recoloring is a
+    manager/admin action, same as the rest of the panel."""
+
+    queryset = MenuFamily.objects.all()
+    serializer_class = MenuFamilySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _require_manage(self):
+        if not caps_for_user(self.request.user)["manage"]:
+            raise PermissionDenied("Only a manager or admin can edit menu families.")
+
+    def perform_create(self, serializer):
+        self._require_manage()
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._require_manage()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_manage()
+        instance.delete()
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):

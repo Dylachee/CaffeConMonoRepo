@@ -293,9 +293,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                              color: AppColors.familyColor(MenuFamilies.of(
-                                  s.topItems[i].category,
-                                  isBar: false)),
+                              color: state.familyColorForCategory(
+                                  s.topItems[i].category),
                               shape: BoxShape.circle)),
                       const SizedBox(width: 10),
                       Expanded(
@@ -827,7 +826,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
-      final okFam = _family == 'All' || m.family == _family;
+      final okFam = _family == 'All' || state.itemInFamily(m, _family);
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
@@ -889,6 +888,12 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     return ListView(children: [
       Row(children: [
         Expanded(child: SectionTitle(L.items)),
+        // Owner's category console: rename + recolor the POS families.
+        IconButton(
+          onPressed: () => _showFamilyEditor(context),
+          tooltip: L.familiesTitle,
+          icon: const Icon(Icons.palette_outlined, color: AppTheme.ink2),
+        ),
         AppButton(
             label: L.addItem,
             kind: ButtonKind.ghost,
@@ -911,8 +916,11 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       const SizedBox(height: 10),
       Wrap(spacing: 5, runSpacing: 5, children: [
         _famBtn(L.all, 'All', AppColors.espresso),
-        for (final f in MenuFamilies.all)
-          _famBtn(f, f, AppColors.familyColor(f)),
+        if (state.families.isNotEmpty)
+          for (final f in state.families) _famBtn(f.name, f.id, f.color)
+        else
+          for (final f in MenuFamilies.all)
+            _famBtn(f, f, AppColors.familyColor(f)),
       ]),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -920,7 +928,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
             style: T.label.copyWith(color: AppTheme.ink3)),
       ),
       ...items.map((item) {
-        final famColor = AppColors.familyColor(item.family);
+        final famColor = state.familyColorFor(item);
         return AppCard(
           padding: const EdgeInsets.all(12),
           onTap: () => _showMenuForm(context, item: item),
@@ -967,6 +975,163 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       }),
     ]);
   }
+}
+
+/// The owner's category console: every POS family with its color; tap one to
+/// rename it or pick a new color. Changes go to the hub and every device.
+void _showFamilyEditor(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Consumer<CafeState>(
+      builder: (context, state, _) => Container(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        decoration: const BoxDecoration(
+            color: AppTheme.surfaceAlt,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(L.familiesTitle, style: T.h2),
+            const SizedBox(height: 4),
+            Text(L.familiesSub,
+                style: T.small.copyWith(color: AppTheme.ink2)),
+            const SizedBox(height: 14),
+            if (state.families.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Text(L.connectToManage,
+                    style: T.body.copyWith(color: AppTheme.ink2)),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final f in state.families)
+                      AppCard(
+                        padding: const EdgeInsets.all(12),
+                        onTap: () => _editFamily(context, f),
+                        child: Row(children: [
+                          Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                  color: f.color,
+                                  borderRadius: BorderRadius.circular(7))),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(f.name, style: T.bodySemi)),
+                          const Icon(Icons.edit_outlined,
+                              size: 16, color: AppTheme.ink3),
+                        ]),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// Curated swatches: the 8 defaults plus 8 extras, all readable on the cream
+// surface. The owner picks; hex lands in the DB and every surface follows.
+const _familyPalette = [
+  '#E0823A', '#5BAEDC', '#3E9C63', '#C0463B',
+  '#3C7BCF', '#DFAF2B', '#8A6FC0', '#7CC488',
+  '#B98A3C', '#D9564A', '#5B86B0', '#C95D8F',
+  '#8C6239', '#2E8B8B', '#6B7F3A', '#4A4238',
+];
+
+String _hexOf(Color c) =>
+    '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+void _editFamily(BuildContext context, CafeFamily fam) {
+  final name = TextEditingController(text: fam.name);
+  var selected = _hexOf(fam.color);
+  var busy = false;
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => StatefulBuilder(
+      builder: (context, set) => Container(
+        decoration: const BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: EdgeInsets.fromLTRB(
+            20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(fam.name, style: T.h2),
+            const SizedBox(height: 16),
+            AppTextField(controller: name, label: L.name),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final hex in _familyPalette)
+                  GestureDetector(
+                    onTap: () => set(() => selected = hex),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: CafeFamily.parseHex(hex, AppColors.free),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: selected == hex
+                                ? AppColors.ink
+                                : AppTheme.separator,
+                            width: selected == hex ? 2.5 : 1),
+                      ),
+                      child: selected == hex
+                          ? const Icon(Icons.check,
+                              size: 16, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            AppButton(
+              label: L.save,
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final state = context.read<CafeState>();
+                      final messenger = ScaffoldMessenger.of(context);
+                      final nm = name.text.trim();
+                      if (nm.isEmpty) return;
+                      set(() => busy = true);
+                      final err = await state.updateMenuFamily(fam.id,
+                          name: nm, color: selected);
+                      if (!context.mounted) return;
+                      if (err != null) {
+                        set(() => busy = false);
+                        messenger
+                            .showSnackBar(SnackBar(content: Text(err)));
+                        return;
+                      }
+                      messenger.showSnackBar(SnackBar(
+                          content: Text(L.savedToHub),
+                          backgroundColor: AppTheme.success));
+                      Navigator.pop(context);
+                    },
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 Widget _menuFormSwitch({

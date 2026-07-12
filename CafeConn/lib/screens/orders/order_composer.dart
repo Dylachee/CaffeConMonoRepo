@@ -103,7 +103,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       final okCat = switch (filter) {
         'All' => true,
         _popularFilter => m.isPopular,
-        _ => m.family == filter,
+        _ => state.itemInFamily(m, filter),
       };
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
@@ -372,8 +372,14 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               _familyBtn(L.popular, _popularFilter, AppColors.famPopular,
                   icon: Icons.star_rounded),
               _familyBtn(L.all, 'All', AppColors.espresso),
-              for (final f in MenuFamilies.all)
-                _familyBtn(f, f, AppColors.familyColor(f)),
+              // Owner-defined families (custom names + colors) when the hub
+              // provides them; the hardcoded 8 only as offline fallback.
+              if (state.families.isNotEmpty)
+                for (final f in state.families)
+                  _familyBtn(f.name, f.id, f.color)
+              else
+                for (final f in MenuFamilies.all)
+                  _familyBtn(f, f, AppColors.familyColor(f)),
             ],
           ),
           if (_category == _popularFilter &&
@@ -411,6 +417,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                           return _OrderComposerTile(
                             item: item,
                             qty: _selQty[item] ?? 0,
+                            color: state.familyColorFor(item),
                             onAdd: () => _add(ctx, item),
                             onRemove: () => _removeOne(item),
                             onInfo: () => _showItemActions(ctx, state, item),
@@ -504,19 +511,21 @@ class _OrderComposerTile extends StatelessWidget {
   const _OrderComposerTile({
     required this.item,
     required this.qty,
+    required this.color,
     required this.onAdd,
     required this.onRemove,
     required this.onInfo,
   });
   final MenuItem item;
   final int qty;
+  final Color color;
   final VoidCallback onAdd;
   final VoidCallback onRemove;
   final VoidCallback onInfo;
 
   @override
   Widget build(BuildContext context) {
-    final catColor = AppColors.familyColor(item.family);
+    final catColor = color;
     final selected = qty > 0;
 
     return GestureDetector(

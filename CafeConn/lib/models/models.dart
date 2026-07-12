@@ -149,6 +149,29 @@ class CafeTable {
   }
 }
 
+/// One owner-defined POS family, served by the hub: display name and color
+/// are DATA (editable in the manager panel / system admin), `key` is the
+/// stable machine id the keyword fallback maps onto.
+class CafeFamily {
+  CafeFamily({
+    required this.id,
+    required this.key,
+    required this.name,
+    required this.color,
+  });
+  final String id;
+  final String key;
+  String name;
+  Color color;
+
+  static Color parseHex(String hex, Color fallback) {
+    var h = hex.replaceAll('#', '').trim();
+    if (h.length == 6) h = 'FF$h';
+    final v = int.tryParse(h, radix: 16);
+    return v == null ? fallback : Color(v);
+  }
+}
+
 /// The owner's 8 POS families (matching the R-Keeper layout) that every DB
 /// category collapses into for the waiter composer: one color + one button per
 /// family, however fine-grained the guest-menu categories get.
@@ -211,6 +234,7 @@ class MenuItem {
     this.nameIt = '',
     this.descriptionIt = '',
     this.categoryIt = '',
+    this.familyId = '',
   });
   final String id;
   String name;
@@ -259,10 +283,15 @@ class MenuItem {
   bool get isBar =>
       station.isNotEmpty ? station == 'bar' : _barCategories.contains(category);
 
+  /// Owner-assigned POS family id from the hub; '' = unassigned (the app then
+  /// falls back to keyword matching via [MenuFamilies.of]).
+  String familyId;
+
   /// Pinned on the waiter composer's Popular shelf (hold a tile to toggle).
   bool get isPopular => tags.contains('popular');
 
-  /// The owner's POS family this item belongs to (color + fast filter).
+  /// Legacy keyword family (display-name form) — fallback only; prefer
+  /// CafeState.familyFor which resolves the owner's custom families.
   String get family => MenuFamilies.of(category, isBar: isBar);
 
   List<String> get notePresets {

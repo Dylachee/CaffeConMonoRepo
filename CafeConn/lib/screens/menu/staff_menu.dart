@@ -37,7 +37,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     final items = state.menu.where((m) {
-      final okCat = _category == 'All' || m.family == _category;
+      final okCat = _category == 'All' || state.itemInFamily(m, _category);
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
@@ -124,8 +124,11 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
           // once, colors matching the cards below — no chip scrolling.
           Wrap(spacing: 6, runSpacing: 6, children: [
             _familyBtn(L.all, 'All', AppColors.espresso),
-            for (final f in MenuFamilies.all)
-              _familyBtn(f, f, AppColors.familyColor(f)),
+            if (state.families.isNotEmpty)
+              for (final f in state.families) _familyBtn(f.name, f.id, f.color)
+            else
+              for (final f in MenuFamilies.all)
+                _familyBtn(f, f, AppColors.familyColor(f)),
           ]),
           const SizedBox(height: 4),
           Expanded(
@@ -145,6 +148,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
                     itemCount: items.length,
                     itemBuilder: (ctx, i) => _MenuShowcaseCard(
                       item: items[i],
+                      color: state.familyColorFor(items[i]),
                       onTap: () => showStaffDishDetails(ctx, items[i]),
                     ),
                   ),
@@ -171,13 +175,15 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
 /// Compact photo-less showcase card: zone dot + category, name, price,
 /// prep time and availability at a glance.
 class _MenuShowcaseCard extends StatelessWidget {
-  const _MenuShowcaseCard({required this.item, required this.onTap});
+  const _MenuShowcaseCard(
+      {required this.item, required this.color, required this.onTap});
   final MenuItem item;
+  final Color color;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final famColor = AppColors.familyColor(item.family);
+    final famColor = color;
     return Opacity(
       opacity: item.available ? 1 : 0.55,
       child: AppCard(

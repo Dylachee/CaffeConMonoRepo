@@ -1,6 +1,27 @@
 from django.contrib import admin
+from django.utils.html import format_html
 
-from apps.core.models import AttentionSignal, Employee, MenuItem, Order, OrderItem, StaffPreference, Table
+from apps.core.models import AttentionSignal, Employee, MenuFamily, MenuItem, Order, OrderItem, StaffPreference, Table
+
+
+@admin.register(MenuFamily)
+class MenuFamilyAdmin(admin.ModelAdmin):
+    """The owner's category console: rename and recolor the POS families the
+    apps use for the colored quick filters. `key` is the stable identifier and
+    stays fixed; `name`, `color` (hex like #DFAF2B) and order are yours."""
+
+    list_display = ("swatch", "key", "name", "color", "sort_order", "updated_at")
+    list_display_links = ("key",)
+    list_editable = ("name", "color", "sort_order")
+    ordering = ("sort_order",)
+
+    @admin.display(description="")
+    def swatch(self, obj):
+        return format_html(
+            '<span style="display:inline-block;width:18px;height:18px;'
+            'border-radius:5px;background:{};border:1px solid #0002"></span>',
+            obj.color,
+        )
 
 
 class OrderItemInline(admin.TabularInline):
@@ -18,6 +39,7 @@ class MenuItemAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "category",
+        "family",
         "station",
         "price",
         "is_client_visible",
@@ -27,8 +49,16 @@ class MenuItemAdmin(admin.ModelAdmin):
         "updated_at",
     )
     list_display_links = ("name",)
-    list_editable = ("category", "station", "price", "is_promoted", "is_available")
-    list_filter = ("category", "station", "is_available", "is_promoted")
+    list_editable = (
+        "category",
+        "family",
+        "station",
+        "price",
+        "is_promoted",
+        "is_available",
+    )
+    list_filter = ("family", "category", "station", "is_available", "is_promoted")
+    list_select_related = ("family",)
     search_fields = ("name", "description", "category")
     ordering = ("category", "name")
     list_per_page = 200
@@ -41,7 +71,7 @@ class MenuItemAdmin(admin.ModelAdmin):
         "unpin_waiter_popular",
     ]
     fieldsets = (
-        (None, {"fields": ("name", "description", "price", "category", "station")}),
+        (None, {"fields": ("name", "description", "price", "category", "family", "station")}),
         ("Visibilità", {"fields": ("is_available", "is_promoted", "tags")}),
         (
             "Dettagli piatto",

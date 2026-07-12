@@ -7,6 +7,7 @@ app_name = "api"
 
 router = DefaultRouter()
 router.register("menu-items", views.MenuItemViewSet, basename="menu-item")
+router.register("menu-families", views.MenuFamilyViewSet, basename="menu-family")
 router.register("tables", views.TableViewSet, basename="table")
 router.register("orders", views.OrderViewSet, basename="order")
 router.register("order-items", views.OrderItemViewSet, basename="order-item")

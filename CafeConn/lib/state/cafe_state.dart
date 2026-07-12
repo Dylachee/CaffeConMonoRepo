@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../core/i18n.dart';
+import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils.dart';
 import '../data/cafe_api_client.dart';
@@ -867,6 +868,66 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Owner-defined POS families from the hub (names + colors are the owner's
+  /// data; the hardcoded palette is only the offline fallback).
+  final List<CafeFamily> families = [];
+
+  /// Resolve an item's family: explicit assignment first, keyword fallback
+  /// (matched to the family's stable key) second.
+  CafeFamily? familyFor(MenuItem m) {
+    if (m.familyId.isNotEmpty) {
+      final f = families.firstWhereOrNull((f) => f.id == m.familyId);
+      if (f != null) return f;
+    }
+    final key = MenuFamilies.of(m.category, isBar: m.isBar).toLowerCase();
+    return families.firstWhereOrNull((f) => f.key == key);
+  }
+
+  Color familyColorFor(MenuItem m) =>
+      familyFor(m)?.color ?? AppColors.familyColor(m.family);
+
+  Color familyColorForCategory(String category) {
+    final legacy = MenuFamilies.of(category, isBar: false);
+    return families
+            .firstWhereOrNull((f) => f.key == legacy.toLowerCase())
+            ?.color ??
+        AppColors.familyColor(legacy);
+  }
+
+  /// True when [m] belongs to the family filter [value] — an id when the hub
+  /// provided families, a legacy display name otherwise.
+  bool itemInFamily(MenuItem m, String value) {
+    final f = familyFor(m);
+    if (f != null) return f.id == value || f.name == value;
+    return m.family == value;
+  }
+
+  /// Manager: rename/recolor a family. Optimistic local apply after the hub
+  /// confirms; returns null on success, an error message otherwise.
+  Future<String?> updateMenuFamily(String id,
+      {String? name, String? color}) async {
+    try {
+      await _remoteApi.updateMenuFamily(id, {
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (color != null && color.isNotEmpty) 'color': color,
+      });
+      final f = families.firstWhereOrNull((x) => x.id == id);
+      if (f != null) {
+        if (name != null && name.isNotEmpty) f.name = name;
+        if (color != null && color.isNotEmpty) {
+          f.color = CafeFamily.parseHex(color, f.color);
+        }
+      }
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('updateMenuFamily failed: $e');
+      notifyListeners();
+      return e.message;
+    }
+  }
+
   /// Pin/unpin an item on the waiter Popular shelf (hold a tile). Optimistic:
   /// flips the tag locally, pushes to the hub, rolls back on failure. Open to
   /// any staff — pinning a bestseller is floor work, not menu management.
@@ -1447,6 +1508,16 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         ..addAll(data.menu.map(_menuFromDto));
       _saveMenu();
     }
+    if (data.families.isNotEmpty) {
+      families
+        ..clear()
+        ..addAll(data.families.map((f) => CafeFamily(
+              id: f.id,
+              key: f.key,
+              name: f.name,
+              color: CafeFamily.parseHex(f.color, AppColors.famFood),
+            )));
+    }
     if (data.tables.isNotEmpty) {
       tables
         ..clear()
@@ -1844,6 +1915,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         composition: d.composition,
         allergens: d.allergens,
         station: d.station,
+        familyId: d.familyId,
       );
 
   CafeTable _tableFromDto(TableDto d) {
