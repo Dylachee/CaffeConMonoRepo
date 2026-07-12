@@ -196,8 +196,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         setState(() => _category = value);
       },
       child: Container(
-        height: 30,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        constraints: const BoxConstraints(minHeight: 36, maxWidth: 132),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: active ? color : color.withValues(alpha: 0.13),
           borderRadius: BorderRadius.circular(9),
@@ -210,9 +210,11 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             const SizedBox(width: 4),
           ],
           Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   fontFamily: 'Inter',
-                  fontSize: 11.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
                   color: active ? onColor : AppColors.ink)),
         ]),
@@ -366,8 +368,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           // horizontal scrolling — that was what made switching slow), one tap
           // to any category, colors matching the tiles below.
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: 5,
+            runSpacing: 5,
             children: [
               _categoryBtn(L.popular, _popularFilter, AppColors.famPopular,
                   icon: Icons.star_rounded),
@@ -585,55 +587,69 @@ class _OrderComposerTile extends StatelessWidget {
                                   color: Colors.white, fontSize: 8.5)),
                         ),
                       Expanded(
-                        child: Text(item.price.rub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: T.priceSmall.copyWith(
-                                fontSize: 13,
-                                color:
-                                    selected ? AppTheme.cta : AppTheme.ink2)),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(item.price.rub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: T.priceSmall.copyWith(
+                                  fontSize: 13,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                  color:
+                                      selected ? AppTheme.cta : AppTheme.ink2)),
+                        ),
                       ),
-                      if (!selected)
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: const BoxDecoration(
-                              color: AppTheme.cta, shape: BoxShape.circle),
-                          child: const Icon(Icons.add,
-                              color: Colors.white, size: 16),
-                        )
-                      else
-                        Row(mainAxisSize: MainAxisSize.min, children: [
-                          GestureDetector(
-                            onTap: onRemove,
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              width: 26,
-                              height: 26,
-                              decoration: const BoxDecoration(
-                                  color: AppTheme.surfaceSunken,
-                                  shape: BoxShape.circle),
-                              child: const Icon(Icons.remove, size: 15),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 24,
-                            child: Center(
-                                child: Text('$qty',
-                                    style: AppTypography.mono(
-                                        size: 14,
-                                        weight: FontWeight.w800,
-                                        color: AppColors.ink))),
-                          ),
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: const BoxDecoration(
-                                color: AppTheme.cta, shape: BoxShape.circle),
-                            child: const Icon(Icons.add,
-                                color: Colors.white, size: 15),
-                          ),
-                        ]),
+                      SizedBox(
+                        width: 78,
+                        height: 32,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: !selected
+                              ? Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: const BoxDecoration(
+                                      color: AppTheme.cta,
+                                      shape: BoxShape.circle),
+                                  child: const Icon(Icons.add,
+                                      color: Colors.white, size: 17),
+                                )
+                              : Row(mainAxisSize: MainAxisSize.min, children: [
+                                  GestureDetector(
+                                    onTap: onRemove,
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: const BoxDecoration(
+                                          color: AppTheme.surfaceSunken,
+                                          shape: BoxShape.circle),
+                                      child: const Icon(Icons.remove, size: 15),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 22,
+                                    child: Center(
+                                        child: Text('$qty',
+                                            style: AppTypography.mono(
+                                                size: 14,
+                                                weight: FontWeight.w800,
+                                                color: AppColors.ink))),
+                                  ),
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: const BoxDecoration(
+                                        color: AppTheme.cta,
+                                        shape: BoxShape.circle),
+                                    child: const Icon(Icons.add,
+                                        color: Colors.white, size: 15),
+                                  ),
+                                ]),
+                        ),
+                      ),
                     ]),
                   ],
                 ),

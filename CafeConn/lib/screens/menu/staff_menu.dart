@@ -55,8 +55,8 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
     return GestureDetector(
       onTap: () => setState(() => _category = value),
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
+        constraints: const BoxConstraints(minHeight: 34, maxWidth: 132),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
           color: active ? color : color.withValues(alpha: 0.13),
           borderRadius: BorderRadius.circular(8),
@@ -67,6 +67,8 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
         // full row width inside a Wrap; a min-size Row keeps it chip-sized.
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 11,
