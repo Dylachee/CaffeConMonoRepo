@@ -149,11 +149,10 @@ class CafeTable {
   }
 }
 
-/// One owner-defined POS family, served by the hub: display name and color
-/// are DATA (editable in the manager panel / system admin), `key` is the
-/// stable machine id the keyword fallback maps onto.
-class CafeFamily {
-  CafeFamily({
+/// One owner-defined menu category, served by the hub: display name and color
+/// are DATA (editable in the manager panel / system admin).
+class CafeCategory {
+  CafeCategory({
     required this.id,
     required this.key,
     required this.name,
@@ -172,47 +171,69 @@ class CafeFamily {
   }
 }
 
-/// The owner's 8 POS families (matching the R-Keeper layout) that every DB
-/// category collapses into for the waiter composer: one color + one button per
-/// family, however fine-grained the guest-menu categories get.
-class MenuFamilies {
-  const MenuFamilies._();
+/// Fallback category palette for offline/legacy local data.
+class MenuCategories {
+  const MenuCategories._();
 
   static const all = [
     'Caffetteria',
     'Bevande',
-    'Liquori',
+    'Analcolici',
+    'Birra',
     'Vino',
-    'Gelati',
-    'Food',
+    'Cocktail & Aperitivi',
+    'Liquori/Grappe/Amari',
+    'Pasticceria',
     'Dolci',
-    'Aperitivi',
+    'Gelati',
+    'Panini',
+    'Piadine',
+    'Tortel',
+    'Secondi',
+    'Uova/colazione salata',
+    'Toast',
+    'Fritti/stuzzichini',
   ];
 
-  /// DB category → family. Mirrors the backend's menu_catalog scheme (the
-  /// fine categories were split FROM these raw families, so this inverts it).
+  /// Legacy/raw category → canonical category for offline fallback.
   static String of(String category, {required bool isBar}) {
     final c = category.toLowerCase();
     bool has(List<String> keys) => keys.any(c.contains);
     if (has(const ['caffett', 'coffee'])) return 'Caffetteria';
     if (has(const ['gelat', 'ice cream'])) return 'Gelati';
     if (has(const ['dolc', 'dessert'])) return 'Dolci';
-    if (has(const ['liquor', 'grapp', 'amari'])) return 'Liquori';
-    if (has(const ['vino', 'wine'])) return 'Vino';
-    // Beer and cocktails were raw-APERITIVI in the owner's POS export.
-    if (has(const ['aperitiv', 'cocktail', 'birra', 'spritz', 'beer'])) {
-      return 'Aperitivi';
+    if (has(const ['pasticc', 'colazion', 'croissant', 'krapfen'])) {
+      return 'Pasticceria';
     }
+    if (has(const ['liquor', 'grapp', 'amari'])) return 'Liquori/Grappe/Amari';
+    if (has(const ['vino', 'wine'])) return 'Vino';
+    if (has(const ['birra', 'beer'])) return 'Birra';
+    if (has(const ['aperitiv', 'cocktail', 'spritz'])) {
+      return 'Cocktail & Aperitivi';
+    }
+    if (has(const ['analcolic', 'mocktail', 'virgin'])) return 'Analcolici';
     if (has(const ['bibit', 'bevand', 'analcolic', 'succ', 'drink'])) {
       return 'Bevande';
     }
-    if (has(const [
-      'food', 'panin', 'colazion', 'cucina', 'spuntin', 'stuzzic', 'toast',
-      'tost', 'menu del',
-    ])) {
-      return 'Food';
+    if (has(const ['piadin'])) return 'Piadine';
+    if (has(const ['tortel'])) return 'Tortel';
+    if (has(const ['second', 'cotolett', 'nugget', 'omelette'])) {
+      return 'Secondi';
     }
-    return isBar ? 'Bevande' : 'Food';
+    if (has(const ['uova', 'egg'])) return 'Uova/colazione salata';
+    if (has(const ['toast', 'tost'])) return 'Toast';
+    if (has(const ['fritt', 'stuzzic', 'patatin'])) {
+      return 'Fritti/stuzzichini';
+    }
+    if (has(const [
+      'food',
+      'panin',
+      'cucina',
+      'menu del',
+    ])) {
+      return isBar ? 'Pasticceria' : 'Panini';
+    }
+    return isBar ? 'Bevande' : 'Panini';
   }
 }
 
@@ -234,7 +255,7 @@ class MenuItem {
     this.nameIt = '',
     this.descriptionIt = '',
     this.categoryIt = '',
-    this.familyId = '',
+    this.categoryId = '',
   });
   final String id;
   String name;
@@ -283,16 +304,14 @@ class MenuItem {
   bool get isBar =>
       station.isNotEmpty ? station == 'bar' : _barCategories.contains(category);
 
-  /// Owner-assigned POS family id from the hub; '' = unassigned (the app then
-  /// falls back to keyword matching via [MenuFamilies.of]).
-  String familyId;
+  /// Owner-assigned category id from the hub.
+  String categoryId;
 
   /// Pinned on the waiter composer's Popular shelf (hold a tile to toggle).
   bool get isPopular => tags.contains('popular');
 
-  /// Legacy keyword family (display-name form) — fallback only; prefer
-  /// CafeState.familyFor which resolves the owner's custom families.
-  String get family => MenuFamilies.of(category, isBar: isBar);
+  /// Legacy canonical category (display-name form) for offline fallback.
+  String get canonicalCategory => MenuCategories.of(category, isBar: isBar);
 
   List<String> get notePresets {
     final presets = <String>[];
@@ -472,6 +491,7 @@ class MenuItem {
         'nameIt': nameIt,
         'descriptionIt': descriptionIt,
         'categoryIt': categoryIt,
+        'categoryId': categoryId,
       };
   static MenuItem fromJson(Map<String, dynamic> j) => MenuItem(
         id: j['id'],
@@ -490,6 +510,7 @@ class MenuItem {
         nameIt: j['nameIt'] as String? ?? '',
         descriptionIt: j['descriptionIt'] as String? ?? '',
         categoryIt: j['categoryIt'] as String? ?? '',
+        categoryId: j['categoryId'] as String? ?? '',
       );
 }
 

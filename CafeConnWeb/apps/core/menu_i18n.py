@@ -114,6 +114,8 @@ MENU_ITEM_TRANSLATIONS = {
 
 
 def category_labels(category):
+    if hasattr(category, "name"):
+        category = category.name
     labels = CATEGORY_TRANSLATIONS.get(category, {})
     return {"en": labels.get("en", category), "it": labels.get("it", category)}
 

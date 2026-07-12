@@ -7,7 +7,7 @@ from django.db import transaction
 from rest_framework.authtoken.models import Token
 
 from apps.core.menu_catalog import CLIENT_MENU_TAG
-from apps.core.models import AttentionSignal, Employee, MenuItem, Order, Table
+from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, Table
 
 User = get_user_model()
 
@@ -156,10 +156,12 @@ class Command(BaseCommand):
         ]
         items = []
         for data in specs:
+            category = self._category(data.pop("category"))
             item, _ = MenuItem.objects.update_or_create(
                 name=data["name"],
                 defaults={
                     **data,
+                    "category": category,
                     "image_url": "",
                     "composition": data["description"],
                     "allergens": [],
@@ -170,3 +172,11 @@ class Command(BaseCommand):
             )
             items.append(item)
         return items
+
+    def _category(self, name):
+        key = name.lower().replace(" ", "-")[:40]
+        category, _ = MenuCategory.objects.get_or_create(
+            key=key,
+            defaults={"name": name, "color": "#DFAF2B"},
+        )
+        return category

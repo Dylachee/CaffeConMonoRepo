@@ -42,10 +42,8 @@ class AppColors {
   // Occupied table blue
   static const occupied = Color(0xFF5B86B0);
 
-  // ── Menu families (waiter composer, R-Keeper style) ──────────────────────
-  // The owner's 8 POS families with their fixed colors. The waiter reads the
-  // color before the name. MenuFamilies.of (models.dart) maps a DB category to
-  // one of these family names.
+  // ── Menu categories (waiter composer, R-Keeper style) ────────────────────
+  // Fallback colors when the backend category color is not available.
   static const famCaffetteria = kitchen; //          orange
   static const famBevande = Color(0xFF5BAEDC); //    light blue
   static const famLiquori = ok; //                   green
@@ -56,15 +54,24 @@ class AppColors {
   static const famAperitivi = Color(0xFF7CC488); //  light green
   static const famPopular = gold; //                 ★ the Popular shelf
 
-  static Color familyColor(String family) => switch (family) {
+  static Color categoryColor(String category) => switch (category) {
         'Caffetteria' => famCaffetteria,
         'Bevande' => famBevande,
-        'Liquori' => famLiquori,
+        'Analcolici' => ok,
+        'Birra' => famFood,
         'Vino' => famVino,
-        'Gelati' => famGelati,
-        'Food' => famFood,
+        'Cocktail & Aperitivi' => famAperitivi,
+        'Liquori/Grappe/Amari' => famLiquori,
+        'Pasticceria' => const Color(0xFFB88746),
         'Dolci' => famDolci,
-        'Aperitivi' => famAperitivi,
+        'Gelati' => famGelati,
+        'Panini' => famFood,
+        'Piadine' => const Color(0xFFC9A227),
+        'Tortel' => const Color(0xFFB97832),
+        'Secondi' => const Color(0xFFA94D3E),
+        'Uova/colazione salata' => const Color(0xFF6F8F42),
+        'Toast' => const Color(0xFF9A7A45),
+        'Fritti/stuzzichini' => const Color(0xFFB66A2D),
         _ => famFood,
       };
 }

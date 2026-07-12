@@ -33,6 +33,7 @@ void main() {
           'description': 'Эспрессо с молоком',
           'price': 4.5,
           'category': 'Кофе',
+          'categoryId': '11',
           'imageUrl': 'http://x/y.png',
           'tags': ['Dairy'],
           'prepTime': 4,
@@ -41,6 +42,14 @@ void main() {
           'composition': 'Эспрессо, молоко',
           'allergens': ['Dairy'],
           'station': 'bar',
+        }
+      ],
+      'categories': [
+        {
+          'id': '11',
+          'key': 'caffetteria',
+          'name': 'Caffetteria',
+          'color': '#E0823A'
         }
       ],
       'orders': [
@@ -76,6 +85,8 @@ void main() {
       expect(dto.tables.single.seats, 4);
       expect(dto.menu.single.station, 'bar');
       expect(dto.menu.single.price, 4.5);
+      expect(dto.menu.single.categoryId, '11');
+      expect(dto.categories.single.name, 'Caffetteria');
       expect(dto.orders.single.status, 'cooking');
       // Server timestamp must survive parsing — the kitchen timer used to
       // reset to 00:00 on every bootstrap because createdAt was dropped.

@@ -31,21 +31,21 @@
         <p class="eyebrow">Categories</p>
         <h2>Names and colors</h2>
       </div>
-      <span class="count-pill">{{ menu_families|length }}</span>
+      <span class="count-pill">{{ menu_categories|length }}</span>
     </div>
     <div class="menu-admin-list">
-      {% for family in menu_families %}
-        <form class="menu-family-row" method="post" action="{% url 'admin_web:update-menu-family' family.id %}">
+      {% for category in menu_categories %}
+        <form class="menu-category-row" method="post" action="{% url 'admin_web:update-menu-category' category.id %}">
           {% csrf_token %}
-          <span class="family-swatch" style="background: {{ family.color }}"></span>
-          <input name="name" value="{{ family.name }}" aria-label="Category name">
-          <input name="color" value="{{ family.color }}" aria-label="Category color">
-          <span class="subtle">{{ family.item_count }}</span>
+          <span class="category-swatch" style="background: {{ category.color }}"></span>
+          <input name="name" value="{{ category.name }}" aria-label="Category name">
+          <input name="color" value="{{ category.color }}" aria-label="Category color">
+          <span class="subtle">{{ category.item_count }}</span>
           <button class="button compact secondary" type="submit">Save</button>
         </form>
-        <form class="menu-family-delete" method="post" action="{% url 'admin_web:delete-menu-family' family.id %}">
+        <form class="menu-category-delete" method="post" action="{% url 'admin_web:delete-menu-category' category.id %}">
           {% csrf_token %}
-          <button class="availability-pill" type="submit" {% if family.item_count %}disabled title="Move items out first"{% endif %}>Delete</button>
+          <button class="availability-pill" type="submit" {% if category.item_count %}disabled title="Move items out first"{% endif %}>Delete</button>
         </form>
       {% empty %}
         <p class="subtle">No categories yet.</p>
@@ -60,7 +60,7 @@
         <h2>Add category</h2>
       </div>
     </div>
-    <form class="admin-form" method="post" action="{% url 'admin_web:create-menu-family' %}">
+    <form class="admin-form" method="post" action="{% url 'admin_web:create-menu-category' %}">
       {% csrf_token %}
       <label>Name <input name="name" required></label>
       <label>Color <input name="color" value="#DFAF2B" required></label>
@@ -161,16 +161,16 @@
     <form class="admin-form" method="post" action="{% url 'admin_web:create-menu-item' %}">
       {% csrf_token %}
       <label>Name <input name="name" required></label>
-      {% if menu_families %}
+      {% if menu_categories %}
         <label>Category
-          <select name="family">
-            {% for family in menu_families %}
-              <option value="{{ family.id }}">{{ family.name }}</option>
+          <select name="category">
+            {% for category in menu_categories %}
+              <option value="{{ category.id }}">{{ category.name }}</option>
             {% endfor %}
           </select>
         </label>
       {% else %}
-        <label>Category <input name="category" value="Menu" required></label>
+        <p class="subtle">Create a category before adding menu items.</p>
       {% endif %}
       <label>Price <input name="price" type="number" step="0.01" min="0" required></label>
       <label>Station
@@ -183,7 +183,7 @@
       <label>Description <textarea name="description" rows="3"></textarea></label>
       <label class="checkbox-row"><input name="is_available" type="checkbox" checked> Available</label>
       <label class="checkbox-row"><input name="is_client_visible" type="checkbox"> Client menu</label>
-      <button class="button full" type="submit">Add</button>
+      <button class="button full" type="submit" {% if not menu_categories %}disabled{% endif %}>Add</button>
     </form>
   </article>
 </section>

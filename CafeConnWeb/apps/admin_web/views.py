@@ -9,7 +9,7 @@ from django.views.decorators.http import require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
 from apps.core.menu_catalog import CLIENT_MENU_TAG
-from apps.core.models import AttentionSignal, MenuFamily, MenuItem, Order, Table
+from apps.core.models import AttentionSignal, MenuCategory, MenuItem, Order, Table
 from apps.core.services import acknowledge_signal_on_table
 
 
@@ -33,7 +33,7 @@ def dashboard(request):
         "active_signals": AttentionSignal.objects.select_related("table").filter(ack=False)[:8],
         "tables": Table.objects.select_related("waiter").all(),
         "menu_list": menu_list[:80],
-        "menu_families": MenuFamily.objects.annotate(
+        "menu_categories": MenuCategory.objects.annotate(
             item_count=Count("items")
         ).order_by("sort_order", "name"),
         "order_statuses": Order.Status.choices,
@@ -78,18 +78,17 @@ def toggle_menu_item(request, item_id):
 @require_POST
 def create_menu_item(request):
     tags = [CLIENT_MENU_TAG] if request.POST.get("is_client_visible") == "on" else []
-    family = None
-    family_id = request.POST.get("family")
-    if family_id:
-        family = get_object_or_404(MenuFamily, pk=family_id)
-    category = family.name if family else (request.POST.get("category", "Menu").strip() or "Menu")
+    category_id = request.POST.get("category")
+    if not category_id:
+        messages.error(request, "Create a category before adding menu items.")
+        return redirect("admin_web:dashboard")
+    category = get_object_or_404(MenuCategory, pk=category_id)
     item = MenuItem.objects.create(
         name=request.POST.get("name", "").strip(),
         description=request.POST.get("description", "").strip(),
         composition=request.POST.get("composition", "").strip(),
         price=request.POST.get("price") or 0,
         category=category,
-        family=family,
         station=request.POST.get("station") or "kitchen",
         tags=tags,
         is_available=request.POST.get("is_available") == "on",
@@ -100,7 +99,7 @@ def create_menu_item(request):
 
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
-def create_menu_family(request):
+def create_menu_category(request):
     name = request.POST.get("name", "").strip()
     if not name:
         messages.error(request, "Category name is required.")
@@ -109,43 +108,42 @@ def create_menu_family(request):
     base = slugify(name)[:40] or "category"
     key = base
     suffix = 2
-    while MenuFamily.objects.filter(key=key).exists():
+    while MenuCategory.objects.filter(key=key).exists():
         tail = f"-{suffix}"
         key = f"{base[:40 - len(tail)]}{tail}"
         suffix += 1
     sort_order = (
-        MenuFamily.objects.aggregate(max_order=Max("sort_order"))["max_order"] or 0
+        MenuCategory.objects.aggregate(max_order=Max("sort_order"))["max_order"] or 0
     ) + 1
-    MenuFamily.objects.create(key=key, name=name, color=color, sort_order=sort_order)
+    MenuCategory.objects.create(key=key, name=name, color=color, sort_order=sort_order)
     messages.success(request, f"Category {name} added.")
     return redirect("admin_web:dashboard")
 
 
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
-def update_menu_family(request, family_id):
-    family = get_object_or_404(MenuFamily, pk=family_id)
+def update_menu_category(request, category_id):
+    category = get_object_or_404(MenuCategory, pk=category_id)
     name = request.POST.get("name", "").strip()
     if not name:
         messages.error(request, "Category name is required.")
         return redirect("admin_web:dashboard")
-    family.name = name
-    family.color = request.POST.get("color", family.color).strip() or family.color
-    family.save(update_fields=["name", "color", "updated_at"])
-    MenuItem.objects.filter(family=family).update(category=family.name)
-    messages.success(request, f"Category {family.name} updated.")
+    category.name = name
+    category.color = request.POST.get("color", category.color).strip() or category.color
+    category.save(update_fields=["name", "color", "updated_at"])
+    messages.success(request, f"Category {category.name} updated.")
     return redirect("admin_web:dashboard")
 
 
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
-def delete_menu_family(request, family_id):
-    family = get_object_or_404(MenuFamily, pk=family_id)
-    if family.items.exists():
+def delete_menu_category(request, category_id):
+    category = get_object_or_404(MenuCategory, pk=category_id)
+    if category.items.exists():
         messages.error(request, "Move items out of this category before deleting it.")
         return redirect("admin_web:dashboard")
-    name = family.name
-    family.delete()
+    name = category.name
+    category.delete()
     messages.success(request, f"Category {name} deleted.")
     return redirect("admin_web:dashboard")
 

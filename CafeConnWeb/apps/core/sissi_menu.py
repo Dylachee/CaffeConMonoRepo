@@ -18,7 +18,7 @@ GELATO_MODIFIER_ITEMS = {
 
 
 # (key, display name, color)
-MENU_FAMILIES = [
+MENU_CATEGORIES = [
     ("caffetteria", "Caffetteria", "#E0823A"),
     ("bevande", "Bevande", "#5BAEDC"),
     ("analcolici", "Analcolici", "#3E9C63"),
@@ -39,7 +39,7 @@ MENU_FAMILIES = [
 ]
 
 
-# (station, category, family_key, [(name, price, *tags)])
+# (station, category, category_key, [(name, price, *tags)])
 MENU_SECTIONS = [
     (
         "bar",
@@ -430,8 +430,8 @@ MENU_SECTIONS = [
 ]
 
 
-def menu_families():
-    for sort_order, (key, name, color) in enumerate(MENU_FAMILIES):
+def menu_categories():
+    for sort_order, (key, name, color) in enumerate(MENU_CATEGORIES):
         yield {
             "key": key,
             "name": name,
@@ -443,7 +443,7 @@ def menu_families():
 def catalog_items():
     seen = set()
     gusti = ", ".join(GELATO_GUSTI)
-    for station, category, family_key, rows in MENU_SECTIONS:
+    for station, category, category_key, rows in MENU_SECTIONS:
         for name, price, *extra_tags in rows:
             key = (station, category, name)
             if key in seen:
@@ -463,7 +463,7 @@ def catalog_items():
                 "description": description,
                 "price": Decimal(price).quantize(Decimal("0.01")),
                 "category": category,
-                "family_key": family_key,
+                "category_key": category_key,
                 "image_url": "",
                 "station": station,
                 "tags": tags,

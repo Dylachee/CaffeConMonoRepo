@@ -95,6 +95,7 @@ class StaffChatScreen extends StatefulWidget {
 class _StaffChatScreenState extends State<StaffChatScreen> {
   final input = TextEditingController();
   final _scrollController = ScrollController();
+  String? _lastScrollKey;
 
   @override
   void dispose() {
@@ -103,16 +104,31 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+        final target = _scrollController.position.maxScrollExtent;
+        if (animated) {
+          _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+          );
+        } else {
+          _scrollController.jumpTo(target);
+        }
       }
     });
+  }
+
+  void _scrollIfMessageSetChanged(String groupId, List<ChatMessage> messages) {
+    final lastId = messages.isEmpty ? 'empty' : messages.last.id;
+    final key = '$groupId:${messages.length}:$lastId';
+    if (_lastScrollKey == key) return;
+    final firstPaint =
+        _lastScrollKey == null || !_lastScrollKey!.startsWith(groupId);
+    _lastScrollKey = key;
+    _scrollToBottom(animated: !firstPaint);
   }
 
   @override
@@ -127,26 +143,17 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
             ? AppTheme.bar
             : AppTheme.ink3;
 
-    _scrollToBottom();
+    _scrollIfMessageSetChanged(group.id, messages);
 
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return AppScaffold(
       child: Column(children: [
-        Row(children: [
-          IconButton(
-              onPressed: () => context.pop(),
-              icon: const Icon(Icons.arrow_back, color: AppTheme.ink)),
-          Avatar(label: _groupDisplayName(group), color: zoneColor),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(_groupDisplayName(group), style: T.h2.copyWith(fontSize: 17)),
-                Text(L.membersCount(group.members.length), style: T.smallSemi),
-              ])),
-        ]),
+        _ChatHeader(
+          group: group,
+          color: zoneColor,
+          onBack: () => context.pop(),
+        ),
         Expanded(
             child: messages.isEmpty
                 ? EmptyState(
@@ -155,7 +162,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
                     sub: L.startConversation)
                 : ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.fromLTRB(2, 14, 2, 18),
                     itemCount: messages.length,
                     itemBuilder: (ctx, i) {
                       final msg = messages[i];
@@ -175,8 +182,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
           padding: EdgeInsets.only(
               bottom: keyboardInset > 0 ? keyboardInset + 8 : 8, top: 8),
           child: Row(children: [
-            Expanded(
-                child: AppTextField(controller: input, label: L.message)),
+            Expanded(child: AppTextField(controller: input, label: L.message)),
             const SizedBox(width: 8),
             GestureDetector(
               onTap: () {
@@ -186,12 +192,67 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
                 input.clear();
                 _scrollToBottom();
               },
-              child: const CircleAvatar(
-                  radius: 25,
-                  backgroundColor: AppTheme.cta,
-                  child: Icon(Icons.send, color: Colors.white, size: 20)),
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  color: AppTheme.cta,
+                  shape: BoxShape.circle,
+                  boxShadow: [AppTheme.shadowCard],
+                ),
+                child: const Icon(Icons.send_rounded,
+                    color: Colors.white, size: 20),
+              ),
             ),
           ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _ChatHeader extends StatelessWidget {
+  const _ChatHeader({
+    required this.group,
+    required this.color,
+    required this.onBack,
+  });
+
+  final ChatGroup group;
+  final Color color;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 6, 12, 12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [AppTheme.shadowCard],
+      ),
+      child: Row(children: [
+        IconButton(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.ink),
+        ),
+        Avatar(label: _groupDisplayName(group), color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_groupDisplayName(group),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: T.h2.copyWith(fontSize: 17)),
+            const SizedBox(height: 2),
+            Text(L.membersCount(group.members.length), style: T.smallSemi),
+          ]),
+        ),
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
       ]),
     );
@@ -205,6 +266,9 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final own = message.own;
+    final bubbleColor = own ? AppTheme.cta : AppTheme.card;
+    final textColor = own ? Colors.white : AppTheme.ink;
+    final timeColor = own ? Colors.white70 : AppTheme.ink3;
     return Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -218,23 +282,30 @@ class ChatBubble extends StatelessWidget {
             ),
           Container(
             constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * .78),
+                maxWidth: MediaQuery.sizeOf(context).width * .76),
             margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(13, 10, 13, 8),
             decoration: BoxDecoration(
-                color: own ? AppTheme.cta : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: const [AppTheme.shadowCard]),
+              color: bubbleColor,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(own ? 16 : 5),
+                bottomRight: Radius.circular(own ? 5 : 16),
+              ),
+              boxShadow: const [AppTheme.shadowCard],
+            ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(message.text,
-                  style: T.body
-                      .copyWith(color: own ? Colors.white : AppTheme.ink)),
-              const SizedBox(height: 4),
-              Text(
-                  '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: T.label
-                      .copyWith(color: own ? Colors.white70 : AppTheme.ink3)),
+                  style: T.body.copyWith(color: textColor, height: 1.28)),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                    '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                    style: T.label.copyWith(color: timeColor)),
+              ),
             ]),
           ),
         ],
@@ -258,31 +329,47 @@ class OrderReceiptCard extends StatelessWidget {
     final zoneLabel = isKitchen ? L.kitchen : L.bar;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
       child: Container(
         decoration: BoxDecoration(
           color: AppTheme.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border(left: BorderSide(color: zoneColor, width: 4)),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: const [AppTheme.shadowCard],
         ),
-        padding: const EdgeInsets.all(12),
+        clipBehavior: Clip.antiAlias,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.receipt_long_outlined, size: 14),
-            const SizedBox(width: 6),
-            Text(L.newOrderTable(table?.number ?? '??'),
-                style: T.priceSmall
-                    .copyWith(color: zoneColor, fontWeight: FontWeight.w700)),
-          ]),
-          const Divider(height: 16),
+          Container(height: 4, color: zoneColor),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 11, 13, 0),
+            child: Row(children: [
+              Icon(Icons.receipt_long_outlined, size: 16, color: zoneColor),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(L.newOrderTable(table?.number ?? '??'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: T.priceSmall.copyWith(
+                        color: zoneColor, fontWeight: FontWeight.w800)),
+              ),
+              Text(
+                  '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                  style: T.label.copyWith(color: AppTheme.ink3)),
+            ]),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 13),
+            child: Divider(height: 16),
+          ),
           if (order != null)
             ...order.items.map((l) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.fromLTRB(13, 0, 13, 5),
                   child: Row(children: [
-                    Text('${l.quantity}×  ',
-                        style:
-                            T.priceSmall.copyWith(fontWeight: FontWeight.w700)),
+                    SizedBox(
+                      width: 34,
+                      child: Text('${l.quantity}×',
+                          style: T.priceSmall
+                              .copyWith(fontWeight: FontWeight.w800)),
+                    ),
                     Expanded(
                         child: Text(l.item.displayName, style: T.priceSmall)),
                     if (l.modifiers.isNotEmpty)
@@ -290,10 +377,12 @@ class OrderReceiptCard extends StatelessWidget {
                           style: T.label.copyWith(color: AppTheme.ink2)),
                   ]),
                 )),
-          const Divider(height: 16),
-          Text(
-              '$zoneLabel · ${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-              style: T.label.copyWith(color: AppTheme.ink2)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(13, 6, 13, 12),
+            child: Text(zoneLabel,
+                style: T.label
+                    .copyWith(color: zoneColor, fontWeight: FontWeight.w900)),
+          ),
         ]),
       ),
     );

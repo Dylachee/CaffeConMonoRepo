@@ -446,7 +446,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  List<String> get categories =>
+  List<String> get categoryNames =>
       ['All', ...menu.map((m) => m.category).toSet()];
 
   List<MenuItem> sortedMenuItems(Iterable<MenuItem> items) => items.toList()
@@ -590,13 +590,37 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<CafeOrder?> _submitOrderImpl(
-      CafeTable table, FeedType? onlyFor) async {
-    // When connected, send to the hub; realtime echoes it back to all devices.
-    if (backendConnected) return _submitOrderRemote(table, onlyFor);
+  /// Send exactly the lines confirmed in the precheck sheet.
+  ///
+  /// This bypasses the table's local draft cart. That cart can contain stale
+  /// unsent rows after a failed/partial send, so the precheck path must not
+  /// read from it when the waiter has just reviewed a specific snapshot.
+  Future<CafeOrder?> submitOrderLines({
+    required String tableId,
+    required List<CartLine> lines,
+  }) async {
+    final table = tables.firstWhereOrNull((t) => t.id == tableId);
+    if (table == null || lines.isEmpty) return null;
+    if (_submittingTables.contains(table.id)) return null;
+    _submittingTables.add(table.id);
+    notifyListeners();
+    try {
+      return await _submitOrderImpl(table, null, draftLines: lines);
+    } finally {
+      _submittingTables.remove(table.id);
+      notifyListeners();
+    }
+  }
 
-    final source = tableCart(table.id);
-    final toSend = source.where((l) => !l.sent).where((l) {
+  Future<CafeOrder?> _submitOrderImpl(CafeTable table, FeedType? onlyFor,
+      {List<CartLine>? draftLines}) async {
+    // When connected, send to the hub; realtime echoes it back to all devices.
+    if (backendConnected) {
+      return _submitOrderRemote(table, onlyFor, draftLines: draftLines);
+    }
+
+    final source = draftLines ?? tableCart(table.id).where((l) => !l.sent);
+    final toSend = source.where((l) {
       if (onlyFor == null) return true;
       return (onlyFor == FeedType.bar) == l.isBar;
     }).toList();
@@ -623,7 +647,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
               .toList(),
           feed));
       for (final l in lines) {
-        l.sent = true;
+        if (draftLines == null) l.sent = true;
       }
     }
 
@@ -651,16 +675,17 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// locally (idempotent by id, so the WebSocket echo won't duplicate them).
   /// Kitchen and bar lines go as two separate orders so each order has a
   /// single station_scope — a "mixed" order used to disappear from the bar.
-  Future<CafeOrder?> _submitOrderRemote(
-      CafeTable table, FeedType? onlyFor) async {
-    final source = tableCart(table.id);
-    final toSend = source.where((l) => !l.sent).where((l) {
+  Future<CafeOrder?> _submitOrderRemote(CafeTable table, FeedType? onlyFor,
+      {List<CartLine>? draftLines}) async {
+    final source = draftLines ?? tableCart(table.id).where((l) => !l.sent);
+    final toSend = source.where((l) {
       if (onlyFor == null) return true;
       return (onlyFor == FeedType.bar) == l.isBar;
     }).toList();
     if (toSend.isEmpty) return null;
 
     CafeOrder? last;
+    var hadFailure = false;
     for (final lines in [
       toSend.where((l) => !l.isBar).toList(),
       toSend.where((l) => l.isBar).toList(),
@@ -670,11 +695,18 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       if (dto == null) {
         // Backend rejected/unreachable; these lines stay unsent and the
         // error is surfaced via backendError. Already-sent lines keep sent.
+        hadFailure = true;
+        if (draftLines != null) {
+          for (final l in lines) {
+            _addDraftLine(table.id, l);
+          }
+          _saveTables();
+        }
         notifyListeners();
         continue;
       }
       for (final l in lines) {
-        l.sent = true;
+        if (draftLines == null) l.sent = true;
       }
       final order = _orderFromDto(dto);
       _upsertLocalOrder(order);
@@ -688,7 +720,26 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     _saveTables();
     HapticFeedback.mediumImpact();
     notifyListeners();
+    if (hadFailure) return null;
     return last;
+  }
+
+  void _addDraftLine(String tableId, CartLine line) {
+    final lines = tableCart(tableId);
+    final existing = lines.firstWhereOrNull((candidate) =>
+        !candidate.sent &&
+        candidate.item.id == line.item.id &&
+        candidate.modifiers == line.modifiers);
+    if (existing != null) {
+      existing.quantity += line.quantity;
+      return;
+    }
+    lines.add(CartLine(
+      item: line.item,
+      quantity: line.quantity,
+      modifiers: line.modifiers,
+      lockedPrice: line.lockedPrice,
+    ));
   }
 
   CafeOrder _makeOrder(CafeTable table, List<CartLine> lines, FeedType feed) {
@@ -868,54 +919,51 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Owner-defined POS families from the hub (names + colors are the owner's
-  /// data; the hardcoded palette is only the offline fallback).
-  final List<CafeFamily> families = [];
+  /// Owner-defined menu categories from the hub (names + colors are the
+  /// owner's data; the hardcoded palette is only the offline fallback).
+  final List<CafeCategory> menuCategories = [];
 
-  /// Resolve an item's family: explicit assignment first, keyword fallback
-  /// (matched to the family's stable key) second.
-  CafeFamily? familyFor(MenuItem m) {
-    if (m.familyId.isNotEmpty) {
-      final f = families.firstWhereOrNull((f) => f.id == m.familyId);
-      if (f != null) return f;
+  CafeCategory? categoryFor(MenuItem m) {
+    if (m.categoryId.isNotEmpty) {
+      final category =
+          menuCategories.firstWhereOrNull((c) => c.id == m.categoryId);
+      if (category != null) return category;
     }
-    final key = MenuFamilies.of(m.category, isBar: m.isBar).toLowerCase();
-    return families.firstWhereOrNull((f) => f.key == key);
+    final key = MenuCategories.of(m.category, isBar: m.isBar).toLowerCase();
+    return menuCategories.firstWhereOrNull((c) => c.key == key);
   }
 
-  Color familyColorFor(MenuItem m) =>
-      familyFor(m)?.color ?? AppColors.familyColor(m.family);
+  Color categoryColorFor(MenuItem m) =>
+      categoryFor(m)?.color ?? AppColors.categoryColor(m.canonicalCategory);
 
-  Color familyColorForCategory(String category) {
-    final legacy = MenuFamilies.of(category, isBar: false);
-    return families
-            .firstWhereOrNull((f) => f.key == legacy.toLowerCase())
+  Color categoryColorForName(String category) {
+    final legacy = MenuCategories.of(category, isBar: false);
+    return menuCategories
+            .firstWhereOrNull((c) => c.key == legacy.toLowerCase())
             ?.color ??
-        AppColors.familyColor(legacy);
+        AppColors.categoryColor(legacy);
   }
 
-  /// True when [m] belongs to the family filter [value] — an id when the hub
-  /// provided families, a legacy display name otherwise.
-  bool itemInFamily(MenuItem m, String value) {
-    final f = familyFor(m);
-    if (f != null) return f.id == value || f.name == value;
-    return m.family == value;
+  bool itemInCategory(MenuItem m, String value) {
+    final category = categoryFor(m);
+    if (category != null) return category.id == value || category.name == value;
+    return m.canonicalCategory == value || m.category == value;
   }
 
-  /// Manager: rename/recolor a family. Optimistic local apply after the hub
+  /// Manager: rename/recolor a category. Optimistic local apply after the hub
   /// confirms; returns null on success, an error message otherwise.
-  Future<String?> updateMenuFamily(String id,
+  Future<String?> updateMenuCategory(String id,
       {String? name, String? color}) async {
     try {
-      await _remoteApi.updateMenuFamily(id, {
+      await _remoteApi.updateMenuCategory(id, {
         if (name != null && name.isNotEmpty) 'name': name,
         if (color != null && color.isNotEmpty) 'color': color,
       });
-      final f = families.firstWhereOrNull((x) => x.id == id);
-      if (f != null) {
-        if (name != null && name.isNotEmpty) f.name = name;
+      final category = menuCategories.firstWhereOrNull((x) => x.id == id);
+      if (category != null) {
+        if (name != null && name.isNotEmpty) category.name = name;
         if (color != null && color.isNotEmpty) {
-          f.color = CafeFamily.parseHex(color, f.color);
+          category.color = CafeCategory.parseHex(color, category.color);
         }
       }
       await refreshMenu();
@@ -923,16 +971,16 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       return null;
     } on ApiException catch (e) {
       backendError = e.message;
-      debugPrint('updateMenuFamily failed: $e');
+      debugPrint('updateMenuCategory failed: $e');
       notifyListeners();
       return e.message;
     }
   }
 
-  Future<String?> createMenuFamily(
+  Future<String?> createMenuCategory(
       {required String name, String? color}) async {
     try {
-      await _remoteApi.createMenuFamily({
+      await _remoteApi.createMenuCategory({
         'name': name,
         if (color != null && color.isNotEmpty) 'color': color,
       });
@@ -940,21 +988,21 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       return null;
     } on ApiException catch (e) {
       backendError = e.message;
-      debugPrint('createMenuFamily failed: $e');
+      debugPrint('createMenuCategory failed: $e');
       notifyListeners();
       return e.message;
     }
   }
 
-  Future<String?> deleteMenuFamily(String id) async {
+  Future<String?> deleteMenuCategory(String id) async {
     try {
-      await _remoteApi.deleteMenuFamily(id);
-      families.removeWhere((f) => f.id == id);
+      await _remoteApi.deleteMenuCategory(id);
+      menuCategories.removeWhere((category) => category.id == id);
       notifyListeners();
       return null;
     } on ApiException catch (e) {
       backendError = e.message;
-      debugPrint('deleteMenuFamily failed: $e');
+      debugPrint('deleteMenuCategory failed: $e');
       notifyListeners();
       return e.message;
     }
@@ -1043,8 +1091,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       'name': item.name,
       'description': item.description,
       'price': item.price.toStringAsFixed(2),
-      'category': item.category,
-      'family': item.familyId.isEmpty ? null : item.familyId,
+      'category': item.categoryId,
       'station': item.station.isEmpty ? 'kitchen' : item.station,
       'tags': item.tags,
       'is_available': item.available,
@@ -1541,14 +1588,14 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         ..addAll(data.menu.map(_menuFromDto));
       _saveMenu();
     }
-    if (data.families.isNotEmpty) {
-      families
+    if (data.categories.isNotEmpty) {
+      menuCategories
         ..clear()
-        ..addAll(data.families.map((f) => CafeFamily(
-              id: f.id,
-              key: f.key,
-              name: f.name,
-              color: CafeFamily.parseHex(f.color, AppColors.famFood),
+        ..addAll(data.categories.map((category) => CafeCategory(
+              id: category.id,
+              key: category.key,
+              name: category.name,
+              color: CafeCategory.parseHex(category.color, AppColors.famFood),
             )));
     }
     if (data.tables.isNotEmpty) {
@@ -1789,20 +1836,20 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     if (!backendConnected) return;
     try {
       final data = await _remoteApi.bootstrap();
-      if (data.menu.isEmpty && data.families.isEmpty) return;
+      if (data.menu.isEmpty && data.categories.isEmpty) return;
       if (data.menu.isNotEmpty) {
         menu
           ..clear()
           ..addAll(data.menu.map(_menuFromDto));
         _saveMenu();
       }
-      families
+      menuCategories
         ..clear()
-        ..addAll(data.families.map((f) => CafeFamily(
-              id: f.id,
-              key: f.key,
-              name: f.name,
-              color: CafeFamily.parseHex(f.color, AppColors.famFood),
+        ..addAll(data.categories.map((category) => CafeCategory(
+              id: category.id,
+              key: category.key,
+              name: category.name,
+              color: CafeCategory.parseHex(category.color, AppColors.famFood),
             )));
       final liveIds = menu.map((m) => m.id).toSet();
       var pruned = false;
@@ -1958,7 +2005,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         composition: d.composition,
         allergens: d.allergens,
         station: d.station,
-        familyId: d.familyId,
+        categoryId: d.categoryId,
       );
 
   CafeTable _tableFromDto(TableDto d) {

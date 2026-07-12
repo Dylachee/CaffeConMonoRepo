@@ -10,13 +10,8 @@ class Station(models.TextChoices):
     BAR = "bar", "Bar"
 
 
-class MenuFamily(models.Model):
-    """One of the owner's POS families (Caffetteria, Bevande, …): the colored
-    quick-filter groups in the waiter app and the guest menu accents. The
-    owner renames/recolors them from the manager panel or /system-admin/.
-
-    `key` is the stable machine identifier (never shown, never renamed) so
-    code and keyword fallbacks keep working when `name` is customized."""
+class MenuCategory(models.Model):
+    """One owner-defined menu category with its display color and order."""
 
     key = models.SlugField(max_length=40, unique=True)
     name = models.CharField(max_length=80)
@@ -27,9 +22,9 @@ class MenuFamily(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "cafe_menu_families"
+        db_table = "cafe_menu_categories"
         ordering = ["sort_order", "name"]
-        verbose_name_plural = "menu families"
+        verbose_name_plural = "menu categories"
 
     def __str__(self) -> str:
         return self.name
@@ -39,15 +34,10 @@ class MenuItem(models.Model):
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    category = models.CharField(max_length=80, db_index=True)
-    # The POS family this item belongs to (color + waiter quick filter).
-    # Nullable: unassigned items fall back to keyword matching on `category`.
-    family = models.ForeignKey(
-        MenuFamily,
-        on_delete=models.SET_NULL,
+    category = models.ForeignKey(
+        MenuCategory,
+        on_delete=models.PROTECT,
         related_name="items",
-        null=True,
-        blank=True,
     )
     image_url = models.URLField(blank=True)
     station = models.CharField(max_length=24, choices=Station.choices, default=Station.KITCHEN, db_index=True)
@@ -66,7 +56,7 @@ class MenuItem(models.Model):
 
     class Meta:
         db_table = "cafe_menu_items"
-        ordering = ["category", "name"]
+        ordering = ["category__sort_order", "category__name", "name"]
 
     def __str__(self) -> str:
         return self.name

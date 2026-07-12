@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from rest_framework.authtoken.models import Token
 
-from apps.core.models import Employee, MenuFamily, MenuItem, Table
-from apps.core.sissi_menu import catalog_items, menu_families
+from apps.core.models import Employee, MenuCategory, MenuItem, Table
+from apps.core.sissi_menu import catalog_items, menu_categories
 
 User = get_user_model()
 
@@ -63,12 +63,12 @@ class Command(BaseCommand):
     def _create_menu(self):
         active_keys = set()
         created = updated = 0
-        families = self._sync_menu_families()
+        categories = self._sync_menu_categories()
         for item in catalog_items():
-            family_key = item.pop("family_key")
-            item["family"] = families[family_key]
+            category_key = item.pop("category_key")
+            item["category"] = categories[category_key]
             self._enrich_menu_item(item)
-            active_keys.add((item["station"], item["category"], item["name"]))
+            active_keys.add((item["station"], item["category"].id, item["name"]))
             was_created = self._upsert_menu_item(item)
             created += int(was_created)
             updated += int(not was_created)
@@ -100,7 +100,7 @@ class Command(BaseCommand):
     def _archive_missing_menu_items(self, active_keys):
         removed = 0
         for item in list(MenuItem.objects.all()):
-            if (item.station, item.category, item.name) in active_keys:
+            if (item.station, item.category_id, item.name) in active_keys:
                 continue
             if "archived" in (item.tags or []):
                 continue
@@ -176,25 +176,33 @@ class Command(BaseCommand):
             allergens.append("Nuts")
         if "senape" in text:
             allergens.append("Mustard")
-        if item["category"] == "Vino":
+        if item["category"].name == "Vino":
             allergens.append("Sulphites")
         return allergens
 
     def _default_portion(self, item):
-        category = item["category"]
+        category = item["category"].name
         name = item["name"].lower()
         if "0,5" in name or "media" in name:
             return "500 ml"
         if "piccola" in name or "0,25" in name:
             return "250 ml"
-        if category in {"Caffetteria", "Bevande", "Birra", "Aperitivi", "Cocktails", "Vino", "Liquori"}:
+        if category in {
+            "Caffetteria",
+            "Bevande",
+            "Analcolici",
+            "Birra",
+            "Cocktail & Aperitivi",
+            "Vino",
+            "Liquori/Grappe/Amari",
+        }:
             return "150-250 ml"
-        if category in {"Colazione", "Dolci", "Gelati"}:
+        if category in {"Pasticceria", "Dolci", "Gelati"}:
             return "1 portion"
         return "1 plate"
 
     def _default_calories(self, item):
-        category = item["category"]
+        category = item["category"].name
         text = f"{item['name']} {item.get('description', '')}".lower()
         if category == "Caffetteria":
             if "espresso" in text or "caffè" == text or "tè" in text or "tisana" in text:
@@ -202,20 +210,45 @@ class Command(BaseCommand):
             if "cioccolata" in text or "bombardino" in text:
                 return 260
             return 130
-        if category in {"Bevande", "Aperitivi", "Cocktails", "Vino", "Birra", "Liquori"}:
+        if category in {
+            "Bevande",
+            "Analcolici",
+            "Cocktail & Aperitivi",
+            "Vino",
+            "Birra",
+            "Liquori/Grappe/Amari",
+        }:
             if "acqua" in text:
                 return 0
             return 160
-        if category == "Colazione":
+        if category == "Pasticceria":
             return 320
-        if category in {"Cucina", "Food", "Panini", "Menu del giorno"}:
+        if category in {
+            "Panini",
+            "Piadine",
+            "Tortel",
+            "Secondi",
+            "Uova/colazione salata",
+            "Toast",
+            "Fritti/stuzzichini",
+            "Menu del giorno",
+        }:
             return 650
         return 360
 
     def _default_prep(self, item):
-        if item["category"] in {"Cucina", "Food", "Panini", "Menu del giorno"}:
+        if item["category"].name in {
+            "Panini",
+            "Piadine",
+            "Tortel",
+            "Secondi",
+            "Uova/colazione salata",
+            "Toast",
+            "Fritti/stuzzichini",
+            "Menu del giorno",
+        }:
             return 12
-        if item["category"] in {"Colazione", "Dolci", "Gelati"}:
+        if item["category"].name in {"Pasticceria", "Dolci", "Gelati"}:
             return 7
         return 5
 
@@ -235,16 +268,16 @@ class Command(BaseCommand):
                 continue
             self._archive_or_delete(item)
 
-    def _sync_menu_families(self):
-        families = {}
-        for family in menu_families():
-            obj, _ = MenuFamily.objects.update_or_create(
-                key=family["key"],
+    def _sync_menu_categories(self):
+        categories = {}
+        for category in menu_categories():
+            obj, _ = MenuCategory.objects.update_or_create(
+                key=category["key"],
                 defaults={
-                    "name": family["name"],
-                    "color": family["color"],
-                    "sort_order": family["sort_order"],
+                    "name": category["name"],
+                    "color": category["color"],
+                    "sort_order": category["sort_order"],
                 },
             )
-            families[family["key"]] = obj
-        return families
+            categories[category["key"]] = obj
+        return categories

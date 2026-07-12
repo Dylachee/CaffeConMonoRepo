@@ -7,7 +7,7 @@ from apps.core.menu_i18n import menu_item_labels
 from apps.core.models import (
     AttentionSignal,
     Employee,
-    MenuFamily,
+    MenuCategory,
     MenuItem,
     Order,
     OrderItem,
@@ -18,11 +18,11 @@ from apps.core.models import (
 User = get_user_model()
 
 
-class MenuFamilySerializer(serializers.ModelSerializer):
+class MenuCategorySerializer(serializers.ModelSerializer):
     item_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = MenuFamily
+        model = MenuCategory
         fields = [
             "id",
             "key",
@@ -39,17 +39,17 @@ class MenuFamilySerializer(serializers.ModelSerializer):
         validated_data["name"] = name
         if "sort_order" not in validated_data:
             validated_data["sort_order"] = (
-                MenuFamily.objects.aggregate(max_order=Max("sort_order"))["max_order"]
+                MenuCategory.objects.aggregate(max_order=Max("sort_order"))["max_order"]
                 or 0
             ) + 1
         base = slugify(name)[:40] or "category"
         key = base
         suffix = 2
-        while MenuFamily.objects.filter(key=key).exists():
+        while MenuCategory.objects.filter(key=key).exists():
             tail = f"-{suffix}"
             key = f"{base[:40 - len(tail)]}{tail}"
             suffix += 1
-        return MenuFamily.objects.create(key=key, **validated_data)
+        return MenuCategory.objects.create(key=key, **validated_data)
 
     def get_item_count(self, obj):
         item_count = getattr(obj, "item_count", None)
@@ -57,10 +57,7 @@ class MenuFamilySerializer(serializers.ModelSerializer):
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
-    family = serializers.PrimaryKeyRelatedField(
-        queryset=MenuFamily.objects.all(), allow_null=True, required=False
-    )
-    category = serializers.CharField(required=False, allow_blank=True)
+    category = serializers.PrimaryKeyRelatedField(queryset=MenuCategory.objects.all())
 
     class Meta:
         model = MenuItem
@@ -70,7 +67,6 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "description",
             "price",
             "category",
-            "family",
             "image_url",
             "station",
             "tags",
@@ -86,26 +82,14 @@ class MenuItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["created_at", "updated_at"]
 
-    def validate(self, attrs):
-        family = attrs.get("family")
-        if family is not None:
-            attrs["category"] = family.name
-        elif not self.instance and not attrs.get("category", "").strip():
-            raise serializers.ValidationError({"category": "Choose a category."})
-        return attrs
-
-    def update(self, instance, validated_data):
-        family = validated_data.get("family", serializers.empty)
-        if family not in (serializers.empty, None):
-            validated_data["category"] = family.name
-        return super().update(instance, validated_data)
-
     def to_representation(self, instance):
         data = super().to_representation(instance)
         labels = menu_item_labels(instance)
+        data["categoryId"] = str(instance.category_id)
         data["name"] = labels["name_en"]
         data["description"] = labels["description_en"]
         data["category"] = labels["category_en"]
+        data["categoryIt"] = labels["category_it"]
         return data
 
 

@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from rest_framework.authtoken.models import Token
 
-from apps.core.models import Employee, MenuItem, Station, Table
+from apps.core.models import Employee, MenuCategory, MenuItem, Station, Table
 
 User = get_user_model()
 
@@ -122,4 +122,13 @@ class Command(BaseCommand):
         ]
 
         for item in items:
+            item["category"] = self._category(item["category"])
             MenuItem.objects.update_or_create(name=item["name"], defaults=item)
+
+    def _category(self, name):
+        key = name.lower().replace(" ", "-")
+        category, _ = MenuCategory.objects.get_or_create(
+            key=key[:40],
+            defaults={"name": name, "color": "#DFAF2B"},
+        )
+        return category

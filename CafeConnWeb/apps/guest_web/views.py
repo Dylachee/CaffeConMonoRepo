@@ -1,5 +1,4 @@
 import mimetypes
-from datetime import date
 
 from django.conf import settings
 from django.contrib import messages
@@ -11,8 +10,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
-from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import category_labels, menu_item_labels
+from apps.core.menu_visibility import (
+    guest_visible_menu_items,
+    menu_has_client_items,
+    menu_item_guest_visible,
+)
 from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table
 from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
 
@@ -88,9 +91,6 @@ ORDER_STATUS_LABELS = {
     Order.Status.CANCELLED: "Order cancelled",
 }
 
-VALID_UNTIL_TAG = "valid_until:"
-
-
 MENU_VISUALS = {
     "analcolici": ("drink", "🥤"),
     "aperitivi": ("drink", "🍹"),
@@ -116,10 +116,9 @@ MENU_VISUALS = {
 }
 
 
-# The owner's 8 POS family colors (same values as the staff app's AppColors
-# family palette) — category chips and section headings carry them so the
-# guest menu reads like the rest of the brand.
-_FAMILY_COLORS = {
+# Fallback colors for legacy/unassigned categories. Current data uses
+# MenuCategory.color directly.
+_CATEGORY_COLORS = {
     "caffetteria": "#E0823A",
     "bevande": "#5BAEDC",
     "liquori": "#3E9C63",
@@ -131,33 +130,33 @@ _FAMILY_COLORS = {
 }
 
 
-def _family_color(category):
+def _category_color(category):
     c = (category or "").lower()
 
     def has(*keys):
         return any(k in c for k in keys)
 
     if has("caffett", "coffee"):
-        return _FAMILY_COLORS["caffetteria"]
+        return _CATEGORY_COLORS["caffetteria"]
     if has("gelat"):
-        return _FAMILY_COLORS["gelati"]
+        return _CATEGORY_COLORS["gelati"]
     if has("dolc", "dessert"):
-        return _FAMILY_COLORS["dolci"]
+        return _CATEGORY_COLORS["dolci"]
     if has("liquor", "grapp", "amari"):
-        return _FAMILY_COLORS["liquori"]
+        return _CATEGORY_COLORS["liquori"]
     if has("vino", "wine"):
-        return _FAMILY_COLORS["vino"]
+        return _CATEGORY_COLORS["vino"]
     if has("aperitiv", "cocktail", "birra", "spritz"):
-        return _FAMILY_COLORS["aperitivi"]
+        return _CATEGORY_COLORS["aperitivi"]
     if has("bibit", "bevand", "analcolic", "succ"):
-        return _FAMILY_COLORS["bevande"]
-    return _FAMILY_COLORS["food"]
+        return _CATEGORY_COLORS["bevande"]
+    return _CATEGORY_COLORS["food"]
 
 
 def menu_page(request, table_id=None, table_number=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
-    menu_items = MenuItem.objects.select_related("family").order_by(
-        "category", "-is_available", "name"
+    menu_items = MenuItem.objects.select_related("category").order_by(
+        "category__sort_order", "category__name", "-is_available", "name"
     )
     # Two ways to address a table:
     #   /menu/t/<pk>/     — legacy, internal DB id (kept for old links);
@@ -168,22 +167,20 @@ def menu_page(request, table_id=None, table_number=None):
     else:
         table = get_object_or_404(Table, pk=table_id) if table_id is not None else None
 
+    # Prefer the explicit printed/client menu. If a dirty DB has no client tags
+    # at all, fall back to all available non-archived items instead of rendering
+    # an empty guest page.
+    menu_items = guest_visible_menu_items(menu_items)
     # menu_items is ordered by (category, name), so grouping is a single pass.
     sections = []
     sections_by_name = {}
     menu_payload = []
     visible_items = []
     for item in menu_items:
-        if (
-            not item.is_available
-            or not _menu_item_client_visible(item)
-            or _menu_item_expired(item)
-            or _menu_item_archived(item)
-        ):
-            continue
         # Printed-menu price style: comma decimal, always two digits («4,50»).
         item.price_str = f"{item.price:.2f}".replace(".", ",")
-        display_category = "Menu del giorno" if _menu_item_is_daily(item) else item.category
+        raw_category = item.category.name
+        display_category = "Menu del giorno" if _menu_item_is_daily(item) else raw_category
         item.menu_category = display_category
         item.visual_key, item.visual_icon = _menu_visual(display_category)
         labels = menu_item_labels(item)
@@ -229,13 +226,7 @@ def menu_page(request, table_id=None, table_number=None):
                     "name": display_category,
                     "name_en": cat_labels["en"],
                     "name_it": cat_labels["it"],
-                    # Owner-set family color when assigned; keyword fallback
-                    # keeps unassigned/legacy items colored sensibly.
-                    "color": (
-                        item.family.color
-                        if item.family_id
-                        else _family_color(display_category)
-                    ),
+                    "color": item.category.color or _category_color(display_category),
                     "items": [],
                 }
             )
@@ -361,12 +352,11 @@ def create_guest_order(request):
             messages.error(request, "Table not found. Please scan the QR code again.")
             return _redirect_menu(None)
 
+        has_client_menu = menu_has_client_items(MenuItem.objects.only("tags", "is_available"))
         menu_items = [
             item
-            for item in MenuItem.objects.filter(pk__in=selected_ids, is_available=True)
-            if _menu_item_client_visible(item)
-            and not _menu_item_expired(item)
-            and not _menu_item_archived(item)
+            for item in MenuItem.objects.filter(pk__in=selected_ids).select_related("category")
+            if menu_item_guest_visible(item, has_client_menu=has_client_menu)
         ]
         order_items = []
         for item in menu_items:
@@ -515,30 +505,8 @@ def _menu_visual(category):
     return MENU_VISUALS.get((category or "").strip().lower(), ("default", "🍽"))
 
 
-def _menu_item_expired(item, today=None):
-    today = today or timezone.localdate()
-    for tag in item.tags or []:
-        if not isinstance(tag, str) or not tag.startswith(VALID_UNTIL_TAG):
-            continue
-        try:
-            valid_until = date.fromisoformat(tag.removeprefix(VALID_UNTIL_TAG))
-        except ValueError:
-            continue
-        if today > valid_until:
-            return True
-    return False
-
-
-def _menu_item_archived(item):
-    return "archived" in (item.tags or [])
-
-
-def _menu_item_client_visible(item):
-    return CLIENT_MENU_TAG in (item.tags or [])
-
-
 def _menu_item_is_daily(item):
-    return item.category == "Menu del giorno" or "daily" in (item.tags or [])
+    return item.category.name == "Menu del giorno" or "daily" in (item.tags or [])
 
 
 def _guest_category_rank(category):

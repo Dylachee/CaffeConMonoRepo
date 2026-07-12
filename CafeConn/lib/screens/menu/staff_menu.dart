@@ -37,7 +37,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     final items = state.menu.where((m) {
-      final okCat = _category == 'All' || state.itemInFamily(m, _category);
+      final okCat = _category == 'All' || state.itemInCategory(m, _category);
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
@@ -48,7 +48,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
     return state.sortedMenuItems(items);
   }
 
-  Widget _familyBtn(String label, String value, Color color) {
+  Widget _categoryBtn(String label, String value, Color color) {
     final active = _category == value;
     final onColor =
         color.computeLuminance() > 0.45 ? AppColors.ink : Colors.white;
@@ -120,15 +120,17 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Same family bar as the composer/panel: every family visible at
+          // Same category bar as the composer/panel: every category visible at
           // once, colors matching the cards below — no chip scrolling.
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _familyBtn(L.all, 'All', AppColors.espresso),
-            if (state.families.isNotEmpty)
-              for (final f in state.families) _familyBtn(f.name, f.id, f.color)
+            _categoryBtn(L.all, 'All', AppColors.espresso),
+            if (state.menuCategories.isNotEmpty)
+              for (final category in state.menuCategories)
+                _categoryBtn(category.name, category.id, category.color)
             else
-              for (final f in MenuFamilies.all)
-                _familyBtn(f, f, AppColors.familyColor(f)),
+              for (final category in MenuCategories.all)
+                _categoryBtn(
+                    category, category, AppColors.categoryColor(category)),
           ]),
           const SizedBox(height: 4),
           Expanded(
@@ -148,7 +150,7 @@ class _StaffMenuScreenState extends State<StaffMenuScreen> {
                     itemCount: items.length,
                     itemBuilder: (ctx, i) => _MenuShowcaseCard(
                       item: items[i],
-                      color: state.familyColorFor(items[i]),
+                      color: state.categoryColorFor(items[i]),
                       onTap: () => showStaffDishDetails(ctx, items[i]),
                     ),
                   ),

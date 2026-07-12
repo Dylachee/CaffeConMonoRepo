@@ -71,8 +71,9 @@ class ApiConfig {
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
   static Uri toggleMenuItemPopular(String id) =>
       Uri.parse('$apiRoot/menu-items/$id/toggle-popular/');
-  static Uri menuFamilies() => Uri.parse('$apiRoot/menu-families/');
-  static Uri menuFamily(String id) => Uri.parse('$apiRoot/menu-families/$id/');
+  static Uri menuCategories() => Uri.parse('$apiRoot/menu-categories/');
+  static Uri menuCategory(String id) =>
+      Uri.parse('$apiRoot/menu-categories/$id/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
   static Uri orderItem(String itemId) =>
       Uri.parse('$apiRoot/order-items/$itemId/');

@@ -240,19 +240,19 @@ class CafeApiClient {
   Future<void> toggleMenuItemPopular(String id) => _send(() =>
       _http.post(ApiConfig.toggleMenuItemPopular(id), headers: _headers()));
 
-  /// Manager: rename/recolor a POS family ({'name': …, 'color': '#RRGGBB'}).
-  Future<void> updateMenuFamily(String id, Map<String, dynamic> fields) =>
-      _send(() => _http.patch(ApiConfig.menuFamily(id),
+  /// Manager: rename/recolor a menu category ({'name': …, 'color': '#RRGGBB'}).
+  Future<void> updateMenuCategory(String id, Map<String, dynamic> fields) =>
+      _send(() => _http.patch(ApiConfig.menuCategory(id),
           headers: _headers(), body: jsonEncode(fields)));
 
   /// Manager: create a POS/menu category.
-  Future<void> createMenuFamily(Map<String, dynamic> fields) =>
-      _send(() => _http.post(ApiConfig.menuFamilies(),
+  Future<void> createMenuCategory(Map<String, dynamic> fields) =>
+      _send(() => _http.post(ApiConfig.menuCategories(),
           headers: _headers(), body: jsonEncode(fields)));
 
   /// Manager: delete an unused POS/menu category.
-  Future<void> deleteMenuFamily(String id) =>
-      _send(() => _http.delete(ApiConfig.menuFamily(id), headers: _headers()));
+  Future<void> deleteMenuCategory(String id) => _send(
+      () => _http.delete(ApiConfig.menuCategory(id), headers: _headers()));
 
   /// Manager: create a menu item on the hub. `fields` uses the DRF wire names
   /// (name, description, price, category, station, tags, is_available,

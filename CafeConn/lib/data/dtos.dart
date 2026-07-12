@@ -93,7 +93,7 @@ class MenuItemDto {
   final String composition;
   final List<String> allergens;
   final String station;
-  final String familyId; // owner-defined POS family; '' = unassigned
+  final String categoryId;
 
   const MenuItemDto({
     required this.id,
@@ -112,7 +112,7 @@ class MenuItemDto {
     required this.composition,
     required this.allergens,
     required this.station,
-    this.familyId = '',
+    this.categoryId = '',
   });
 
   factory MenuItemDto.fromBootstrap(Map<String, dynamic> j) => MenuItemDto(
@@ -132,7 +132,7 @@ class MenuItemDto {
         composition: _asString(j['composition']),
         allergens: _asStringList(j['allergens']),
         station: _asString(j['station'], 'kitchen'),
-        familyId: _asString(j['familyId'], ''),
+        categoryId: _asString(j['categoryId'], ''),
       );
 }
 
@@ -426,7 +426,7 @@ class BootstrapDto {
   final List<MenuItemDto> menu;
   final List<OrderDto> orders;
   final List<OrderDto> history; // recently-archived (paid) orders, for history
-  final List<FamilyDto> families; // owner-defined POS families (colors)
+  final List<CategoryDto> categories;
   final Map<String, dynamic> preferences;
 
   const BootstrapDto({
@@ -436,7 +436,7 @@ class BootstrapDto {
     required this.orders,
     required this.history,
     required this.preferences,
-    this.families = const [],
+    this.categories = const [],
   });
 
   factory BootstrapDto.fromJson(Map<String, dynamic> j) => BootstrapDto(
@@ -460,8 +460,9 @@ class BootstrapDto {
             .map((e) =>
                 OrderDto.fromBootstrap((e as Map).cast<String, dynamic>()))
             .toList(),
-        families: ((j['families'] as List?) ?? const [])
-            .map((e) => FamilyDto.fromJson((e as Map).cast<String, dynamic>()))
+        categories: ((j['categories'] as List?) ?? const [])
+            .map(
+                (e) => CategoryDto.fromJson((e as Map).cast<String, dynamic>()))
             .toList(),
         preferences:
             (j['preferences'] as Map?)?.cast<String, dynamic>() ?? const {},
@@ -590,20 +591,20 @@ class StatsDto {
   }
 }
 
-/// One owner-defined POS family: display name + hex color, editable from the
-/// manager panel and /system-admin/. `key` is the stable machine id.
-class FamilyDto {
+/// One owner-defined menu category: display name + hex color, editable from
+/// the manager panel and /system-admin/. `key` is the stable machine id.
+class CategoryDto {
   final String id;
   final String key;
   final String name;
   final String color; // hex, e.g. #DFAF2B
-  const FamilyDto({
+  const CategoryDto({
     required this.id,
     required this.key,
     required this.name,
     required this.color,
   });
-  factory FamilyDto.fromJson(Map<String, dynamic> j) => FamilyDto(
+  factory CategoryDto.fromJson(Map<String, dynamic> j) => CategoryDto(
         id: _asString(j['id']),
         key: _asString(j['key'], ''),
         name: _asString(j['name']),

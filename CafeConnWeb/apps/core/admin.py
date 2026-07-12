@@ -1,14 +1,13 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from apps.core.models import AttentionSignal, Employee, MenuFamily, MenuItem, Order, OrderItem, StaffPreference, Table
+from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, OrderItem, StaffPreference, Table
 
 
-@admin.register(MenuFamily)
-class MenuFamilyAdmin(admin.ModelAdmin):
-    """The owner's category console: rename and recolor the POS families the
-    apps use for the colored quick filters. `key` is the stable identifier and
-    stays fixed; `name`, `color` (hex like #DFAF2B) and order are yours."""
+@admin.register(MenuCategory)
+class MenuCategoryAdmin(admin.ModelAdmin):
+    """The owner's category console: rename/recolor categories used by menu
+    items, waiter filters, and guest menu accents."""
 
     list_display = ("swatch", "key", "name", "color", "sort_order", "updated_at")
     list_display_links = ("key",)
@@ -39,7 +38,6 @@ class MenuItemAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "category",
-        "family",
         "station",
         "price",
         "is_client_visible",
@@ -51,16 +49,15 @@ class MenuItemAdmin(admin.ModelAdmin):
     list_display_links = ("name",)
     list_editable = (
         "category",
-        "family",
         "station",
         "price",
         "is_promoted",
         "is_available",
     )
-    list_filter = ("family", "category", "station", "is_available", "is_promoted")
-    list_select_related = ("family",)
-    search_fields = ("name", "description", "category")
-    ordering = ("category", "name")
+    list_filter = ("category", "station", "is_available", "is_promoted")
+    list_select_related = ("category",)
+    search_fields = ("name", "description", "category__name")
+    ordering = ("category__sort_order", "category__name", "name")
     list_per_page = 200
     actions = [
         "make_available",
@@ -71,7 +68,7 @@ class MenuItemAdmin(admin.ModelAdmin):
         "unpin_waiter_popular",
     ]
     fieldsets = (
-        (None, {"fields": ("name", "description", "price", "category", "family", "station")}),
+        (None, {"fields": ("name", "description", "price", "category", "station")}),
         ("Visibilità", {"fields": ("is_available", "is_promoted", "tags")}),
         (
             "Dettagli piatto",

@@ -55,7 +55,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
               const Duration(milliseconds: 700));
   String _search = '';
   // Family filter: the Popular shelf ('popular'), 'All', or one of
-  // MenuFamilies.all. Landing on Popular = the most-sold items are one tap
+  // MenuCategories.all. Landing on Popular = the most-sold items are one tap
   // away the moment the screen opens.
   static const _popularFilter = 'popular';
   String _category = _popularFilter;
@@ -103,7 +103,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
       final okCat = switch (filter) {
         'All' => true,
         _popularFilter => m.isPopular,
-        _ => state.itemInFamily(m, filter),
+        _ => state.itemInCategory(m, filter),
       };
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
@@ -183,9 +183,9 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
     if (keepKeyboard) _keepKeyboardUp();
   }
 
-  /// One compact colored family button. Light family colors (yellow, light
+  /// One compact colored category button. Light category colors (yellow, light
   /// blue/green) get ink text when active so the label stays readable.
-  Widget _familyBtn(String label, String value, Color color,
+  Widget _categoryBtn(String label, String value, Color color,
       {IconData? icon}) {
     final active = _category == value;
     final onColor =
@@ -201,8 +201,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         decoration: BoxDecoration(
           color: active ? color : color.withValues(alpha: 0.13),
           borderRadius: BorderRadius.circular(9),
-          border: Border.all(
-              color: active ? color : color.withValues(alpha: 0.5)),
+          border:
+              Border.all(color: active ? color : color.withValues(alpha: 0.5)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (icon != null) ...[
@@ -321,8 +321,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                          table == null ? L.menu : L.tableOrder(table.number),
+                      Text(table == null ? L.menu : L.tableOrder(table.number),
                           style: T.screenTitle.copyWith(fontSize: 24)),
                       Text(L.tapToAdd, style: T.subtitle),
                     ]),
@@ -362,24 +361,25 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // Family bar, R-Keeper style: ALL buttons visible at once (no
+          // Category bar, R-Keeper style: ALL buttons visible at once (no
           // horizontal scrolling — that was what made switching slow), one tap
-          // to any family, colors matching the tiles below.
+          // to any category, colors matching the tiles below.
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
-              _familyBtn(L.popular, _popularFilter, AppColors.famPopular,
+              _categoryBtn(L.popular, _popularFilter, AppColors.famPopular,
                   icon: Icons.star_rounded),
-              _familyBtn(L.all, 'All', AppColors.espresso),
-              // Owner-defined families (custom names + colors) when the hub
-              // provides them; the hardcoded 8 only as offline fallback.
-              if (state.families.isNotEmpty)
-                for (final f in state.families)
-                  _familyBtn(f.name, f.id, f.color)
+              _categoryBtn(L.all, 'All', AppColors.espresso),
+              // Owner-defined categories when the hub provides them; the
+              // hardcoded list is only an offline fallback.
+              if (state.menuCategories.isNotEmpty)
+                for (final category in state.menuCategories)
+                  _categoryBtn(category.name, category.id, category.color)
               else
-                for (final f in MenuFamilies.all)
-                  _familyBtn(f, f, AppColors.familyColor(f)),
+                for (final category in MenuCategories.all)
+                  _categoryBtn(
+                      category, category, AppColors.categoryColor(category)),
             ],
           ),
           if (_category == _popularFilter &&
@@ -417,7 +417,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                           return _OrderComposerTile(
                             item: item,
                             qty: _selQty[item] ?? 0,
-                            color: state.familyColorFor(item),
+                            color: state.categoryColorFor(item),
                             onAdd: () => _add(ctx, item),
                             onRemove: () => _removeOne(item),
                             onInfo: () => _showItemActions(ctx, state, item),
@@ -505,7 +505,7 @@ class _OrderAlphabetRail extends StatelessWidget {
 
 /// One menu position in the order composer — a compact grid tile, R-Keeper
 /// style. The whole tile is a tap target («+1»); the top edge and background
-/// tint carry the category color family (coffee/soft/alcohol/food/sweet) so a
+/// tint carry the category color so a
 /// waiter reads the type before the name. Long-press opens dish details.
 class _OrderComposerTile extends StatelessWidget {
   const _OrderComposerTile({
@@ -546,7 +546,8 @@ class _OrderComposerTile extends StatelessWidget {
         ),
         child: Opacity(
           opacity: item.available ? 1 : 0.5,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // Category color bar along the top edge (same idiom as the table
             // cards' color tag).
             Container(height: 4, color: catColor),
@@ -560,8 +561,8 @@ class _OrderComposerTile extends StatelessWidget {
                       child: Text(item.displayName,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: T.bodySemi.copyWith(
-                              fontSize: 13.5, height: 1.18)),
+                          style: T.bodySemi
+                              .copyWith(fontSize: 13.5, height: 1.18)),
                     ),
                     Row(children: [
                       if (item.isPopular)
@@ -952,11 +953,15 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
     final barCount =
         _items.entries.where((e) => e.key.isBar).fold(0, (s, e) => s + e.value);
 
-    for (final entry in _items.entries) {
+    final lines = _items.entries.map((entry) {
       final note = _noteCtrl[entry.key]?.text.trim() ?? '';
-      state.addToCart(entry.key, entry.value, note, tableId: tableId);
-    }
-    final order = await state.submitOrder(tableId: tableId);
+      return CartLine(
+        item: entry.key,
+        quantity: entry.value,
+        modifiers: note,
+      );
+    }).toList();
+    final order = await state.submitOrderLines(tableId: tableId, lines: lines);
 
     if (!context.mounted) return;
     // Centre-screen toast (on the root overlay) so it survives the navigation

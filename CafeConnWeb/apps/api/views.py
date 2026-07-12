@@ -33,16 +33,20 @@ from apps.core.services import (
 from apps.api.serializers import (
     AttentionSignalSerializer,
     EmployeeSerializer,
-    MenuFamilySerializer,
+    MenuCategorySerializer,
     MenuItemSerializer,
     OrderItemSerializer,
     OrderSerializer,
     StaffPreferenceSerializer,
     TableSerializer,
 )
-from apps.core.menu_catalog import CLIENT_MENU_TAG
 from apps.core.menu_i18n import menu_item_labels
-from apps.core.models import AttentionSignal, Employee, MenuFamily, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
+from apps.core.menu_visibility import (
+    menu_has_client_items,
+    menu_item_archived,
+    menu_item_guest_visible,
+)
+from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
 
 User = get_user_model()
 
@@ -146,7 +150,7 @@ def serialize_for_flutter_menu(item: MenuItem) -> dict:
         "price": float(item.price),
         "category": labels["category_en"],
         "categoryIt": labels["category_it"],
-        "familyId": str(item.family_id) if item.family_id else "",
+        "categoryId": str(item.category_id),
         "imageUrl": item.image_url,
         "tags": item.tags,
         "prepTime": item.preparation_minutes,
@@ -264,8 +268,8 @@ class StaffBootstrapView(APIView):
                     for item in MenuItem.objects.all()
                     if "archived" not in (item.tags or [])
                 ],
-                "families": MenuFamilySerializer(
-                    MenuFamily.objects.all(), many=True
+                "categories": MenuCategorySerializer(
+                    MenuCategory.objects.all(), many=True
                 ).data,
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "history": [serialize_for_flutter_order(order) for order in history],
@@ -411,7 +415,7 @@ class StaffStatsView(APIView):
         top_items = list(
             OrderItem.objects.filter(order__created_at__date=today)
             .exclude(order__status=Order.Status.CANCELLED)
-            .values("menu_item__name", "menu_item__category")
+            .values("menu_item__name", "menu_item__category__name")
             .annotate(
                 qty=Sum("quantity"),
                 item_revenue=Sum(
@@ -442,7 +446,7 @@ class StaffStatsView(APIView):
                 "topItems": [
                     {
                         "name": r["menu_item__name"],
-                        "category": r["menu_item__category"] or "",
+                        "category": r["menu_item__category__name"] or "",
                         "qty": int(r["qty"] or 0),
                         "revenue": float(r["item_revenue"] or 0),
                     }
@@ -545,18 +549,17 @@ class StaffTableHistoryView(APIView):
         )
 
 
-class MenuFamilyViewSet(viewsets.ModelViewSet):
-    """The owner's POS families (name + color + order). Any staff can read
-    them (the app colors everything with them); renaming/recoloring is a
-    manager/admin action, same as the rest of the panel."""
+class MenuCategoryViewSet(viewsets.ModelViewSet):
+    """The owner's menu categories (name + color + order). Any staff can read
+    them; renaming/recoloring is a manager/admin action."""
 
-    queryset = MenuFamily.objects.annotate(item_count=Count("items"))
-    serializer_class = MenuFamilySerializer
+    queryset = MenuCategory.objects.annotate(item_count=Count("items"))
+    serializer_class = MenuCategorySerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def _require_manage(self):
         if not caps_for_user(self.request.user)["manage"]:
-            raise PermissionDenied("Only a manager or admin can edit menu families.")
+            raise PermissionDenied("Only a manager or admin can edit menu categories.")
 
     def perform_create(self, serializer):
         self._require_manage()
@@ -564,8 +567,7 @@ class MenuFamilyViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         self._require_manage()
-        family = serializer.save()
-        MenuItem.objects.filter(family=family).update(category=family.name)
+        serializer.save()
 
     def perform_destroy(self, instance):
         self._require_manage()
@@ -577,20 +579,29 @@ class MenuFamilyViewSet(viewsets.ModelViewSet):
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):
-    queryset = MenuItem.objects.order_by("-is_available", "name")
+    queryset = MenuItem.objects.select_related("category").order_by("-is_available", "name")
     serializer_class = MenuItemSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filterset_fields = ["category", "is_available"]
-    search_fields = ["name", "description", "category"]
-    ordering_fields = ["name", "category", "price", "updated_at"]
+    search_fields = ["name", "description", "category__name"]
+    ordering_fields = ["name", "category__name", "price", "updated_at"]
+
+    def _public_menu_has_client_items(self):
+        if not hasattr(self, "_has_public_client_menu"):
+            self._has_public_client_menu = menu_has_client_items(
+                MenuItem.objects.only("tags", "is_available")
+            )
+        return self._has_public_client_menu
 
     def _visible_to_request(self, item):
-        tags = item.tags or []
-        if "archived" in tags:
+        if menu_item_archived(item):
             return False
         if self.request.user and self.request.user.is_authenticated:
             return True
-        return item.is_available and CLIENT_MENU_TAG in tags
+        return menu_item_guest_visible(
+            item,
+            has_client_menu=self._public_menu_has_client_items(),
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = [

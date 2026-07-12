@@ -3,8 +3,8 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.core.models import MenuFamily, MenuItem, Order, Table
-from apps.core.sissi_menu import MANUAL_CHECK_TAG, STATION_CHECK_TAG, catalog_items, menu_families
+from apps.core.models import MenuCategory, MenuItem, Order, Table
+from apps.core.sissi_menu import MANUAL_CHECK_TAG, STATION_CHECK_TAG, catalog_items, menu_categories
 
 
 class Command(BaseCommand):
@@ -49,7 +49,7 @@ class Command(BaseCommand):
         old_menu = MenuItem.objects.count()
         MenuItem.objects.all().delete()
 
-        families = self._sync_menu_families()
+        categories = self._sync_menu_categories()
         stats = {
             "created": defaultdict(int),
             "updated": defaultdict(int),
@@ -58,12 +58,12 @@ class Command(BaseCommand):
         check_items = []
 
         for item in catalog_items():
-            family_key = item.pop("family_key")
-            item["family"] = families[family_key]
+            category_key = item.pop("category_key")
+            item["category"] = categories[category_key]
             was_created = self._upsert_menu_item(item)
             station = item["station"]
             stats["created" if was_created else "updated"][station] += 1
-            stats["categories"][station].add(item["category"])
+            stats["categories"][station].add(item["category"].name)
             if MANUAL_CHECK_TAG in item["tags"] or STATION_CHECK_TAG in item["tags"]:
                 check_items.append(f"{item['station']} / {item['category']} / {item['name']}")
 
@@ -89,19 +89,19 @@ class Command(BaseCommand):
             )
         )
 
-    def _sync_menu_families(self):
-        families = {}
-        for family in menu_families():
-            obj, _ = MenuFamily.objects.update_or_create(
-                key=family["key"],
+    def _sync_menu_categories(self):
+        categories = {}
+        for category in menu_categories():
+            obj, _ = MenuCategory.objects.update_or_create(
+                key=category["key"],
                 defaults={
-                    "name": family["name"],
-                    "color": family["color"],
-                    "sort_order": family["sort_order"],
+                    "name": category["name"],
+                    "color": category["color"],
+                    "sort_order": category["sort_order"],
                 },
             )
-            families[family["key"]] = obj
-        return families
+            categories[category["key"]] = obj
+        return categories
 
     def _upsert_menu_item(self, data):
         lookup = {

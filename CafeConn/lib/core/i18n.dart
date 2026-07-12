@@ -190,9 +190,9 @@ class L {
   static String get topDishesToday =>
       t("Today's top sellers", 'Più venduti oggi');
   static String get delayedLabel => t('Delayed', 'In ritardo');
-  static String get familiesTitle =>
+  static String get categoriesTitle =>
       t('Categories & colors', 'Categorie e colori');
-  static String get familiesSub => t(
+  static String get categoriesSub => t(
       'Add, remove, rename, or recolor categories — every device follows.',
       'Aggiungi, elimina, rinomina o cambia colore alle categorie — vale su tutti i dispositivi.');
   static String get addCategory => t('Add category', 'Aggiungi categoria');

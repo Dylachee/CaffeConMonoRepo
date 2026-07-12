@@ -278,7 +278,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                         .toList(),
                   ),
           ),
-          // What's actually selling today — top 5 by quantity, family-colored.
+          // What's actually selling today — top 5 by quantity, category-colored.
           if (s != null && s.topItems.isNotEmpty) ...[
             const SizedBox(height: 20),
             SectionTitle(L.topDishesToday),
@@ -293,8 +293,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                              color: state.familyColorForCategory(
-                                  s.topItems[i].category),
+                              color: state
+                                  .categoryColorForName(s.topItems[i].category),
                               shape: BoxShape.circle)),
                       const SizedBox(width: 10),
                       Expanded(
@@ -819,28 +819,28 @@ class MenuManagementScreen extends StatefulWidget {
 
 class _MenuManagementScreenState extends State<MenuManagementScreen> {
   String _search = '';
-  String _family = 'All';
+  String _category = 'All';
 
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
-      final okFam = _family == 'All' || state.itemInFamily(m, _family);
+      final okCat = _category == 'All' || state.itemInCategory(m, _category);
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
           m.category.toLowerCase().contains(q);
-      return okFam && okSearch;
+      return okCat && okSearch;
     }).toList()
       ..sort((a, b) =>
           a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
   }
 
-  Widget _famBtn(String label, String value, Color color) {
-    final active = _family == value;
+  Widget _categoryBtn(String label, String value, Color color) {
+    final active = _category == value;
     final onColor =
         color.computeLuminance() > 0.45 ? AppColors.ink : Colors.white;
     return GestureDetector(
-      onTap: () => setState(() => _family = value),
+      onTap: () => setState(() => _category = value),
       child: Container(
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 9),
@@ -886,10 +886,10 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     return ListView(children: [
       Row(children: [
         Expanded(child: SectionTitle(L.items)),
-        // Owner's category console: rename + recolor the POS families.
+        // Owner's category console: rename + recolor menu categories.
         IconButton(
-          onPressed: () => _showFamilyEditor(context),
-          tooltip: L.familiesTitle,
+          onPressed: () => _showCategoryEditor(context),
+          tooltip: L.categoriesTitle,
           icon: const Icon(Icons.palette_outlined, color: AppTheme.ink2),
         ),
         AppButton(
@@ -913,12 +913,13 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       ),
       const SizedBox(height: 10),
       Wrap(spacing: 5, runSpacing: 5, children: [
-        _famBtn(L.all, 'All', AppColors.espresso),
-        if (state.families.isNotEmpty)
-          for (final f in state.families) _famBtn(f.name, f.id, f.color)
+        _categoryBtn(L.all, 'All', AppColors.espresso),
+        if (state.menuCategories.isNotEmpty)
+          for (final category in state.menuCategories)
+            _categoryBtn(category.name, category.id, category.color)
         else
-          for (final f in MenuFamilies.all)
-            _famBtn(f, f, AppColors.familyColor(f)),
+          for (final category in MenuCategories.all)
+            _categoryBtn(category, category, AppColors.categoryColor(category)),
       ]),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -926,7 +927,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
             style: T.label.copyWith(color: AppTheme.ink3)),
       ),
       ...items.map((item) {
-        final famColor = state.familyColorFor(item);
+        final famColor = state.categoryColorFor(item);
         return AppCard(
           padding: const EdgeInsets.all(12),
           onTap: () => _showMenuForm(context, item: item),
@@ -975,9 +976,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   }
 }
 
-/// The owner's category console: every POS family with its color; tap one to
+/// The owner's category console: every category with its color; tap one to
 /// rename it or pick a new color. Changes go to the hub and every device.
-void _showFamilyEditor(BuildContext context) {
+void _showCategoryEditor(BuildContext context) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -995,10 +996,10 @@ void _showFamilyEditor(BuildContext context) {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Expanded(child: Text(L.familiesTitle, style: T.h2)),
+              Expanded(child: Text(L.categoriesTitle, style: T.h2)),
               IconButton(
                 onPressed: state.backendConnected
-                    ? () => _createFamily(context)
+                    ? () => _createCategory(context)
                     : null,
                 tooltip: L.addCategory,
                 icon:
@@ -1006,9 +1007,10 @@ void _showFamilyEditor(BuildContext context) {
               ),
             ]),
             const SizedBox(height: 4),
-            Text(L.familiesSub, style: T.small.copyWith(color: AppTheme.ink2)),
+            Text(L.categoriesSub,
+                style: T.small.copyWith(color: AppTheme.ink2)),
             const SizedBox(height: 14),
-            if (state.families.isEmpty)
+            if (state.menuCategories.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Text(
@@ -1020,19 +1022,20 @@ void _showFamilyEditor(BuildContext context) {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    for (final f in state.families)
+                    for (final category in state.menuCategories)
                       AppCard(
                         padding: const EdgeInsets.all(12),
-                        onTap: () => _editFamily(context, f),
+                        onTap: () => _editCategory(context, category),
                         child: Row(children: [
                           Container(
                               width: 22,
                               height: 22,
                               decoration: BoxDecoration(
-                                  color: f.color,
+                                  color: category.color,
                                   borderRadius: BorderRadius.circular(7))),
                           const SizedBox(width: 12),
-                          Expanded(child: Text(f.name, style: T.bodySemi)),
+                          Expanded(
+                              child: Text(category.name, style: T.bodySemi)),
                           const Icon(Icons.edit_outlined,
                               size: 16, color: AppTheme.ink3),
                         ]),
@@ -1047,10 +1050,11 @@ void _showFamilyEditor(BuildContext context) {
   );
 }
 
-void _createFamily(BuildContext context) {
+void _createCategory(BuildContext context) {
   final state = context.read<CafeState>();
   final name = TextEditingController();
-  var selected = _familyPalette[state.families.length % _familyPalette.length];
+  var selected =
+      _categoryPalette[state.menuCategories.length % _categoryPalette.length];
   var busy = false;
   showModalBottomSheet(
     context: context,
@@ -1075,14 +1079,14 @@ void _createFamily(BuildContext context) {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final hex in _familyPalette)
+                for (final hex in _categoryPalette)
                   GestureDetector(
                     onTap: () => set(() => selected = hex),
                     child: Container(
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: CafeFamily.parseHex(hex, AppColors.free),
+                        color: CafeCategory.parseHex(hex, AppColors.free),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                             color: selected == hex
@@ -1111,7 +1115,7 @@ void _createFamily(BuildContext context) {
                       set(() => busy = true);
                       final err = await context
                           .read<CafeState>()
-                          .createMenuFamily(name: nm, color: selected);
+                          .createMenuCategory(name: nm, color: selected);
                       if (!context.mounted) return;
                       if (err != null) {
                         set(() => busy = false);
@@ -1133,7 +1137,7 @@ void _createFamily(BuildContext context) {
 
 // Curated swatches: the 8 defaults plus 8 extras, all readable on the cream
 // surface. The owner picks; hex lands in the DB and every surface follows.
-const _familyPalette = [
+const _categoryPalette = [
   '#E0823A',
   '#5BAEDC',
   '#3E9C63',
@@ -1155,9 +1159,9 @@ const _familyPalette = [
 String _hexOf(Color c) =>
     '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
-void _editFamily(BuildContext context, CafeFamily fam) {
-  final name = TextEditingController(text: fam.name);
-  var selected = _hexOf(fam.color);
+void _editCategory(BuildContext context, CafeCategory category) {
+  final name = TextEditingController(text: category.name);
+  var selected = _hexOf(category.color);
   var busy = false;
   showModalBottomSheet(
     context: context,
@@ -1174,7 +1178,7 @@ void _editFamily(BuildContext context, CafeFamily fam) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(fam.name, style: T.h2),
+            Text(category.name, style: T.h2),
             const SizedBox(height: 16),
             AppTextField(controller: name, label: L.name),
             const SizedBox(height: 14),
@@ -1182,14 +1186,14 @@ void _editFamily(BuildContext context, CafeFamily fam) {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final hex in _familyPalette)
+                for (final hex in _categoryPalette)
                   GestureDetector(
                     onTap: () => set(() => selected = hex),
                     child: Container(
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: CafeFamily.parseHex(hex, AppColors.free),
+                        color: CafeCategory.parseHex(hex, AppColors.free),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                             color: selected == hex
@@ -1220,7 +1224,7 @@ void _editFamily(BuildContext context, CafeFamily fam) {
                           set(() => busy = true);
                           final err = await context
                               .read<CafeState>()
-                              .deleteMenuFamily(fam.id);
+                              .deleteMenuCategory(category.id);
                           if (!context.mounted) return;
                           if (err != null) {
                             set(() => busy = false);
@@ -1247,8 +1251,10 @@ void _editFamily(BuildContext context, CafeFamily fam) {
                           final nm = name.text.trim();
                           if (nm.isEmpty) return;
                           set(() => busy = true);
-                          final err = await state.updateMenuFamily(fam.id,
-                              name: nm, color: selected);
+                          final err = await state.updateMenuCategory(
+                              category.id,
+                              name: nm,
+                              color: selected);
                           if (!context.mounted) return;
                           if (err != null) {
                             set(() => busy = false);
@@ -1292,20 +1298,20 @@ Widget _menuFormSwitch({
 
 void _showMenuForm(BuildContext context, {MenuItem? item}) {
   final state = context.read<CafeState>();
-  final families = List<CafeFamily>.of(state.families);
-  var selectedFamilyId = item?.familyId ?? '';
-  if (selectedFamilyId.isEmpty && item != null) {
-    selectedFamilyId = state.familyFor(item)?.id ?? '';
+  final categories = List<CafeCategory>.of(state.menuCategories);
+  var selectedCategoryId = item?.categoryId ?? '';
+  if (selectedCategoryId.isEmpty && item != null) {
+    selectedCategoryId = state.categoryFor(item)?.id ?? '';
   }
-  if (selectedFamilyId.isEmpty && item == null && families.isNotEmpty) {
-    selectedFamilyId = families.first.id;
+  if (selectedCategoryId.isEmpty && item == null && categories.isNotEmpty) {
+    selectedCategoryId = categories.first.id;
   }
   final name = TextEditingController(text: item?.name ?? '');
   final desc = TextEditingController(text: item?.description ?? '');
   final price = TextEditingController(text: item?.price.toString() ?? '');
   final category = TextEditingController(
       text: item?.category ??
-          (families.isNotEmpty ? families.first.name : 'Kitchen'));
+          (categories.isNotEmpty ? categories.first.name : 'Kitchen'));
   final prep = TextEditingController(text: item?.prepTime.toString() ?? '10');
   var station = item == null ? 'kitchen' : (item.isBar ? 'bar' : 'kitchen');
   // The three visibility/promotion switches. Guest-popular (is_promoted) and
@@ -1359,13 +1365,14 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (families.isNotEmpty) ...[
+                if (categories.isNotEmpty) ...[
                   Text(L.category, style: T.label),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    initialValue: families.any((f) => f.id == selectedFamilyId)
-                        ? selectedFamilyId
-                        : null,
+                    initialValue:
+                        categories.any((c) => c.id == selectedCategoryId)
+                            ? selectedCategoryId
+                            : null,
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: AppTheme.surfaceAlt,
@@ -1377,23 +1384,24 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                           horizontal: 14, vertical: 12),
                     ),
                     items: [
-                      for (final f in families)
+                      for (final category in categories)
                         DropdownMenuItem(
-                          value: f.id,
+                          value: category.id,
                           child: Row(children: [
                             Container(
                               width: 10,
                               height: 10,
                               decoration: BoxDecoration(
-                                  color: f.color, shape: BoxShape.circle),
+                                  color: category.color,
+                                  shape: BoxShape.circle),
                             ),
                             const SizedBox(width: 10),
-                            Flexible(child: Text(f.name)),
+                            Flexible(child: Text(category.name)),
                           ]),
                         ),
                     ],
                     onChanged: (value) => setModalState(
-                        () => selectedFamilyId = value ?? selectedFamilyId),
+                        () => selectedCategoryId = value ?? selectedCategoryId),
                   ),
                 ] else
                   AppTextField(controller: category, label: L.category),
@@ -1476,17 +1484,18 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                         setTag('client', guestVisible);
                         setTag('popular', waiterPopular);
 
-                        CafeFamily? selectedFamily;
-                        for (final f in families) {
-                          if (f.id == selectedFamilyId) {
-                            selectedFamily = f;
+                        CafeCategory? selectedCategory;
+                        for (final category in categories) {
+                          if (category.id == selectedCategoryId) {
+                            selectedCategory = category;
                             break;
                           }
                         }
-                        final categoryName = selectedFamily?.name ??
+                        final categoryName = selectedCategory?.name ??
                             (category.text.trim().isEmpty
-                                ? (item?.category ?? 'Food')
+                                ? (item?.category ?? 'Panini')
                                 : category.text.trim());
+                        final categoryId = selectedCategory?.id ?? '';
 
                         final MenuItem target;
                         final isNew = item == null;
@@ -1502,7 +1511,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                             prepTime: int.tryParse(prep.text) ?? 10,
                             station: station,
                             promo: guestPromo,
-                            familyId: selectedFamily?.id ?? '',
+                            categoryId: categoryId,
                           );
                         } else {
                           target = item;
@@ -1517,7 +1526,7 @@ void _showMenuForm(BuildContext context, {MenuItem? item}) {
                           target.station = station;
                           target.tags = tags;
                           target.promo = guestPromo;
-                          target.familyId = selectedFamily?.id ?? '';
+                          target.categoryId = categoryId;
                         }
                         Navigator.pop(context);
                         final err =
