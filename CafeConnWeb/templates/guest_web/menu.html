@@ -5,12 +5,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#f2efe8">
+<meta name="theme-color" content="{{ venue.color_bg }}">
 <title>{% if table %}Table {{ table.number }} · {% endif %}{{ venue.name }}</title>
 <style>
+  /* Palette comes from VenueSettings (staff Storefront editor); the defaults
+     are the approved Sissi design, so a fresh install renders unchanged. */
   :root{
-    --bg:#f2efe8; --card:#fff; --ink:#1e1b16; --mut:#8b8377; --line:#e7e2d8;
-    --accent:#c8821e; --accent-deep:#9a6310; --accent-soft:#f1e2c8;
+    {% for var, value in venue.css_variables %}{{ var }}:{{ value }}; {% endfor %}
+    {% for var, value in venue.derived_css %}{{ var }}:{{ value }}; {% endfor %}
     --green:#3e9c63; --danger:#d9564a; --purple:#8a6fc0; --dark:#221f1a;
     --shadow:0 1px 2px rgba(43,36,24,.05),0 12px 24px -18px rgba(43,36,24,.38);
   }
@@ -27,26 +29,27 @@
   button,input,textarea{font:inherit}
   button{cursor:pointer;border:0}
   button:focus{outline:0}
-  button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid rgba(154,99,16,.35);outline-offset:2px}
+  button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent-deep-a35);outline-offset:2px}
   .app{max-width:760px;margin:0 auto;min-height:100vh;position:relative}
   .screen{display:none;padding:54px 18px 112px;animation:rise .18s ease-out}
   .screen.active{display:block}
   @keyframes rise{from{opacity:.6;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  .topbar{position:fixed;top:0;left:0;right:0;z-index:25;background:rgba(242,239,232,.92);backdrop-filter:blur(18px);border-bottom:1px solid rgba(231,226,216,.72)}
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:25;background:var(--bg-a92);backdrop-filter:blur(18px);border-bottom:1px solid var(--line-a72)}
   .topbar-in{max-width:760px;margin:0 auto;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px}
   .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:17px;letter-spacing:-.3px}
-  .brand-icon{width:30px;height:30px;border-radius:9px;background:#fff;display:grid;place-items:center;color:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(43,36,24,.12)}
+  .brand-icon{width:30px;height:30px;border-radius:9px;background:var(--card);display:grid;place-items:center;color:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(43,36,24,.12)}
   .brand-icon img{width:100%;height:100%;object-fit:cover}
   .table-pill{height:32px;padding:0 11px;border-radius:11px;background:rgba(34,31,26,.09);display:flex;align-items:center;gap:7px;font-weight:800;font-size:13px}
   .lang-toggle{height:32px;border-radius:11px;background:rgba(34,31,26,.08);display:flex;align-items:center;padding:3px;gap:2px}
-  .lang-toggle button{height:26px;border-radius:8px;padding:0 8px;background:transparent;color:rgba(30,27,22,.55);font-size:12px;font-weight:900}
-  .lang-toggle button.active{background:#fff;color:var(--accent-deep);box-shadow:0 1px 2px rgba(43,36,24,.08)}
+  .lang-toggle button{height:26px;border-radius:8px;padding:0 8px;background:transparent;color:var(--ink-a55);font-size:12px;font-weight:900}
+  .lang-toggle button.active{background:var(--card);color:var(--accent-deep);box-shadow:0 1px 2px rgba(43,36,24,.08)}
   .muted{color:var(--mut)}
 
   .cover{height:176px;margin:-54px -18px 0;background:linear-gradient(rgba(13,11,8,.12),rgba(13,11,8,.2)),url("{% static 'images/sissi-bar-cover.png' %}") center 48%/cover;position:relative;border-bottom:1px solid rgba(13,11,8,.08)}
   .cover:after{content:"";position:absolute;inset:auto 0 0;height:80px;background:linear-gradient(transparent,var(--bg))}
-  .profile-head{position:relative;margin-top:-36px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:24px;padding:14px 14px 16px;box-shadow:var(--shadow)}
+  .profile-head{position:relative;margin-top:-36px;background:var(--card-a94);border:1px solid var(--line);border-radius:24px;padding:14px 14px 16px;box-shadow:var(--shadow)}
+  .profile-head.no-cover{margin-top:8px}
   .venue-top{display:flex;align-items:center;gap:12px}
   .logo{width:62px;height:62px;border-radius:18px;background:var(--accent);box-shadow:0 10px 24px -12px rgba(40,32,20,.42);display:grid;place-items:center;color:#fff;overflow:hidden;flex:0 0 auto}
   .logo img{width:100%;height:100%;object-fit:cover}
@@ -54,7 +57,7 @@
   h1{font-size:29px;line-height:1.05;font-weight:900;letter-spacing:-1px;text-wrap:balance}
   .tagline{margin-top:4px;color:var(--mut);font-size:14px}
   .rating{margin-top:13px;display:grid;grid-template-columns:1fr 1fr;gap:8px;color:var(--mut);font-size:12px}
-  .fact-pill{min-height:38px;border:1px solid var(--line);border-radius:13px;background:#faf8f3;padding:8px 10px;display:flex;align-items:center;gap:8px;font-weight:750;color:rgba(30,27,22,.72);text-decoration:none}
+  .fact-pill{min-height:38px;border:1px solid var(--line);border-radius:13px;background:var(--surface-mid);padding:8px 10px;display:flex;align-items:center;gap:8px;font-weight:750;color:var(--ink-a72);text-decoration:none}
   .fact-pill b{color:var(--ink)}
   .star{color:var(--accent);font-size:15px}
   .divider{width:1px;height:16px;background:var(--line)}
@@ -62,9 +65,9 @@
   .badge{height:30px;padding:0 11px;border-radius:10px;background:var(--accent-soft);color:var(--accent-deep);display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}
   .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
   .hero-actions{margin-top:14px;display:flex;gap:10px}
-  .primary{height:54px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;box-shadow:0 10px 22px -10px rgba(200,130,30,.45);display:flex;align-items:center;justify-content:center;gap:9px}
+  .primary{height:54px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;box-shadow:0 10px 22px -10px var(--accent-a45);display:flex;align-items:center;justify-content:center;gap:9px}
   .primary.flex{flex:1}
-  .icon-btn{width:54px;height:54px;border-radius:16px;background:#fff;border:1.5px solid var(--line);display:grid;place-items:center;color:var(--ink)}
+  .icon-btn{width:54px;height:54px;border-radius:16px;background:var(--card);border:1.5px solid var(--line);display:grid;place-items:center;color:var(--ink)}
   /* solid-icon system: filled silhouettes, inherit currentColor */
   .ic{width:24px;height:24px;fill:currentColor;fill-rule:evenodd;flex:none;display:inline-block;vertical-align:middle}
   .primary .ic{width:21px;height:21px}
@@ -75,7 +78,7 @@
   .section-title h2{font-size:21px;font-weight:900;letter-spacing:-.4px}
   .rail{margin:13px -18px 0;display:flex;gap:12px;overflow-x:auto;padding:2px 18px 5px;scrollbar-width:none}
   .rail::-webkit-scrollbar,.chips::-webkit-scrollbar{display:none}
-  .feature{flex:0 0 154px;background:#fff;border-radius:16px;padding:9px;box-shadow:var(--shadow);text-align:left;border:1px solid rgba(231,226,216,.78)}
+  .feature{flex:0 0 154px;background:var(--card);border-radius:16px;padding:9px;box-shadow:var(--shadow);text-align:left;border:1px solid var(--line-a78)}
   .photo{width:100%;height:104px;border-radius:12px;background:linear-gradient(135deg,#ead7bd,#c88b3b);position:relative;overflow:hidden;background-size:cover;background-position:center}
   .photo.empty{display:grid;place-items:center;color:#fff}
   .photo.empty:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 28% 22%,rgba(255,255,255,.62),transparent 22%),radial-gradient(circle at 78% 78%,rgba(255,255,255,.18),transparent 24%),linear-gradient(135deg,#e7c17d,#bd7a2a)}
@@ -88,51 +91,51 @@
   .hit{position:absolute;top:8px;left:8px;height:23px;padding:0 9px;border-radius:8px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;gap:4px}
   .feature-name{margin-top:9px;font-size:15px;line-height:1.16;font-weight:800;text-align:left}
   .price{margin-top:4px;color:var(--accent-deep);font-weight:900}
-  .about{margin-top:22px;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow);border:1px solid rgba(231,226,216,.78)}
+  .about{margin-top:22px;background:var(--card);border-radius:18px;padding:16px;box-shadow:var(--shadow);border:1px solid var(--line-a78)}
   .about h2{font-size:16px;margin-bottom:8px}
   .about p{color:var(--mut);font-size:14px}
 
   .page-title{font-size:32px;font-weight:950;letter-spacing:-1px}
   .menu-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
-  .menu-count-pill{height:30px;padding:0 10px;border-radius:8px;background:#fff;box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 6px -4px rgba(43,36,24,.35);color:rgba(30,27,22,.58);font-size:12px;font-weight:900;display:flex;align-items:center;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .menu-count-pill{height:30px;padding:0 10px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 6px -4px rgba(43,36,24,.35);color:var(--ink-a58);font-size:12px;font-weight:900;display:flex;align-items:center;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .sub{margin-top:3px;color:var(--mut);font-size:15px}
-  .menu-lead{margin-top:9px;max-width:34rem;color:rgba(30,27,22,.64);font-size:14px;line-height:1.45;text-wrap:pretty}
-  .search{margin-top:14px;height:46px;border-radius:8px;background:#fffdfa;box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 8px -6px rgba(43,36,24,.35);display:flex;align-items:center;gap:10px;padding:0 13px}
+  .menu-lead{margin-top:9px;max-width:34rem;color:var(--ink-a64);font-size:14px;line-height:1.45;text-wrap:pretty}
+  .search{margin-top:14px;height:46px;border-radius:8px;background:var(--surface-hi);box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 8px -6px rgba(43,36,24,.35);display:flex;align-items:center;gap:10px;padding:0 13px}
   .search input{border:0;outline:0;background:transparent;flex:1;font-size:16px;color:var(--ink);min-width:0}
-  .chips{position:sticky;top:48px;z-index:20;display:flex;flex-wrap:wrap;gap:6px;overflow:visible;margin:12px -18px 0;padding:8px 18px;background:rgba(242,239,232,.96);backdrop-filter:blur(18px);scrollbar-width:none;border-bottom:1px solid rgba(231,226,216,.62)}
-  .chip{min-height:34px;max-width:132px;padding:0 10px;border-radius:8px;background:#fffdfa;box-shadow:0 0 0 1px rgba(43,36,24,.08);color:rgba(30,27,22,.68);font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center;transition-property:background-color,color,box-shadow,transform;transition-duration:.14s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
+  .chips{position:sticky;top:48px;z-index:20;display:flex;flex-wrap:wrap;gap:6px;overflow:visible;margin:12px -18px 0;padding:8px 18px;background:var(--bg-a96);backdrop-filter:blur(18px);scrollbar-width:none;border-bottom:1px solid var(--line-a62)}
+  .chip{min-height:34px;max-width:132px;padding:0 10px;border-radius:8px;background:var(--surface-hi);box-shadow:0 0 0 1px rgba(43,36,24,.08);color:var(--ink-a68);font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center;transition-property:background-color,color,box-shadow,transform;transition-duration:.14s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
   .chip.active{background:var(--cat,var(--dark));color:#fff;box-shadow:0 0 0 1px rgba(43,36,24,.1),0 8px 18px -14px rgba(34,31,26,.65)}
   .chip:active{transform:scale(.96)}
   .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:16px}
   /* Staff-like menu: compact rows, category color as structure, no empty folders. */
   #menu-grid{display:flex;flex-direction:column;gap:12px;background:transparent;border-radius:0;box-shadow:none;padding:0;margin-top:14px}
-  .menu-cat{background:#fffdfa;border-radius:8px;padding:0;box-shadow:0 0 0 1px rgba(43,36,24,.08),0 10px 22px -20px rgba(43,36,24,.5);overflow:hidden}
-  .cat-head{display:flex;align-items:center;gap:9px;padding:10px 12px;font-size:15px;font-weight:950;letter-spacing:-.15px;color:var(--ink);border-bottom:1px solid rgba(231,226,216,.86);background:linear-gradient(90deg,var(--cat,var(--accent)) 0 6px,#fffdfa 6px,#fbf6ed 100%)}
+  .menu-cat{background:var(--surface-hi);border-radius:8px;padding:0;box-shadow:0 0 0 1px rgba(43,36,24,.08),0 10px 22px -20px rgba(43,36,24,.5);overflow:hidden}
+  .cat-head{display:flex;align-items:center;gap:9px;padding:10px 12px;font-size:15px;font-weight:950;letter-spacing:-.15px;color:var(--ink);border-bottom:1px solid var(--line-a86);background:linear-gradient(90deg,var(--cat,var(--accent)) 0 6px,var(--surface-hi) 6px,var(--surface-soft) 100%)}
   .cat-head::before{content:"";width:8px;height:8px;border-radius:999px;background:var(--cat,var(--accent));box-shadow:0 0 0 4px rgba(43,36,24,.06);flex:0 0 auto;margin-left:5px}
   /* category dot on category chips — a pseudo-element so the i18n text swap
      (el.textContent = …) can't wipe it */
   .chip[data-cat]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--cat);margin-right:7px;vertical-align:1px}
-  .chip.active[data-cat]::before{background:#fff}
+  .chip.active[data-cat]::before{background:var(--card)}
   .promo-star{color:#B98A3C;font-size:14px;font-weight:900;margin-right:2px}
   .cat-head::after{content:"";flex:1;height:1px;background:transparent}
-  .cat-count{margin-left:auto;height:24px;min-width:24px;padding:0 7px;border-radius:7px;background:#f6efe4;color:var(--accent-deep);font-size:12px;font-weight:950;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
-  .dish{background:#fff;border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
+  .cat-count{margin-left:auto;height:24px;min-width:24px;padding:0 7px;border-radius:7px;background:var(--surface-count);color:var(--accent-deep);font-size:12px;font-weight:950;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+  .dish{background:var(--card);border-radius:18px;padding:9px;box-shadow:var(--shadow);text-align:left;position:relative;min-width:0}
   .dish.off{opacity:.5}
-  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:8px 12px;min-height:58px;padding:10px 10px 10px 13px;align-items:center;background:transparent;box-shadow:none;border-radius:0;border-bottom:1px solid rgba(231,226,216,.76)}
+  .dish.text-only{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:8px 12px;min-height:58px;padding:10px 10px 10px 13px;align-items:center;background:transparent;box-shadow:none;border-radius:0;border-bottom:1px solid var(--line-a76)}
   .menu-cat .dish.text-only:last-child{border-bottom:0}
   .dish-hit{appearance:none;background:transparent;border:0;padding:0;text-align:left;color:inherit;display:block!important;width:100%!important;cursor:pointer!important}
   .text-only .dish-hit{min-width:0}
   .dish .photo{aspect-ratio:1;height:auto}
   .meta{position:absolute;top:8px;left:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(13,11,8,.65);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;gap:4px}
-  .alg{position:absolute;top:8px;right:8px;height:23px;padding:0 8px;border-radius:8px;background:rgba(252,250,245,.92);color:var(--accent-deep);font-size:11px;font-weight:800}
+  .alg{position:absolute;top:8px;right:8px;height:23px;padding:0 8px;border-radius:8px;background:var(--nav-a92);color:var(--accent-deep);font-size:11px;font-weight:800}
   .stop{position:absolute;inset:0;background:rgba(13,11,8,.42);display:grid;place-items:center;color:#fff;font-weight:900}
   .dish-name{margin-top:9px;font-size:16px;font-weight:900;line-height:1.16;letter-spacing:-.2px;text-wrap:pretty}
   .text-only .dish-name{margin-top:0;font-size:15px;font-weight:900;letter-spacing:0;line-height:1.22}
-  .dish-desc{margin-top:5px;color:rgba(30,27,22,.62);font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .text-only .dish-desc{margin-top:5px;font-size:14px;line-height:1.42;color:rgba(30,27,22,.6);-webkit-line-clamp:2}
+  .dish-desc{margin-top:5px;color:var(--ink-a62);font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .text-only .dish-desc{margin-top:5px;font-size:14px;line-height:1.42;color:var(--ink-a60);-webkit-line-clamp:2}
   .dish-tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
   .text-only .dish-tags{margin-top:7px}
-  .dish-tag{height:23px;padding:0 8px;border-radius:8px;background:#f8f4ed;color:rgba(30,27,22,.66);font-size:11px;font-weight:800;display:flex;align-items:center}
+  .dish-tag{height:23px;padding:0 8px;border-radius:8px;background:var(--surface-low);color:var(--ink-a66);font-size:11px;font-weight:800;display:flex;align-items:center}
   .dish-tag.warn{background:rgba(217,86,74,.1);color:#c0463b}
   .dish-bottom{margin-top:7px;display:flex;align-items:center;gap:6px}
   .text-only .dish-bottom{margin:0;width:132px;display:grid;grid-template-columns:80px 42px;align-items:center;justify-content:end;justify-items:end;gap:10px;min-width:0}
@@ -143,29 +146,29 @@
   .small{font-size:12px;color:var(--mut)}
   .text-only .avail{display:none}
   .add{width:34px;height:34px;border-radius:8px;background:var(--accent-soft);color:var(--accent-deep);font-weight:950;font-size:21px;display:grid;place-items:center;transition-property:transform,background-color,color;transition-duration:.12s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
-  .text-only .add{width:42px;height:42px;border-radius:8px;background:var(--accent);color:#fff;box-shadow:0 8px 16px -10px rgba(200,130,30,.7)}
+  .text-only .add{width:42px;height:42px;border-radius:8px;background:var(--accent);color:#fff;box-shadow:0 8px 16px -10px var(--accent-a70)}
   .add:active{transform:scale(.96);background:var(--accent);color:#fff}
   @media(hover:hover){.add:hover{background:var(--accent);color:#fff}}
   @media (prefers-reduced-motion: reduce){.add{transition:none}}
   .empty{padding:50px 12px;text-align:center;color:var(--mut);grid-column:1/-1}
 
-  .service-card{border-radius:20px;padding:20px;background:#fff;border:1.5px solid var(--line);box-shadow:var(--shadow);display:flex;align-items:center;gap:15px;width:100%;text-align:left}
+  .service-card{border-radius:20px;padding:20px;background:var(--card);border:1.5px solid var(--line);box-shadow:var(--shadow);display:flex;align-items:center;gap:15px;width:100%;text-align:left}
   .service-card.dark{background:var(--dark);border-color:var(--dark);color:#fff;box-shadow:0 14px 30px -14px rgba(34,31,26,.55)}
   .service-icon{width:52px;height:52px;border-radius:16px;background:var(--accent);display:grid;place-items:center;color:#fff;flex:0 0 auto}
   .service-card.bill .service-icon{background:rgba(138,111,192,.16);color:var(--purple)}
   .service-title{display:block;font-size:19px;font-weight:900}
-  .service-sub{display:block;margin-top:6px;color:rgba(30,27,22,.55);font-size:14px}
+  .service-sub{display:block;margin-top:6px;color:var(--ink-a55);font-size:14px}
   .dark .service-sub{color:rgba(255,255,255,.62)}
   .service-list{display:flex;flex-direction:column;gap:12px;margin-top:19px}
-  .pending{margin-top:17px;border-radius:20px;padding:18px;background:rgba(200,130,30,.1);border:1.5px solid rgba(200,130,30,.38)}
+  .pending{margin-top:17px;border-radius:20px;padding:18px;background:var(--accent-a10);border:1.5px solid var(--accent-a38)}
   .pending-title{font-size:17px;font-weight:900;color:var(--accent-deep)}
   .pending-sub{margin-top:4px;color:var(--mut);font-size:14px}
-  .secondary{height:44px;border-radius:13px;background:#fff;border:1.5px solid var(--line);font-weight:800;color:var(--ink)}
-  .how{margin-top:20px;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
+  .secondary{height:44px;border-radius:13px;background:var(--card);border:1.5px solid var(--line);font-weight:800;color:var(--ink)}
+  .how{margin-top:20px;background:var(--card);border-radius:18px;padding:16px;box-shadow:var(--shadow)}
   .how h2{font-size:15px;margin-bottom:8px}
   .how p{color:var(--mut);font-size:14px;line-height:1.55}
 
-  .order-card{margin-top:18px;background:#fff;border-radius:18px;padding:15px;box-shadow:var(--shadow)}
+  .order-card{margin-top:18px;background:var(--card);border-radius:18px;padding:15px;box-shadow:var(--shadow)}
   .status-line{display:flex;align-items:center;gap:9px;font-weight:900}
   .status-dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
   .order-list{margin-top:12px;display:flex;flex-direction:column;gap:11px}
@@ -173,35 +176,35 @@
   .order-mini:first-child{border-top:0;padding-top:0}
   .order-mini-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:900}
   .order-mini-status{color:var(--accent-deep)}
-  .order-mini-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fff5ec;color:rgba(30,27,22,.82);font-size:13px;font-weight:800}
-  .order-mini-line{margin-top:7px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;color:rgba(30,27,22,.72);font-size:13px}
+  .order-mini-note{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--surface-note);color:var(--ink-a82);font-size:13px;font-weight:800}
+  .order-mini-line{margin-top:7px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;color:var(--ink-a72);font-size:13px}
   .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:13px}
-  .step{height:5px;border-radius:4px;background:#ece6db}
+  .step{height:5px;border-radius:4px;background:var(--surface-sunken)}
   .step.on{background:var(--accent)}
   .order-total{margin-top:11px;color:var(--accent-deep);font-weight:900}
 
-  .bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(252,250,245,.94);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:8px 14px calc(12px + env(safe-area-inset-bottom))}
+  .bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--nav-a94);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:8px 14px calc(12px + env(safe-area-inset-bottom))}
   .nav-in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:8px}
-  .tab{flex:1 1 0;min-width:0;height:52px;border-radius:14px;background:transparent;color:rgba(30,27,22,.46);font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
-  .tab.active{color:var(--accent-deep);background:rgba(200,130,30,.1)}
-  .checkout{height:52px;border-radius:15px;background:var(--accent);color:#fff;font-weight:900;padding:0 15px;display:none;align-items:center;gap:9px;box-shadow:0 10px 22px -10px rgba(200,130,30,.45);white-space:nowrap}
+  .tab{flex:1 1 0;min-width:0;height:52px;border-radius:14px;background:transparent;color:var(--ink-a46);font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .tab.active{color:var(--accent-deep);background:var(--accent-a10)}
+  .checkout{height:52px;border-radius:15px;background:var(--accent);color:#fff;font-weight:900;padding:0 15px;display:none;align-items:center;gap:9px;box-shadow:0 10px 22px -10px var(--accent-a45);white-space:nowrap}
   .checkout.show{display:flex}
-  .cart-count{min-width:24px;height:24px;border-radius:12px;background:#fff;color:var(--accent-deep);display:grid;place-items:center;font-size:13px}
+  .cart-count{min-width:24px;height:24px;border-radius:12px;background:var(--card);color:var(--accent-deep);display:grid;place-items:center;font-size:13px}
 
   .sheet{position:fixed;inset:0;z-index:60;display:none}
   .sheet.open{display:block}
   .shade{position:absolute;inset:0;background:rgba(13,11,8,.42)}
-  .panel{position:absolute;left:0;right:0;bottom:0;max-width:760px;margin:0 auto;background:#fff;border-radius:24px 24px 0 0;padding:18px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px -24px rgba(13,11,8,.45);max-height:82vh;overflow:auto}
+  .panel{position:absolute;left:0;right:0;bottom:0;max-width:760px;margin:0 auto;background:var(--card);border-radius:24px 24px 0 0;padding:18px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -18px 40px -24px rgba(13,11,8,.45);max-height:82vh;overflow:auto}
   .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .panel h2{font-size:23px;letter-spacing:-.4px}
-  .x{width:38px;height:38px;border-radius:13px;background:#f4f0e8;color:var(--ink)}
+  .x{width:38px;height:38px;border-radius:13px;background:var(--surface-dim);color:var(--ink)}
   .cart-lines{margin-top:14px;display:flex;flex-direction:column;gap:10px}
-  .cart-line{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border-radius:15px;background:#f8f4ed}
+  .cart-line{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border-radius:15px;background:var(--surface-low)}
   .qty{display:flex;align-items:center;gap:8px}
-  .qty button{width:30px;height:30px;border-radius:10px;background:#fff;border:1px solid var(--line);font-weight:900}
+  .qty button{width:30px;height:30px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-weight:900}
   .field{margin-top:12px}
   .field label{display:block;font-size:12px;color:var(--mut);font-weight:800;margin:0 0 6px 2px}
-  .field input,.field textarea{width:100%;border:1.5px solid var(--line);border-radius:14px;background:#fff;padding:12px 13px;outline:0;color:var(--ink)}
+  .field input,.field textarea{width:100%;border:1.5px solid var(--line);border-radius:14px;background:var(--card);padding:12px 13px;outline:0;color:var(--ink)}
   .field textarea{min-height:74px;resize:vertical}
   .total-row{margin-top:14px;display:flex;align-items:center;justify-content:space-between;font-size:18px;font-weight:900}
   .submit-order{margin-top:14px;width:100%}
@@ -219,27 +222,110 @@
   .detail-photo.breakfast:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#f0c777,#c8821e)}
   .detail-photo.hot:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.56),transparent 22%),linear-gradient(135deg,#d98c48,#8f4a2c)}
   .detail-photo.dessert:before{background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.6),transparent 22%),linear-gradient(135deg,#e7b5b8,#8a6fc0)}
-  .back{position:absolute;top:52px;left:14px;width:40px;height:40px;border-radius:14px;background:rgba(252,250,245,.92);display:grid;place-items:center;color:var(--ink)}
+  .back{position:absolute;top:52px;left:14px;width:40px;height:40px;border-radius:14px;background:var(--nav-a92);display:grid;place-items:center;color:var(--ink)}
   .detail-body{padding:18px 18px 118px;max-width:760px;margin:0 auto}
   .detail-title{display:flex;align-items:flex-start;gap:12px}
   .detail-title h2{flex:1;font-size:27px;line-height:1.12;letter-spacing:-.6px}
   .detail-price{font-size:24px;font-weight:900;color:var(--accent-deep);white-space:nowrap}
   .detail-section{margin-top:18px}
   .detail-section h3{font-size:15px;margin-bottom:7px}
-  .detail-section p{font-size:15px;color:rgba(30,27,22,.68);line-height:1.6}
+  .detail-section p{font-size:15px;color:var(--ink-a68);line-height:1.6}
   .allergens{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .allergen{height:32px;padding:0 12px;border-radius:11px;background:rgba(217,86,74,.1);color:#c0463b;font-size:13px;font-weight:800;display:flex;align-items:center}
   .facts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:18px}
-  .fact{background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px}
+  .fact{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px}
   .fact span{font-size:12px;color:var(--mut)}
   .fact b{display:block;margin-top:3px}
-  .detail-bar{position:fixed;left:0;right:0;bottom:0;z-index:56;background:rgba(252,250,245,.96);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:14px 18px calc(18px + env(safe-area-inset-bottom))}
+  .detail-bar{position:fixed;left:0;right:0;bottom:0;z-index:56;background:var(--nav-a96);backdrop-filter:blur(22px);border-top:1px solid var(--line);padding:14px 18px calc(18px + env(safe-area-inset-bottom))}
   .detail-bar-in{max-width:760px;margin:0 auto;display:flex;gap:10px}
 
   .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));z-index:80;transform:translateX(-50%);background:var(--dark);color:#fff;border-radius:12px;padding:10px 15px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
   .toast.show{opacity:.96}
   .server-messages{display:none}
 
+  /* ---- venue social feed ---- */
+  .feed-list{margin-top:16px;display:flex;flex-direction:column;gap:14px}
+  .feed-post{background:var(--card);border:1px solid var(--line-a78);border-radius:18px;padding:12px;box-shadow:var(--shadow);animation:rise .18s ease-out}
+  .feed-post-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--mut);font-size:12px;font-weight:800}
+  .feed-post-head .ic{width:17px;height:17px;color:var(--accent-deep)}
+  .feed-pin-tag{margin-left:auto;height:24px;padding:0 9px;border-radius:8px;background:var(--accent-soft);color:var(--accent-deep);display:flex;align-items:center;gap:5px;font-size:11px;font-weight:900}
+  .feed-embed{min-height:80px;overflow:hidden;border-radius:12px}
+  .feed-embed iframe{max-width:100%!important}
+  .feed-embed blockquote,.feed-embed .fb-post,.feed-embed .fb-video{margin:0 auto!important;max-width:100%!important;min-width:0!important}
+  .feed-fallback{display:flex;align-items:center;gap:12px;padding:6px 2px}
+  .feed-fallback-icon{width:46px;height:46px;border-radius:14px;background:var(--accent-soft);color:var(--accent-deep);display:grid;place-items:center;flex:0 0 auto}
+  .feed-fallback-domain{font-weight:900;font-size:15px}
+  .feed-fallback-sub{margin-top:2px;color:var(--mut);font-size:13px}
+  .feed-open-link{margin-left:auto;height:38px;padding:0 13px;border-radius:12px;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap;box-shadow:0 8px 16px -10px var(--accent-a70)}
+  .feed-skeleton{height:190px;border-radius:18px;border:1px solid var(--line-a78);background:linear-gradient(100deg,var(--card) 40%,var(--accent-soft) 50%,var(--card) 60%);background-size:200% 100%;animation:feed-shimmer 1.2s linear infinite}
+  @keyframes feed-shimmer{from{background-position:120% 0}to{background-position:-80% 0}}
+  @media (prefers-reduced-motion: reduce){.feed-skeleton{animation:none;background:var(--card)}}
+  .feed-empty{margin-top:26px;padding:34px 18px;text-align:center;background:var(--card);border-radius:18px;box-shadow:var(--shadow)}
+  .feed-empty .ic{width:34px;height:34px;color:var(--accent);margin-bottom:10px}
+  .feed-empty-title{font-size:17px;font-weight:900}
+  .feed-empty-sub{margin-top:6px;color:var(--mut);font-size:14px}
+  .feed-error{margin-top:16px;padding:16px;text-align:center;background:var(--card);border-radius:18px;box-shadow:var(--shadow);color:var(--mut);font-size:14px}
+  .feed-error .secondary{width:100%;margin-top:12px}
+  .feed-sentinel{height:2px}
+
+  /* ---- coupon wallet (Apple-Wallet-style passes, theme-driven) ---- */
+  .wallet-list{margin-top:16px;display:flex;flex-direction:column;gap:14px}
+  .pass{position:relative;border-radius:20px;background:var(--card);box-shadow:var(--shadow);overflow:hidden;text-align:left;transition:transform .16s cubic-bezier(.22,1,.36,1)}
+  .pass:active{transform:scale(.985)}
+  /* the collapsed face IS the toggle button: venue, title, headline, hint */
+  .pass-top{display:block;width:100%;position:relative;padding:16px 18px 15px;background:linear-gradient(135deg,var(--accent),var(--accent-deep));color:#fff;text-align:left}
+  .pass-kicker{display:block;font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;opacity:.85}
+  .pass-title{display:block;margin-top:4px;font-size:17px;font-weight:900;line-height:1.15;text-wrap:balance}
+  .pass-headline-row{margin-top:7px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+  .pass-headline{font-size:31px;font-weight:950;letter-spacing:-1px;line-height:1}
+  .pass-hint{display:flex;align-items:center;gap:4px;padding-bottom:3px;font-size:12px;font-weight:800;color:rgba(255,255,255,.85);white-space:nowrap}
+  .pass-hint .chev{display:inline-block;transition:transform .2s}
+  .pass.open .pass-hint .chev{transform:rotate(180deg)}
+  /* perforation row: dashed line + side punch-hole notches (radial-gradient
+     circles in the page bg color, half-clipped by overflow:hidden) */
+  .pass-perf{position:relative;height:24px;background:
+    radial-gradient(circle 11px at 0 50%, var(--bg) 98%, transparent),
+    radial-gradient(circle 11px at 100% 50%, var(--bg) 98%, transparent)}
+  .pass-perf::before{content:"";position:absolute;left:22px;right:22px;top:50%;border-top:2px dashed var(--line)}
+  .pass-body{padding:2px 18px 14px;text-align:center}
+  .pass-qr{width:170px;margin:6px auto 0;padding:11px;background:#fff;border-radius:14px;border:1px solid var(--line)}
+  .pass-qr svg{display:block;width:100%;height:auto}
+  .pass-code{margin-top:10px;font-size:15px;font-weight:900;letter-spacing:3px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .pass-tap{margin-top:5px;color:var(--mut);font-size:12px;font-weight:700}
+  .pass-details{display:grid;grid-template-rows:0fr;transition:grid-template-rows .26s cubic-bezier(.22,1,.36,1)}
+  /* visibility rides the same 260ms: appears at expand start, gone at
+     collapse end — and collapsed content is truly hidden (a11y, focus) */
+  .pass-details>div{overflow:hidden;visibility:hidden;transition:visibility .26s}
+  .pass.open .pass-details{grid-template-rows:1fr}
+  .pass.open .pass-details>div{visibility:visible}
+  .pass.open .pass-body{animation:pass-flip .3s cubic-bezier(.22,1,.36,1)}
+  @keyframes pass-flip{from{transform:perspective(640px) rotateX(6deg)}to{transform:none}}
+  @media (prefers-reduced-motion: reduce){.pass.open .pass-body{animation:none}.pass-details{transition:none}}
+  .pass-rows{padding:2px 18px 16px;text-align:left}
+  .pass-row{display:grid;grid-template-columns:110px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line-a62);font-size:13px}
+  .pass-row:first-child{border-top:0}
+  .pass-row b{color:var(--mut);font-weight:800;font-size:12px}
+  .pass-row span{color:var(--ink-a82)}
+  .pass-ribbon{position:absolute;top:16px;right:-36px;z-index:2;transform:rotate(35deg);background:var(--dark);color:#fff;padding:5px 42px;font-size:11px;font-weight:900;letter-spacing:.5px;box-shadow:0 4px 10px -4px rgba(13,11,8,.4)}
+  .pass.done{filter:grayscale(1);opacity:.82}
+  .wallet-history-toggle{width:100%;margin-top:18px;height:44px;border-radius:13px;background:var(--card);border:1.5px solid var(--line);font-weight:800;color:var(--mut);display:flex;align-items:center;justify-content:center;gap:8px}
+  .wallet-history-toggle .chev{display:inline-block;transition:transform .2s}
+  .wallet-history-toggle.open .chev{transform:rotate(180deg)}
+  #wallet-history{margin-top:14px}
+  .wallet-recovery{margin-top:22px;background:var(--card);border-radius:18px;padding:15px;box-shadow:var(--shadow);display:flex;align-items:center;gap:13px}
+  .wallet-recovery-qr{width:78px;flex:0 0 auto;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px}
+  .wallet-recovery-qr svg{display:block;width:100%;height:auto}
+  .wallet-recovery-title{font-size:14px;font-weight:900}
+  .wallet-recovery-sub{margin-top:3px;color:var(--mut);font-size:12.5px;line-height:1.4}
+  .wallet-copy{margin-top:8px;height:32px;padding:0 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent-deep);font-size:12px;font-weight:800}
+
+  @media (max-width:374px){
+    /* five tabs must breathe on a 320px phone */
+    .nav-in{gap:4px}
+    .tab{font-size:10.5px;gap:2px}
+    .tab .ic{width:21px;height:21px}
+    .checkout{padding:0 10px}
+  }
   @media (max-width:360px){
     .grid{gap:10px}
     .dish-name{font-size:15px}
@@ -248,6 +334,9 @@
 </style>
 </head>
 <body
+  data-feed-url="{% url 'guest_web:feed' %}"
+  data-wallet-url="{% url 'guest_web:wallet' %}"
+  data-wallet-claim-url="{% url 'guest_web:wallet-claim' %}"
   {% if table %}
   data-table="{{ table.pk }}"
   data-table-number="{{ table.number }}"
@@ -268,6 +357,14 @@
     <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M12 2.25A6.75 6.75 0 0 0 5.25 9c0 3.3-.82 5.14-1.58 6.22A1.13 1.13 0 0 0 4.6 17h14.8a1.13 1.13 0 0 0 .93-1.78c-.76-1.08-1.58-2.92-1.58-6.22A6.75 6.75 0 0 0 12 2.25zM9.4 18.6a2.75 2.75 0 0 0 5.2 0z"/></symbol>
     <symbol id="ic-receipt" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M6 2.75A.75.75 0 0 1 6.75 2h10.5a.75.75 0 0 1 .75.75V21l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3zM9 7.4v1.6h6V7.4zm0 3.6v1.6h5v-1.6z"/></symbol>
     <symbol id="ic-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.75a9.25 9.25 0 1 0 0 18.5 9.25 9.25 0 0 0 0-18.5zM12 7.4a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3zm-.95 4a.95.95 0 0 1 1.9 0v4.9a.95.95 0 0 1-1.9 0z"/></symbol>
+    <symbol id="ic-feed" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5 2.5h14A2.5 2.5 0 0 1 21.5 5v14a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V5A2.5 2.5 0 0 1 5 2.5zm3.4 5.2a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4zm10.1 10.05-3.9-5.85a.9.9 0 0 0-1.5 0l-2.35 3.5-1.2-1.5a.9.9 0 0 0-1.42.02L5.5 17.75z"/></symbol>
+    <symbol id="ic-pin" viewBox="0 0 24 24"><path d="M14.6 2.6a1.4 1.4 0 0 1 2 0l4.8 4.8a1.4 1.4 0 0 1 0 2c-.55.54-1.35.7-2.05.47l-3.1 3.1c.35 1.5.02 3.13-1.06 4.36a.95.95 0 0 1-1.4.05l-3.2-3.2-4.4 4.4a1 1 0 0 1-1.41-1.41l4.4-4.4-3.2-3.2a.95.95 0 0 1 .05-1.4 4.93 4.93 0 0 1 4.36-1.07l3.1-3.1a1.93 1.93 0 0 1 .47-2.05z"/></symbol>
+    <symbol id="ic-instagram" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M7.3 2.5h9.4a4.8 4.8 0 0 1 4.8 4.8v9.4a4.8 4.8 0 0 1-4.8 4.8H7.3a4.8 4.8 0 0 1-4.8-4.8V7.3a4.8 4.8 0 0 1 4.8-4.8zM12 7.15A4.85 4.85 0 1 0 16.85 12 4.85 4.85 0 0 0 12 7.15zm0 2a2.85 2.85 0 1 1-2.85 2.85A2.85 2.85 0 0 1 12 9.15zm5.2-3.5a1.15 1.15 0 1 0 1.15 1.15A1.15 1.15 0 0 0 17.2 5.65z"/></symbol>
+    <symbol id="ic-threads" viewBox="0 0 24 24"><path d="M12.2 2.5c2.6 0 4.7.86 6.1 2.55 1.05 1.25 1.7 2.94 1.95 5l-1.95.5c-.2-1.75-.72-3.13-1.55-4.12-1.02-1.22-2.55-1.86-4.55-1.9-2 .04-3.5.68-4.5 1.9-1.15 1.4-1.7 3.35-1.7 5.57s.55 4.17 1.7 5.57c1 1.22 2.5 1.86 4.5 1.9 1.8-.04 3.02-.48 3.9-1.4.72-.75 1.05-1.6 1.05-2.42 0-.55-.15-1.03-.5-1.42a4.9 4.9 0 0 1-2.1 1.87c.03-.14.05-.3.05-.45 0-1.86-1.32-3.32-3.5-3.42-1.16-.05-2.2.24-2.95.9a2.94 2.94 0 0 0-1.05 2.28c0 1.9 1.44 3.16 3.55 3.24-1.2.02-2.32-.34-3.2-1.06a.94.94 0 0 1 .2 1.46c.98.9 2.3 1.36 3.9 1.36zm-.7-8.1c1.06.05 1.6.6 1.6 1.42 0 .1-.01.2-.03.3a7.7 7.7 0 0 1-1.62.17c-1.06-.04-1.6-.5-1.6-1.02 0-.55.6-.92 1.65-.87z"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M17.7 3h3l-6.56 7.5L21.85 21h-6.05l-4.74-6.2L5.64 21h-3l7.02-8.02L2.35 3h6.2l4.29 5.67zm-1.05 16.2h1.66L7.66 4.7H5.88z"/></symbol>
+    <symbol id="ic-facebook" viewBox="0 0 24 24"><path d="M21.5 12.06C21.5 6.78 17.25 2.5 12 2.5S2.5 6.78 2.5 12.06c0 4.77 3.47 8.72 8.02 9.44v-6.68H8.1v-2.76h2.42V9.97c0-2.4 1.42-3.74 3.6-3.74 1.05 0 2.14.19 2.14.19v2.35h-1.2c-1.19 0-1.56.74-1.56 1.5v1.8h2.65l-.43 2.75h-2.22v6.68c4.55-.72 8-4.67 8-9.44z"/></symbol>
+    <symbol id="ic-wallet" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4.5 4.5h13A1.5 1.5 0 0 1 19 6v.55H5.6a.85.85 0 0 0 0 1.7H20A1.5 1.5 0 0 1 21.5 9.75V19a1.5 1.5 0 0 1-1.5 1.5H4.5A2 2 0 0 1 2.5 18.5v-12a2 2 0 0 1 2-2zm12.3 9.15a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z"/></symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9 2.5h8A2.5 2.5 0 0 1 19.5 5v9H17.7V5A.7.7 0 0 0 17 4.3H9zM6 6.5h8A2.5 2.5 0 0 1 16.5 9v10A2.5 2.5 0 0 1 14 21.5H6A2.5 2.5 0 0 1 3.5 19V9A2.5 2.5 0 0 1 6 6.5z"/></symbol>
   </defs>
 </svg>
 
@@ -291,10 +388,13 @@
 
 <main class="app">
   <section class="screen active" id="profile-screen" data-screen="profile" data-testid="screen-profile">
-    <div class="cover"></div>
-    <div class="profile-head">
+    {# Storefront blocks: visibility + order come from VenueSettings (staff editor). #}
+    {% if venue_blocks.cover %}
+    <div class="cover"{% if venue.cover_url %} style="background-image:linear-gradient(rgba(13,11,8,.12),rgba(13,11,8,.2)),url('{{ venue.cover_url }}')"{% endif %}></div>
+    {% endif %}
+    <div class="profile-head{% if not venue_blocks.cover %} no-cover{% endif %}">
       <div class="venue-top">
-        <div class="logo" aria-hidden="true"><img src="{% static 'images/cafeconnect-logo.png' %}" alt=""></div>
+        <div class="logo" aria-hidden="true"><img src="{% if venue.logo_url %}{{ venue.logo_url }}{% else %}{% static 'images/cafeconnect-logo.png' %}{% endif %}" alt=""></div>
         <div style="min-width:0">
           <div class="title-row">
             <h1>{{ venue.name }}</h1>
@@ -302,21 +402,29 @@
           <p class="tagline" data-i18n-text data-en="{{ venue.tagline }}" data-it="{{ venue.tagline_it }}">{{ venue.tagline }}</p>
         </div>
       </div>
+      {% for block in head_blocks %}
+      {% if block == 'facts' %}
       <div class="rating">
         <a class="fact-pill" href="{{ venue.maps_url }}" target="_blank" rel="noopener"><span class="star">⌖</span><b data-i18n-text data-en="{{ venue.address }}" data-it="{{ venue.address_it }}">{{ venue.address }}</b></a>
         <span class="fact-pill"><span class="star">•</span><span data-i18n-text data-en="{{ venue.hours }}" data-it="{{ venue.hours_it }}">{{ venue.hours }}</span></span>
       </div>
+      {% elif block == 'badges' %}
       <div class="badges">
         {% for badge in venue.badges %}
           <span class="badge"><span class="dot"></span><span data-i18n-text data-en="{{ badge.en }}" data-it="{{ badge.it }}">{{ badge.en }}</span></span>
         {% endfor %}
       </div>
+      {% elif block == 'cta' %}
       <div class="hero-actions">
         <button class="primary flex" type="button" data-go="menu" data-testid="hero-menu"><svg class="ic"><use href="#ic-menu"/></svg><span data-i18n="view_menu">View menu</span></button>
         <button class="icon-btn" type="button" data-go="service" aria-label="Service" data-testid="hero-service"><svg class="ic"><use href="#ic-bell"/></svg></button>
       </div>
+      {% endif %}
+      {% endfor %}
     </div>
 
+    {% for block in body_blocks %}
+    {% if block == 'popular' %}
     <div class="section-title">
       <h2 data-i18n="daily_special">Popular picks</h2>
       <span class="muted" data-i18n="chef_pick">from the menu</span>
@@ -334,12 +442,14 @@
         <p class="muted" data-i18n="daily_empty">Popular items will appear here soon.</p>
       {% endfor %}
     </div>
-
+    {% elif block == 'about' %}
     <section class="about">
       <h2 data-i18n="about">About us</h2>
       <p data-i18n-text data-en="{{ venue.about }}" data-it="{{ venue.about_it }}">{{ venue.about }}</p>
       <p style="margin-top:12px"><span data-i18n-text data-en="{{ venue.address }}" data-it="{{ venue.address_it }}">{{ venue.address }}</span> · <span data-i18n-text data-en="{{ venue.hours }}" data-it="{{ venue.hours_it }}">{{ venue.hours }}</span></p>
     </section>
+    {% endif %}
+    {% endfor %}
   </section>
 
   <section class="screen" id="menu-screen" data-screen="menu" data-testid="screen-menu">
@@ -429,12 +539,59 @@
       <p data-i18n="how_body">The signal arrives instantly in the staff app. You can build an order in the cart, and staff will see it in the shared feed.</p>
     </section>
   </section>
+
+  <section class="screen" id="feed-screen" data-screen="feed" data-testid="screen-feed">
+    <h1 class="page-title" data-i18n="feed">Feed</h1>
+    <p class="sub">{{ venue.name }} · <span data-i18n="feed_sub">latest from our socials</span></p>
+    <div class="feed-list" id="feed-list" data-testid="feed-list"></div>
+    <div class="feed-empty" id="feed-empty" hidden data-testid="feed-empty">
+      <svg class="ic"><use href="#ic-feed"/></svg>
+      <div class="feed-empty-title" data-i18n="feed_empty_title">No posts yet</div>
+      <p class="feed-empty-sub" data-i18n="feed_empty_sub">Fresh moments from the venue will appear here soon.</p>
+    </div>
+    <div class="feed-error" id="feed-error" hidden data-testid="feed-error">
+      <span data-i18n="feed_error">Couldn't load the feed.</span>
+      <button class="secondary" id="feed-retry" type="button" data-i18n="feed_retry" data-testid="feed-retry">Try again</button>
+    </div>
+    <div class="feed-sentinel" id="feed-sentinel" aria-hidden="true" data-testid="feed-sentinel"></div>
+  </section>
+
+  <section class="screen" id="wallet-screen" data-screen="wallet" data-testid="screen-wallet">
+    <h1 class="page-title" data-i18n="wallet">Coupons</h1>
+    <p class="sub">{{ venue.name }} · <span data-i18n="wallet_sub">your coupons</span></p>
+    <div class="wallet-list" id="wallet-list" data-testid="wallet-list"></div>
+    <div id="wallet-history-wrap" hidden>
+      <button class="wallet-history-toggle" id="wallet-history-toggle" type="button" data-testid="wallet-history-toggle">
+        <span data-i18n="wallet_history">History</span><span id="wallet-history-count"></span><span class="chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="wallet-list" id="wallet-history" hidden data-testid="wallet-history"></div>
+    </div>
+    <div class="feed-empty" id="wallet-empty" hidden data-testid="wallet-empty">
+      <svg class="ic"><use href="#ic-wallet"/></svg>
+      <div class="feed-empty-title" data-i18n="wallet_empty_title">No coupons yet</div>
+      <p class="feed-empty-sub" data-i18n="wallet_empty_sub">Coupons from the staff or our promos will appear here.</p>
+    </div>
+    <div class="feed-error" id="wallet-error" hidden data-testid="wallet-error">
+      <span data-i18n="wallet_error">Couldn't load coupons.</span>
+      <button class="secondary" id="wallet-retry" type="button" data-i18n="feed_retry" data-testid="wallet-retry">Try again</button>
+    </div>
+    <div class="wallet-recovery" id="wallet-recovery" hidden data-testid="wallet-recovery">
+      <div class="wallet-recovery-qr" id="wallet-recovery-qr" aria-hidden="true"></div>
+      <div style="min-width:0">
+        <div class="wallet-recovery-title" data-i18n="wallet_save_hint">Save your coupons — keep this link</div>
+        <p class="wallet-recovery-sub" data-i18n="wallet_save_sub">Open it on any device to find your coupons again.</p>
+        <button class="wallet-copy" id="wallet-copy" type="button" data-testid="wallet-copy"><svg class="ic" style="width:13px;height:13px;vertical-align:-2px"><use href="#ic-copy"/></svg> <span data-i18n="wallet_copy">Copy link</span></button>
+      </div>
+    </div>
+  </section>
 </main>
 
 <nav class="bottom-nav" aria-label="Navigation">
   <div class="nav-in">
     <button class="tab active" type="button" data-go="profile" data-testid="nav-profile"><span><svg class="ic"><use href="#ic-home"/></svg></span><span data-i18n="profile">Profile</span></button>
     <button class="tab" type="button" data-go="menu" data-testid="nav-menu"><span><svg class="ic"><use href="#ic-menu"/></svg></span><span data-i18n="menu">Menu</span></button>
+    <button class="tab" type="button" data-go="feed" data-testid="nav-feed"><span><svg class="ic"><use href="#ic-feed"/></svg></span><span data-i18n="feed">Feed</span></button>
+    <button class="tab" type="button" data-go="wallet" data-testid="nav-wallet"><span><svg class="ic"><use href="#ic-wallet"/></svg></span><span data-i18n="wallet">Coupons</span></button>
     <button class="tab" type="button" data-go="service" data-testid="nav-service"><span><svg class="ic"><use href="#ic-bell"/></svg></span><span data-i18n="service">Service</span></button>
     {% if table %}
       <button class="checkout" id="checkout" type="button" data-testid="checkout"><span class="cart-count" id="cart-count" data-testid="cart-count">0</span><span id="cart-total" data-testid="cart-total">0 €</span></button>
@@ -547,7 +704,24 @@
       order_total:"Order total: ", bill_pending:"Preparing your bill", waiter_pending:"A waiter is on the way",
       status_new:"Order accepted", status_cooking:"Preparing your order", status_ready:"Order is ready", status_completed:"Order served", status_paid:"Order paid", status_cancelled:"Order cancelled",
       active_orders:"Active orders", current_check:"Current check: ", order_label:"Order",
-      signal_failed:"Could not send signal", cancel_failed:"Could not cancel the call"
+      signal_failed:"Could not send signal", cancel_failed:"Could not cancel the call",
+      feed:"Feed", feed_sub:"latest from our socials", feed_pinned:"Pinned",
+      feed_empty_title:"No posts yet", feed_empty_sub:"Fresh moments from the venue will appear here soon.",
+      feed_error:"Couldn't load the feed.", feed_retry:"Try again", feed_open:"Open post ↗",
+      wallet:"Coupons", wallet_sub:"your coupons",
+      wallet_empty_title:"No coupons yet", wallet_empty_sub:"Coupons from the staff or our promos will appear here.",
+      wallet_error:"Couldn't load coupons.",
+      wallet_used:"Used", wallet_expired:"Expired", wallet_void:"Cancelled",
+      wallet_history:"History", wallet_tap:"Tap to use",
+      wallet_show_staff:"Show this QR to the staff",
+      wallet_valid_from:"Valid from", wallet_valid_until:"Valid until",
+      wallet_conditions:"Conditions", wallet_source:"Added via", wallet_redeemed_on:"Used on",
+      wallet_source_staff:"staff at the venue", wallet_source_link:"promo link",
+      wallet_save_hint:"Save your coupons — keep this link",
+      wallet_save_sub:"Open it on any device to find your coupons again.",
+      wallet_copy:"Copy link", wallet_copied:"Link copied",
+      coupon_added:"Coupon added", coupon_already:"You already have this coupon",
+      wallet_link_invalid:"This link is not valid"
     },
     it: {
       table_short:"Tavolo", open_until:"Aperto fino alle 23:00", view_menu:"Guarda il menu",
@@ -571,7 +745,24 @@
       order_total:"Totale ordine: ", bill_pending:"Stiamo preparando il conto", waiter_pending:"Il cameriere sta arrivando",
       status_new:"Ordine accettato", status_cooking:"Stiamo preparando il tuo ordine", status_ready:"Ordine pronto", status_completed:"Ordine servito", status_paid:"Ordine pagato", status_cancelled:"Ordine annullato",
       active_orders:"Ordini attivi", current_check:"Conto attuale: ", order_label:"Ordine",
-      signal_failed:"Impossibile inviare il segnale", cancel_failed:"Impossibile annullare la chiamata"
+      signal_failed:"Impossibile inviare il segnale", cancel_failed:"Impossibile annullare la chiamata",
+      feed:"Feed", feed_sub:"le novità dai nostri social", feed_pinned:"In evidenza",
+      feed_empty_title:"Ancora nessun post", feed_empty_sub:"I momenti più belli del locale appariranno qui presto.",
+      feed_error:"Impossibile caricare il feed.", feed_retry:"Riprova", feed_open:"Apri il post ↗",
+      wallet:"Coupon", wallet_sub:"i tuoi coupon",
+      wallet_empty_title:"Ancora nessun coupon", wallet_empty_sub:"I coupon dello staff o delle nostre promo appariranno qui.",
+      wallet_error:"Impossibile caricare i coupon.",
+      wallet_used:"Utilizzato", wallet_expired:"Scaduto", wallet_void:"Annullato",
+      wallet_history:"Storico", wallet_tap:"Tocca per usare",
+      wallet_show_staff:"Mostra questo QR allo staff",
+      wallet_valid_from:"Valido dal", wallet_valid_until:"Valido fino al",
+      wallet_conditions:"Condizioni", wallet_source:"Aggiunto tramite", wallet_redeemed_on:"Utilizzato il",
+      wallet_source_staff:"staff del locale", wallet_source_link:"link promozionale",
+      wallet_save_hint:"Salva i tuoi coupon — conserva questo link",
+      wallet_save_sub:"Aprilo su qualsiasi dispositivo per ritrovare i tuoi coupon.",
+      wallet_copy:"Copia link", wallet_copied:"Link copiato",
+      coupon_added:"Coupon aggiunto", coupon_already:"Hai già questo coupon",
+      wallet_link_invalid:"Questo link non è valido"
     }
   };
 
@@ -642,6 +833,10 @@
     }
     renderCart();
     renderOrders(readOrders());
+    // Wallet passes carry locale-formatted dates — rebuild them when loaded.
+    if (typeof walletState === "object" && walletState && walletState.data) {
+      walletRender(walletState.data);
+    }
   }
   document.querySelectorAll("[data-lang]").forEach(function(btn){
     btn.addEventListener("click", function(){ setLanguage(btn.getAttribute("data-lang")); });
@@ -655,6 +850,11 @@
       t.classList.toggle("active", t.getAttribute("data-go") === name);
     });
     document.getElementById("detail").classList.remove("open");
+    // Social embeds and their scripts load ONLY here, on the first open of
+    // the Feed tab — the initial /menu/ render stays social-free and fast.
+    if (name === "feed") feedOpen();
+    // Same lazy pattern for the coupon wallet: zero requests until opened.
+    if (name === "wallet") walletOpen();
     window.scrollTo({top:0, behavior:"smooth"});
   }
   document.querySelectorAll("[data-go]").forEach(function(btn){
@@ -944,6 +1144,401 @@
       clearSignal();
     }).catch(function(){ toast(tr("cancel_failed")); });
   });
+
+  // ---- venue social feed (lazy: nothing runs until the tab is opened) ----
+  var feedUrl = body.getAttribute("data-feed-url");
+  var feedList = document.getElementById("feed-list");
+  var feedState = {
+    opened:false, loading:false, hasMore:true, cursor:null, count:0,
+    scripts:{},        // platform -> script src (from the server)
+    scriptLoaded:{},   // platform -> true once its <script> was injected
+    scriptFailed:{}    // platform -> true when the script could not load
+  };
+  var FEED_ICONS = {instagram:"ic-instagram", threads:"ic-threads", twitter_x:"ic-x", facebook:"ic-facebook"};
+  var EMBED_UPGRADE_TIMEOUT = 4500;
+
+  function feedOpen(){
+    if (feedState.opened || !feedUrl || !feedList) return;
+    feedState.opened = true;
+    feedLoadPage();
+    feedWatchSentinel();
+  }
+  function feedSkeletons(on){
+    if (on) {
+      for (var i = 0; i < 3; i++) {
+        var skel = document.createElement("div");
+        skel.className = "feed-skeleton";
+        skel.setAttribute("data-skel", "1");
+        feedList.appendChild(skel);
+      }
+    } else {
+      feedList.querySelectorAll("[data-skel]").forEach(function(el){ el.remove(); });
+    }
+  }
+  function feedLoadPage(){
+    if (feedState.loading || !feedState.hasMore) return;
+    feedState.loading = true;
+    document.getElementById("feed-error").hidden = true;
+    feedSkeletons(true);
+    var url = feedUrl + "?limit=6" + (feedState.cursor ? "&cursor=" + encodeURIComponent(feedState.cursor) : "");
+    fetch(url).then(function(res){
+      if (!res.ok) throw new Error("feed failed");
+      return res.json();
+    }).then(function(data){
+      feedSkeletons(false);
+      feedState.scripts = data.scripts || {};
+      (data.pinned || []).forEach(function(post){ feedRenderPost(post, true); });
+      (data.posts || []).forEach(function(post){ feedRenderPost(post, false); });
+      feedState.cursor = data.nextCursor;
+      feedState.hasMore = !!data.hasMore;
+      document.getElementById("feed-empty").hidden = feedState.count !== 0;
+    }).catch(function(){
+      feedSkeletons(false);
+      document.getElementById("feed-error").hidden = false;
+    }).finally(function(){
+      feedState.loading = false;
+    });
+  }
+  function feedRenderPost(post, pinned){
+    feedState.count += 1;
+    var card = document.createElement("article");
+    card.className = "feed-post";
+    card.setAttribute("data-testid", "feed-post");
+    card.setAttribute("data-platform", post.platform);
+    if (pinned) card.setAttribute("data-pinned", "1");
+
+    var head = document.createElement("div");
+    head.className = "feed-post-head";
+    var iconId = FEED_ICONS[post.platform] || "ic-feed";
+    head.innerHTML = '<svg class="ic"><use href="#' + iconId + '"/></svg><span>' + escapeHtml(post.domain || "") + '</span>';
+    if (pinned) {
+      var tag = document.createElement("span");
+      tag.className = "feed-pin-tag";
+      tag.setAttribute("data-testid", "feed-pinned-tag");
+      tag.innerHTML = '<svg class="ic" style="width:12px;height:12px"><use href="#ic-pin"/></svg><span data-i18n="feed_pinned">' + escapeHtml(tr("feed_pinned")) + '</span>';
+      head.appendChild(tag);
+    }
+    card.appendChild(head);
+
+    var embed = document.createElement("div");
+    embed.className = "feed-embed";
+    // post.embed is generated by our own backend from a whitelisted URL —
+    // the only markup ever injected here.
+    embed.innerHTML = post.embed || "";
+    card.appendChild(embed);
+
+    var fallback = feedBuildFallback(post);
+    card.appendChild(fallback);
+
+    if (!post.embed) {
+      embed.hidden = true;
+      fallback.hidden = false;
+    } else {
+      feedEnsureScript(post.platform);
+      // The official widget should upgrade the blockquote to an iframe; when
+      // it doesn't (script blocked, offline, provider down) the card degrades
+      // to our own link card instead of a dead grey box.
+      setTimeout(function(){
+        if (feedState.scriptFailed[post.platform] || !embed.querySelector("iframe")) {
+          embed.hidden = true;
+          fallback.hidden = false;
+        }
+      }, EMBED_UPGRADE_TIMEOUT);
+    }
+    feedList.appendChild(card);
+  }
+  function feedBuildFallback(post){
+    var box = document.createElement("div");
+    box.className = "feed-fallback";
+    box.hidden = true;
+    box.setAttribute("data-testid", "feed-fallback");
+    var iconId = FEED_ICONS[post.platform] || "ic-feed";
+    var icon = document.createElement("span");
+    icon.className = "feed-fallback-icon";
+    icon.innerHTML = '<svg class="ic"><use href="#' + iconId + '"/></svg>';
+    var text = document.createElement("span");
+    text.style.minWidth = "0";
+    text.innerHTML = '<span class="feed-fallback-domain">' + escapeHtml(post.domain || "") + '</span>' +
+      '<span class="feed-fallback-sub" data-i18n="feed_sub">' + escapeHtml(tr("feed_sub")) + '</span>';
+    var link = document.createElement("a");
+    link.className = "feed-open-link";
+    link.href = post.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("data-i18n", "feed_open");
+    link.textContent = tr("feed_open");
+    box.appendChild(icon);
+    box.appendChild(text);
+    box.appendChild(link);
+    return box;
+  }
+  function feedEnsureScript(platform){
+    var src = feedState.scripts[platform];
+    if (!src) return;
+    if (feedState.scriptLoaded[platform]) { feedReprocess(platform); return; }
+    feedState.scriptLoaded[platform] = true;
+    if (platform === "facebook" && !document.getElementById("fb-root")) {
+      var root = document.createElement("div");
+      root.id = "fb-root";
+      document.body.appendChild(root);
+    }
+    var script = document.createElement("script");
+    script.async = true;
+    script.defer = true;
+    script.src = src;
+    script.crossOrigin = "anonymous";
+    script.onerror = function(){ feedState.scriptFailed[platform] = true; };
+    document.body.appendChild(script);
+  }
+  function feedReprocess(platform){
+    // Widget scripts scan the DOM when they load; nodes added later (infinite
+    // scroll) need an explicit re-scan.
+    try {
+      if (platform === "twitter_x" && window.twttr && twttr.widgets) twttr.widgets.load(feedList);
+      else if (platform === "instagram" && window.instgrm && instgrm.Embeds) instgrm.Embeds.process();
+      else if (platform === "facebook" && window.FB && FB.XFBML) FB.XFBML.parse(feedList);
+      else if (platform === "threads") {
+        // threads embed.js has no public re-scan API; re-appending the script
+        // re-executes it from HTTP cache and re-scans the page.
+        var again = document.createElement("script");
+        again.async = true;
+        again.src = feedState.scripts[platform];
+        document.body.appendChild(again);
+      }
+    } catch (e) { /* a widget error must never break the page */ }
+  }
+  function feedWatchSentinel(){
+    var sentinel = document.getElementById("feed-sentinel");
+    if (!sentinel) return;
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function(entries){
+        if (entries.some(function(entry){ return entry.isIntersecting; })) feedLoadPage();
+      }, {rootMargin: "600px 0px"}).observe(sentinel);
+    } else {
+      window.addEventListener("scroll", function(){
+        if (!feedState.opened) return;
+        if (sentinel.getBoundingClientRect().top < window.innerHeight + 600) feedLoadPage();
+      }, {passive:true});
+    }
+  }
+  var feedRetry = document.getElementById("feed-retry");
+  if (feedRetry) feedRetry.addEventListener("click", feedLoadPage);
+
+  // ---- coupon wallet (lazy: nothing runs until the tab is opened) ----
+  var walletUrl = body.getAttribute("data-wallet-url");
+  var walletClaimUrl = body.getAttribute("data-wallet-claim-url");
+  var walletState = {opened:false, loading:false, data:null, openPass:null};
+
+  function walletOpen(){
+    if (!walletUrl || walletState.opened) return;
+    walletState.opened = true;
+    walletLoad();
+  }
+  function walletReload(){
+    if (!walletState.opened) return;
+    walletLoad();
+  }
+  function walletLoad(){
+    if (walletState.loading) return;
+    walletState.loading = true;
+    var list = document.getElementById("wallet-list");
+    document.getElementById("wallet-error").hidden = true;
+    if (!walletState.data) {
+      var skel = document.createElement("div");
+      skel.className = "feed-skeleton";
+      skel.setAttribute("data-skel", "1");
+      list.appendChild(skel);
+    }
+    fetch(walletUrl).then(function(res){
+      if (!res.ok) throw new Error("wallet failed");
+      return res.json();
+    }).then(function(data){
+      walletState.data = data;
+      walletRender(data);
+    }).catch(function(){
+      list.querySelectorAll("[data-skel]").forEach(function(el){ el.remove(); });
+      document.getElementById("wallet-error").hidden = false;
+    }).finally(function(){
+      walletState.loading = false;
+    });
+  }
+  function walletDiscountHeadline(coupon){
+    if (coupon.discountType === "percent") {
+      var pct = Number(coupon.discountValue);
+      var text = (pct % 1 === 0 ? String(pct) : String(pct).replace(".", ","));
+      return "−" + text + "%";
+    }
+    return "−" + money(coupon.discountValue);
+  }
+  function walletDate(iso){
+    if (!iso) return "";
+    var date = new Date(iso);
+    if (isNaN(date)) return "";
+    return date.toLocaleDateString(lang === "it" ? "it-IT" : "en-GB",
+      {day:"numeric", month:"short", year:"numeric"});
+  }
+  function walletDetailRow(labelKey, value){
+    if (!value) return "";
+    return '<div class="pass-row"><b data-i18n="' + labelKey + '">' + escapeHtml(tr(labelKey)) + '</b><span>' + value + '</span></div>';
+  }
+  function walletSetPassOpen(pass, open){
+    pass.classList.toggle("open", open);
+    var toggle = pass.querySelector(".pass-toggle");
+    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function walletBuildPass(coupon){
+    var pass = document.createElement("article");
+    var done = coupon.status !== "active";
+    pass.className = "pass" + (done ? " done" : "");
+    pass.setAttribute("data-testid", "wallet-card");
+    pass.setAttribute("data-status", coupon.status);
+    pass.setAttribute("data-code", coupon.code);
+
+    // Collapsed face (the whole thing is the accordion toggle): venue,
+    // title, discount headline, "Tap to use". No QR, no code, no staff
+    // instruction until the guest expands the pass.
+    var html =
+      '<button class="pass-top pass-toggle" type="button" aria-expanded="false" data-testid="wallet-card-toggle">' +
+        '<span class="pass-kicker">' + escapeHtml("{{ venue.name|escapejs }}") + '</span>' +
+        '<span class="pass-title" data-i18n-text data-en="' + escapeHtml(coupon.title) + '" data-it="' + escapeHtml(coupon.titleIt) + '">' +
+          escapeHtml(lang === "it" ? coupon.titleIt : coupon.title) + '</span>' +
+        '<span class="pass-headline-row">' +
+          '<span class="pass-headline">' + escapeHtml(walletDiscountHeadline(coupon)) + '</span>' +
+          '<span class="pass-hint"><span data-i18n="wallet_tap">' + escapeHtml(tr("wallet_tap")) + '</span><span class="chev" aria-hidden="true">▾</span></span>' +
+        '</span>' +
+      '</button>';
+
+    var description = lang === "it" ? (coupon.descriptionIt || coupon.description) : coupon.description;
+    var sourceKey = coupon.issuedVia === "staff_qr" ? "wallet_source_staff" : "wallet_source_link";
+    html += '<div class="pass-details" data-testid="wallet-card-details"><div>' +
+      '<div class="pass-perf" aria-hidden="true"></div>' +
+      '<div class="pass-body">' +
+      // The QR slot stays empty until the first expand — a long list never
+      // carries dozens of SVGs it doesn't show. Redeemed/expired coupons have
+      // no qrSvg at all (the server omits it), so they can never render one.
+      (coupon.qrSvg ? '<div class="pass-qr-slot"></div>' : '') +
+      '<div class="pass-code" data-testid="wallet-card-code">' + escapeHtml(coupon.code) + '</div>' +
+      (coupon.qrSvg
+        ? '<div class="pass-tap"><span data-i18n="wallet_show_staff">' + escapeHtml(tr("wallet_show_staff")) + '</span></div>'
+        : '') +
+      '</div>' +
+      '<div class="pass-rows">' +
+      walletDetailRow("wallet_valid_from", walletDate(coupon.validFrom)) +
+      walletDetailRow("wallet_valid_until", walletDate(coupon.validUntil)) +
+      walletDetailRow("wallet_conditions", description ? escapeHtml(description) : "") +
+      '<div class="pass-row"><b data-i18n="wallet_source">' + escapeHtml(tr("wallet_source")) + '</b><span data-i18n="' + sourceKey + '">' + escapeHtml(tr(sourceKey)) + '</span></div>' +
+      walletDetailRow("wallet_redeemed_on", walletDate(coupon.redeemedAt)) +
+      '</div></div></div>';
+
+    if (done) {
+      var ribbonKey = coupon.status === "redeemed" ? "wallet_used"
+        : coupon.status === "expired" ? "wallet_expired" : "wallet_void";
+      html += '<span class="pass-ribbon" data-testid="wallet-card-ribbon" data-i18n="' + ribbonKey + '">' + escapeHtml(tr(ribbonKey)) + '</span>';
+    }
+    pass.innerHTML = html;
+    pass.querySelector(".pass-toggle").addEventListener("click", function(){
+      var willOpen = !pass.classList.contains("open");
+      // Accordion: at most one pass is open at a time.
+      if (walletState.openPass && walletState.openPass !== pass) {
+        walletSetPassOpen(walletState.openPass, false);
+      }
+      if (willOpen && coupon.qrSvg) {
+        var slot = pass.querySelector(".pass-qr-slot");
+        if (slot && !slot.firstChild) {
+          slot.innerHTML = '<div class="pass-qr" data-testid="wallet-card-qr">' + coupon.qrSvg + '</div>';
+        }
+      }
+      walletSetPassOpen(pass, willOpen);
+      walletState.openPass = willOpen ? pass : null;
+    });
+    return pass;
+  }
+  function walletRender(data){
+    var list = document.getElementById("wallet-list");
+    var historyBox = document.getElementById("wallet-history");
+    var historyWrap = document.getElementById("wallet-history-wrap");
+    walletState.openPass = null; // the rebuilt list starts fully collapsed
+    list.innerHTML = "";
+    historyBox.innerHTML = "";
+
+    var active = [], history = [];
+    (data.coupons || []).forEach(function(coupon){
+      (coupon.status === "active" ? active : history).push(coupon);
+    });
+    active.forEach(function(coupon){ list.appendChild(walletBuildPass(coupon)); });
+    history.forEach(function(coupon){ historyBox.appendChild(walletBuildPass(coupon)); });
+
+    historyWrap.hidden = history.length === 0;
+    document.getElementById("wallet-history-count").textContent = history.length ? " (" + history.length + ")" : "";
+    document.getElementById("wallet-empty").hidden = (data.coupons || []).length !== 0;
+
+    var recovery = document.getElementById("wallet-recovery");
+    if (data.hasWallet && data.recovery) {
+      recovery.hidden = false;
+      document.getElementById("wallet-recovery-qr").innerHTML = data.recovery.qrSvg || "";
+      recovery.setAttribute("data-recovery-url", data.recovery.url || "");
+    } else {
+      recovery.hidden = true;
+    }
+  }
+  var walletRetry = document.getElementById("wallet-retry");
+  if (walletRetry) walletRetry.addEventListener("click", walletLoad);
+  var historyToggle = document.getElementById("wallet-history-toggle");
+  if (historyToggle) historyToggle.addEventListener("click", function(){
+    var box = document.getElementById("wallet-history");
+    box.hidden = !box.hidden;
+    historyToggle.classList.toggle("open", !box.hidden);
+  });
+  var walletCopy = document.getElementById("wallet-copy");
+  if (walletCopy) walletCopy.addEventListener("click", function(){
+    var url = document.getElementById("wallet-recovery").getAttribute("data-recovery-url") || "";
+    if (!url) return;
+    function copied(){ toast(tr("wallet_copied")); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(copied).catch(function(){ window.prompt("URL", url); });
+    } else {
+      window.prompt("URL", url);
+    }
+  });
+
+  // Claim links: /menu/?claim=<signed-token> (waiter QR) and
+  // /menu/?c=<slug>&utm_source=… (marketing). Runs only when the params are
+  // present, so ordinary menu visits stay request- and cookie-free.
+  function walletHandleParams(){
+    var params = new URLSearchParams(window.location.search);
+    var claimToken = params.get("claim");
+    var campaignSlug = params.get("c");
+    var walletParam = params.get("wallet");
+    if (!claimToken && !campaignSlug && !walletParam) return;
+
+    // The params are one-shot: strip them so a reload doesn't re-claim.
+    if (window.history && history.replaceState) {
+      history.replaceState(null, "", window.location.pathname);
+    }
+    if (walletParam === "1") { go("wallet"); return; }
+    if (walletParam === "invalid") { toast(tr("wallet_link_invalid")); return; }
+
+    var fd = new FormData();
+    fd.append("csrfmiddlewaretoken", csrfToken);
+    if (claimToken) fd.append("claim", claimToken);
+    if (campaignSlug) fd.append("campaign", campaignSlug);
+    fd.append("utm_source", params.get("utm_source") || "");
+    fetch(walletClaimUrl, {method:"POST", body:fd, headers:{"X-Requested-With":"fetch"}})
+      .then(function(res){ return res.json().then(function(data){ return {ok:res.ok, data:data}; }); })
+      .then(function(result){
+        if (!result.ok || !result.data.ok) {
+          // The backend message is human-readable — show it verbatim.
+          toast(result.data && result.data.error ? result.data.error : tr("wallet_error"));
+          return;
+        }
+        toast(result.data.created ? tr("coupon_added") : tr("coupon_already"));
+        walletState.data = null;
+        walletState.opened = false;
+        go("wallet");
+      })
+      .catch(function(){ toast(tr("wallet_error")); });
+  }
+  walletHandleParams();
 
   var serverMessages = document.getElementById("server-messages");
   if (serverMessages && serverMessages.textContent.trim()) toast(serverMessages.textContent.trim());

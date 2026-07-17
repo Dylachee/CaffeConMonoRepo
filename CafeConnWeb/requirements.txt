@@ -6,3 +6,9 @@ psycopg[binary]>=3.2,<4.0
 whitenoise>=6.7,<7.0
 django-filter>=24.3,<26.0
 django-cors-headers>=4.4,<5.0
+# Venue logo/cover uploads (ImageField validation + resize).
+Pillow>=10.4,<12.0
+# Coupon QR codes rendered server-side as SVG (pure Python, no system deps).
+segno>=1.6,<2.0
+# Web Push (VAPID) to on-shift staff devices; keys via generate_vapid_keys.
+pywebpush>=2.0,<3.0

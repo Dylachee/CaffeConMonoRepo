@@ -9,42 +9,22 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+import copy
+
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.api.views_venue import preview_cache_key
 from apps.core.menu_i18n import category_labels, menu_item_labels
 from apps.core.menu_visibility import (
     guest_visible_menu_items,
     menu_item_guest_visible,
 )
-from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table
+from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table, VenueSettings
 from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
 
 
-# Venue "storefront" shown on the guest page. Static for now — when venues
-# become configurable this moves to a model; keeping it in one place makes
-# that swap a one-liner in menu_page.
-VENUE = {
-    "name": "Caffè & Bistrò Sissi",
-    "tagline": "Café, bistro and bar in Madonna di Campiglio",
-    "tagline_it": "Caffè, bistrot e bar a Madonna di Campiglio",
-    "about": (
-        "A warm mountain bistro for coffee, aperitifs, cocktails, sandwiches, "
-        "sweet treats and quick dishes from the Sissi menu."
-    ),
-    "about_it": (
-        "Un bistrot di montagna per caffetteria, aperitivi, cocktail, panini, "
-        "dolci e piatti veloci dal menu Sissi."
-    ),
-    "address": "Madonna di Campiglio · Trentino",
-    "address_it": "Madonna di Campiglio · Trentino",
-    "hours": "Ask staff for today's hours",
-    "hours_it": "Chiedi allo staff gli orari di oggi",
-    "badges": [
-        {"en": "Coffee & hot chocolate", "it": "Caffè e cioccolata"},
-        {"en": "Aperitifs & cocktails", "it": "Aperitivi e cocktail"},
-        {"en": "Sweet and savory snacks", "it": "Dolce e salato"},
-    ],
-    "maps_url": "https://maps.app.goo.gl/L8UMd16ZXUTk5Jx28",
-}
+# The venue "storefront" (name/texts/badges/palette/layout) lives in
+# VenueSettings — one editable record, seeded with the approved Sissi design
+# by migration 0027. See _venue_for_request below.
 
 POPULAR_ITEM_NAMES = [
     "Cappuccino",
@@ -171,6 +151,21 @@ def _category_color(category):
     return _CATEGORY_COLORS["panini"]
 
 
+def _venue_for_request(request) -> VenueSettings:
+    """The venue settings to render, honoring ?preview=<token> — a staff
+    editor's draft stored in the cache by /api/staff/venue/preview/. The draft
+    is applied to an in-memory copy only; the saved settings never change."""
+    venue = VenueSettings.get_solo()
+    token = request.GET.get("preview", "")
+    if token:
+        draft = cache.get(preview_cache_key(token))
+        if isinstance(draft, dict) and draft:
+            venue = copy.copy(venue)  # never mutate the cached instance
+            for field, value in draft.items():
+                setattr(venue, field, value)
+    return venue
+
+
 def menu_page(request, table_id=None, table_number=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
     menu_items = MenuItem.objects.select_related("category").order_by(
@@ -285,6 +280,15 @@ def menu_page(request, table_id=None, table_number=None):
         )
     featured_items = featured_items[:6]
 
+    venue = _venue_for_request(request)
+    blocks = venue.blocks()
+    block_visible = {block["key"]: block["visible"] for block in blocks}
+    # The profile screen renders in two zones: sub-blocks inside the head card
+    # (facts / badges / cta) and full-width sections after it (popular /
+    # about). Each zone follows the configured order; hidden blocks drop out.
+    head_blocks = [b["key"] for b in blocks if b["key"] in ("facts", "badges", "cta") and b["visible"]]
+    body_blocks = [b["key"] for b in blocks if b["key"] in ("popular", "about") and b["visible"]]
+
     return render(
         request,
         "guest_web/menu.html",
@@ -294,7 +298,10 @@ def menu_page(request, table_id=None, table_number=None):
             "menu_items": visible_items,
             "menu_payload": menu_payload,
             "table": table,
-            "venue": VENUE,
+            "venue": venue,
+            "venue_blocks": block_visible,
+            "head_blocks": head_blocks,
+            "body_blocks": body_blocks,
         },
     )
 
