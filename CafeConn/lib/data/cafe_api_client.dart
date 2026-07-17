@@ -292,6 +292,335 @@ class CafeApiClient {
         ));
   }
 
+  // --- Content: venue social feed + storefront ------------------------------
+
+  /// The staff feed (hidden posts included, pinned first) + pinned limit.
+  Future<StaffFeedDto> staffFeed() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.staffFeed(), headers: _headers()));
+    return StaffFeedDto.fromJson(_decodeMap(res));
+  }
+
+  /// Create a feed post from a pasted URL. The hub validates the domain and
+  /// answers 400 with a human-readable message for anything else.
+  Future<SocialPostDto> createFeedPost(String url) async {
+    final res = await _send(() => _http.post(
+          ApiConfig.staffFeed(),
+          headers: _headers(),
+          body: jsonEncode({'url': url}),
+        ));
+    return SocialPostDto.fromJson(_decodeMap(res));
+  }
+
+  /// Pin a post to the top of the guest feed (409 when the limit is reached).
+  Future<SocialPostDto> pinFeedPost(int id) async {
+    final res = await _send(
+        () => _http.post(ApiConfig.staffFeedPin(id), headers: _headers()));
+    return SocialPostDto.fromJson(_decodeMap(res));
+  }
+
+  Future<SocialPostDto> unpinFeedPost(int id) async {
+    final res = await _send(
+        () => _http.post(ApiConfig.staffFeedUnpin(id), headers: _headers()));
+    return SocialPostDto.fromJson(_decodeMap(res));
+  }
+
+  /// Toggle a post's guest visibility.
+  Future<SocialPostDto> toggleFeedPostHidden(int id) async {
+    final res = await _send(
+        () => _http.post(ApiConfig.staffFeedHide(id), headers: _headers()));
+    return SocialPostDto.fromJson(_decodeMap(res));
+  }
+
+  Future<void> deleteFeedPost(int id) => _send(
+      () => _http.delete(ApiConfig.staffFeedPost(id), headers: _headers()));
+
+  /// Venue storefront settings + built-in theme presets.
+  Future<VenuePayloadDto> venueSettings() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.staffVenue(), headers: _headers()));
+    return VenuePayloadDto.fromJson(_decodeMap(res));
+  }
+
+  /// Patch storefront fields (DRF wire names: name, tagline_it, color_bg, …).
+  Future<VenuePayloadDto> updateVenueSettings(
+      Map<String, dynamic> fields) async {
+    final res = await _send(() => _http.patch(
+          ApiConfig.staffVenue(),
+          headers: _headers(),
+          body: jsonEncode(fields),
+        ));
+    return VenuePayloadDto.fromJson(_decodeMap(res));
+  }
+
+  /// Upload the venue logo/cover ([kind] is 'logo' or 'cover') as multipart.
+  /// The hub validates type/size and resizes with Pillow.
+  Future<VenuePayloadDto> uploadVenueImage(
+      String kind, List<int> bytes, String filename) async {
+    final request =
+        http.MultipartRequest('POST', ApiConfig.staffVenueImage(kind));
+    if (_token != null) request.headers['Authorization'] = 'Token $_token';
+    request.files.add(
+        http.MultipartFile.fromBytes('image', bytes, filename: filename));
+    final res = await _send(() async {
+      final streamed = await request.send();
+      return http.Response.fromStream(streamed);
+    });
+    return VenuePayloadDto.fromJson(_decodeMap(res));
+  }
+
+  /// Remove the venue logo/cover.
+  Future<VenuePayloadDto> deleteVenueImage(String kind) async {
+    final res = await _send(() =>
+        _http.delete(ApiConfig.staffVenueImage(kind), headers: _headers()));
+    return VenuePayloadDto.fromJson(_decodeMap(res));
+  }
+
+  // --- Staff chat + tasks -----------------------------------------------------
+
+  /// One channel's history page, newest first. Pass [cursor] (the previous
+  /// page's nextCursor) to walk back in time.
+  Future<({List<ChatMessageDto> messages, int? nextCursor, bool hasMore})>
+      chatHistory(String channel, {int? cursor, int limit = 30}) async {
+    final res = await _send(() => _http.get(
+        ApiConfig.chatMessages(channel: channel, cursor: cursor, limit: limit),
+        headers: _headers()));
+    final body = _decodeMap(res);
+    return (
+      messages: ((body['messages'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => ChatMessageDto.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+      nextCursor: body['nextCursor'] == null
+          ? null
+          : int.tryParse(body['nextCursor'].toString()),
+      hasMore: body['hasMore'] == true,
+    );
+  }
+
+  /// Send text or a slash command. The command's bot answer (task bubble or
+  /// readable error) comes back as `result`; both also arrive via WS.
+  Future<({ChatMessageDto message, ChatMessageDto? result})> sendChatMessage({
+    required String channel,
+    required String body,
+    int? replyTo,
+  }) async {
+    final res = await _send(() => _http.post(ApiConfig.chatSend(),
+        headers: _headers(),
+        body: jsonEncode({
+          'channel': channel,
+          'body': body,
+          if (replyTo != null) 'reply_to': replyTo,
+        })));
+    final decoded = _decodeMap(res);
+    return (
+      message: ChatMessageDto.fromJson(
+          ((decoded['message'] as Map?) ?? const {}).cast<String, dynamic>()),
+      result: decoded['result'] is Map
+          ? ChatMessageDto.fromJson(
+              (decoded['result'] as Map).cast<String, dynamic>())
+          : null,
+    );
+  }
+
+  /// A message and its thread replies, oldest first.
+  Future<({ChatMessageDto? message, List<ChatMessageDto> replies})> chatThread(
+      int messageId) async {
+    final res = await _send(
+        () => _http.get(ApiConfig.chatThread(messageId), headers: _headers()));
+    final body = _decodeMap(res);
+    return (
+      message: body['message'] is Map
+          ? ChatMessageDto.fromJson(
+              (body['message'] as Map).cast<String, dynamic>())
+          : null,
+      replies: ((body['replies'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => ChatMessageDto.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+
+  /// Unread counts + read marks per channel.
+  Future<({Map<String, int> unread, Map<String, int> marks})>
+      chatReadState() async {
+    final res =
+        await _send(() => _http.get(ApiConfig.chatRead(), headers: _headers()));
+    final body = _decodeMap(res);
+    Map<String, int> asIntMap(dynamic value) => value is Map
+        ? value.map((k, v) =>
+            MapEntry(k.toString(), int.tryParse(v.toString()) ?? 0))
+        : <String, int>{};
+    return (unread: asIntMap(body['unread']), marks: asIntMap(body['marks']));
+  }
+
+  /// Move the read high-water mark (server keeps it monotonic).
+  Future<void> markChatRead(String channel, int lastReadMessageId) =>
+      _send(() => _http.post(ApiConfig.chatRead(),
+          headers: _headers(),
+          body: jsonEncode({
+            'channel': channel,
+            'last_read_message_id': lastReadMessageId,
+          })));
+
+  /// The planner's day view: tasks + (for manage) recurrence rules.
+  Future<({List<StaffTaskDto> tasks, List<StaffTaskDto> rules})> tasksForDay(
+      {String? date}) async {
+    final res = await _send(
+        () => _http.get(ApiConfig.staffTasks(date: date), headers: _headers()));
+    final body = _decodeMap(res);
+    List<StaffTaskDto> parse(dynamic value) => ((value as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => StaffTaskDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+    return (tasks: parse(body['tasks']), rules: parse(body['rules']));
+  }
+
+  /// Planner quick-add — the same syntax as /task ("title @name 21:30").
+  Future<StaffTaskDto> quickAddTask(String input) async {
+    final res = await _send(() => _http.post(ApiConfig.staffTasks(),
+        headers: _headers(), body: jsonEncode({'input': input})));
+    return StaffTaskDto.fromJson(
+        ((_decodeMap(res)['task'] as Map?) ?? const {}).cast<String, dynamic>());
+  }
+
+  /// The big Done checkbox. [done] false reopens (permission-gated).
+  Future<StaffTaskDto> setTaskDone(int taskId, {bool done = true}) async {
+    final res = await _send(() => _http.post(ApiConfig.staffTaskDone(taskId),
+        headers: _headers(), body: jsonEncode({'done': done})));
+    return StaffTaskDto.fromJson(
+        ((_decodeMap(res)['task'] as Map?) ?? const {}).cast<String, dynamic>());
+  }
+
+  /// The task's chat thread (bubble + replies) for the planner deep-link.
+  Future<({ChatMessageDto? message, List<ChatMessageDto> replies})> taskThread(
+      int taskId) async {
+    final res = await _send(() =>
+        _http.get(ApiConfig.staffTaskThread(taskId), headers: _headers()));
+    final body = _decodeMap(res);
+    return (
+      message: body['message'] is Map
+          ? ChatMessageDto.fromJson(
+              (body['message'] as Map).cast<String, dynamic>())
+          : null,
+      replies: ((body['replies'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => ChatMessageDto.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+
+  // --- Alerts: shift, push subscriptions, escalation -------------------------
+
+  /// Self-service shift toggle — alerts and pushes only reach on-shift staff.
+  Future<bool> setShift(bool on) async {
+    final res = await _send(() => _http.post(ApiConfig.staffShift(),
+        headers: _headers(), body: jsonEncode({'on': on})));
+    return _decodeMap(res)['on'] == true;
+  }
+
+  /// Register this browser's Web-Push subscription with the hub.
+  Future<void> pushSubscribe(
+          {required String endpoint,
+          required String p256dh,
+          required String auth}) =>
+      _send(() => _http.post(ApiConfig.pushSubscriptions(),
+          headers: _headers(),
+          body: jsonEncode({
+            'endpoint': endpoint,
+            'keys': {'p256dh': p256dh, 'auth': auth},
+          })));
+
+  /// Remove this browser's subscription (shift-off).
+  Future<void> pushUnsubscribe(String endpoint) =>
+      _send(() => _http.delete(ApiConfig.pushSubscriptions(),
+          headers: _headers(), body: jsonEncode({'endpoint': endpoint})));
+
+  /// Alert ladder L3: flag an unhandled guest signal/order server-side so
+  /// every on-shift device highlights it. Idempotent on the hub.
+  Future<void> escalateSignal(String id) => _send(
+      () => _http.post(ApiConfig.escalateSignal(id), headers: _headers()));
+
+  Future<void> escalateOrder(String id) => _send(
+      () => _http.post(ApiConfig.escalateOrder(id), headers: _headers()));
+
+  // --- Coupons: campaigns, issue, redeem ------------------------------------
+
+  /// Campaigns with counters. Requires the content (or manage) capability.
+  Future<List<CouponCampaignDto>> couponCampaigns() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.couponCampaigns(), headers: _headers()));
+    final raw = (_decodeMap(res)['campaigns'] as List?) ?? const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => CouponCampaignDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Create a campaign (DRF wire names: title, title_it, discount_type, …).
+  Future<CouponCampaignDto> createCouponCampaign(
+      Map<String, dynamic> fields) async {
+    final res = await _send(() => _http.post(ApiConfig.couponCampaigns(),
+        headers: _headers(), body: jsonEncode(fields)));
+    return CouponCampaignDto.fromJson(_decodeMap(res));
+  }
+
+  Future<CouponCampaignDto> updateCouponCampaign(
+      int id, Map<String, dynamic> fields) async {
+    final res = await _send(() => _http.patch(ApiConfig.couponCampaign(id),
+        headers: _headers(), body: jsonEncode(fields)));
+    return CouponCampaignDto.fromJson(_decodeMap(res));
+  }
+
+  /// Signed claim link for a fullscreen QR. Requires the discount capability.
+  Future<CouponIssueDto> issueCoupon(int campaignId) async {
+    final res = await _send(() => _http.post(ApiConfig.couponIssue(),
+        headers: _headers(), body: jsonEncode({'campaign': campaignId})));
+    return CouponIssueDto.fromJson(_decodeMap(res));
+  }
+
+  /// Look up a scanned token / typed code before the confirmation sheet.
+  Future<CouponPreviewDto> couponRedeemPreview(
+      {String? token, String? code, String? orderId}) async {
+    final res = await _send(() => _http.post(
+          ApiConfig.couponRedeemPreview(),
+          headers: _headers(),
+          body: jsonEncode({
+            if (token != null && token.isNotEmpty) 'token': token,
+            if (code != null && code.isNotEmpty) 'code': code,
+            if (orderId != null && orderId.isNotEmpty) 'order_id': orderId,
+          }),
+        ));
+    return CouponPreviewDto.fromJson(_decodeMap(res));
+  }
+
+  /// Redeem, optionally binding the coupon (and its discount snapshot) to an
+  /// open order. Returns the updated coupon; the hub broadcasts order.updated.
+  Future<StaffCouponDto> redeemCoupon(
+      {String? token, String? code, String? orderId}) async {
+    final res = await _send(() => _http.post(
+          ApiConfig.couponRedeem(),
+          headers: _headers(),
+          body: jsonEncode({
+            if (token != null && token.isNotEmpty) 'token': token,
+            if (code != null && code.isNotEmpty) 'code': code,
+            if (orderId != null && orderId.isNotEmpty) 'order_id': orderId,
+          }),
+        ));
+    return StaffCouponDto.fromJson(
+        ((_decodeMap(res)['coupon'] as Map?) ?? const {})
+            .cast<String, dynamic>());
+  }
+
+  /// Manager: return a cancelled order's redeemed coupon to active.
+  Future<StaffCouponDto> voidCouponRedemption(int couponId) async {
+    final res = await _send(
+        () => _http.post(ApiConfig.couponVoid(couponId), headers: _headers()));
+    return StaffCouponDto.fromJson(
+        ((_decodeMap(res)['coupon'] as Map?) ?? const {})
+            .cast<String, dynamic>());
+  }
+
   void close() => _http.close();
 
   // --- internals -----------------------------------------------------------

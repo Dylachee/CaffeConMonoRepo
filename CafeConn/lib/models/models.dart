@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import '../core/i18n.dart';
 import '../core/theme/app_theme.dart';
 
-enum UserRole { waiter, cook, bartender, manager, admin }
+// `smm` is kept last so existing persisted role indices (Hive) don't shift.
+enum UserRole { waiter, cook, bartender, manager, admin, smm }
 
 /// Maps the hub's Employee.Role wire value to the app's UserRole.
 /// Unknown roles fall back to waiter — the most restricted role that can
@@ -16,6 +17,7 @@ UserRole roleFromWire(String wire) => switch (wire) {
       'manager' => UserRole.manager,
       'accountant' => UserRole.manager,
       'admin' => UserRole.admin,
+      'smm' => UserRole.smm,
       _ => UserRole.waiter,
     };
 
@@ -27,6 +29,7 @@ String roleToWire(UserRole role) => switch (role) {
       UserRole.bartender => 'bar',
       UserRole.manager => 'manager',
       UserRole.admin => 'admin',
+      UserRole.smm => 'smm',
     };
 
 /// Deliberately just three states (product decision, 2026-07-02): a table is
@@ -92,6 +95,9 @@ class CafeTable {
   // back to the hub. Transient (not persisted): after a restart the bootstrap
   // brings fresh state anyway.
   String? lastSignalId;
+  // The unacked signal reached alert ladder L3 somewhere — highlight it.
+  // Transient like lastSignalId.
+  bool attentionEscalated = false;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -560,6 +566,8 @@ class CafeOrder {
     required this.splitTo,
     this.acceptedAt,
     this.note = '',
+    this.discountAmount = 0,
+    this.couponCode = '',
   });
   final String id;
   final String tableId;
@@ -574,10 +582,23 @@ class CafeOrder {
   /// Order-level guest comment (allergies / serving requests).
   final String note;
 
+  /// Coupon snapshot from the hub (0 / '' when none) — the check shows a
+  /// "− discount (coupon CODE)" line and a discounted total.
+  final double discountAmount;
+  final String couponCode;
+
+  /// This AWAITING order reached alert ladder L3 — highlight it everywhere.
+  /// Transient server state, not persisted with the order JSON.
+  bool alertEscalated = false;
+
   /// The moment the prep clock should count from.
   DateTime get timerStart => acceptedAt ?? createdAt;
   final FeedType splitTo;
   double get total => items.fold(0.0, (sum, line) => sum + line.total);
+
+  /// Items total minus the coupon snapshot, floored at zero.
+  double get totalDue =>
+      (total - discountAmount) > 0 ? (total - discountAmount) : 0.0;
 
   /// Zone helpers: an order may contain both kitchen and bar items (e.g. a
   /// guest-web order). Feeds must look at the items, not just [splitTo] —
@@ -594,11 +615,15 @@ class CafeOrder {
         'status': status.index,
         'createdAt': createdAt.millisecondsSinceEpoch,
         'splitTo': splitTo.index,
+        'discountAmount': discountAmount,
+        'couponCode': couponCode,
       };
   static CafeOrder fromJson(Map<String, dynamic> j, List<MenuItem> menu) =>
       CafeOrder(
         id: j['id'],
         tableId: j['tableId'],
+        discountAmount: (j['discountAmount'] as num?)?.toDouble() ?? 0,
+        couponCode: j['couponCode'] as String? ?? '',
         items: (j['items'] as List).map((e) {
           final m = e as Map<String, dynamic>;
           final item = menu.firstWhereOrNull((mi) => mi.id == m['itemId']) ??
@@ -707,6 +732,7 @@ String roleLabel(UserRole role) => switch (role) {
       UserRole.waiter => L.roleWaiter,
       UserRole.cook => L.roleCook,
       UserRole.bartender => L.roleBartender,
+      UserRole.smm => L.roleSmm,
     };
 
 /// Human label for an OrderEvent.action wire value (audit trail).

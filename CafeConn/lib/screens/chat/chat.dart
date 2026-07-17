@@ -1,86 +1,125 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
-import '../../models/models.dart';
+import '../../data/dtos.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
 
+/// The staff messenger, server-backed: three persistent channels, threads
+/// with quoted replies, live task bubbles and the CafeBot slash commands.
+/// History and unread badges survive reloads; delivery rides the staff WS.
+
+String channelLabel(String channel) => switch (channel) {
+      'kitchen' => L.chKitchen,
+      'bar' => L.chBar,
+      _ => L.chGeneral,
+    };
+
+Color channelColor(String channel) => switch (channel) {
+      'kitchen' => AppTheme.warning,
+      'bar' => AppTheme.bar,
+      _ => AppTheme.ink3,
+    };
+
+Color taskCategoryColor(String category) => switch (category) {
+      'opening' => AppColors.ok,
+      'closing' => AppColors.bill,
+      'cleaning' => AppColors.bar,
+      'inventory' => AppColors.gold,
+      'service' => AppColors.kitchen,
+      _ => AppColors.free,
+    };
+
 class StaffChatListScreen extends StatelessWidget {
   const StaffChatListScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final groups = [...state.groups]
-      ..sort((a, b) => b.pinned.toString().compareTo(a.pinned.toString()));
     return AppScaffold(
       bottomNav: null,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Header(title: L.chats, subtitle: L.teamOnline, actions: [
+          IconButton(
+            tooltip: L.planner,
+            icon: const Icon(Icons.event_note_outlined, color: AppTheme.ink),
+            onPressed: () => GoRouter.of(context).push('/planner'),
+          ),
           IconButton(
             tooltip: L.settings,
             icon: const Icon(Icons.settings_outlined, color: AppTheme.ink),
             onPressed: () => GoRouter.of(context).push('/settings'),
           ),
         ]),
-        Expanded(
+        if (!state.backendConnected)
+          Expanded(
+            child: EmptyState(
+                icon: Icons.chat_bubble_outline,
+                title: L.chats,
+                sub: L.chatConnectHint),
+          )
+        else
+          Expanded(
             child: ListView.builder(
-                itemCount: groups.length,
-                itemBuilder: (_, i) {
-                  final group = groups[i];
-                  final last = state.messages
-                      .where((m) => m.groupId == group.id)
-                      .lastOrNull;
-                  final zoneColor = group.type == FeedType.kitchen
-                      ? AppTheme.warning
-                      : group.type == FeedType.bar
-                          ? AppTheme.bar
-                          : AppTheme.ink3;
-                  return AppCard(
-                    index: i,
-                    onTap: () {
-                      state.currentGroup = group;
-                      GoRouter.of(context).push('/chat');
-                    },
-                    child: Row(children: [
-                      Avatar(label: _groupDisplayName(group), color: zoneColor),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                            Row(children: [
-                              Expanded(
-                                  child: Text(_groupDisplayName(group),
-                                      style: T.h3.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 16))),
-                              if (group.pinned)
-                                const Icon(Icons.push_pin,
-                                    size: 14, color: AppTheme.ink3)
-                            ]),
-                            Text(last?.text ?? L.noMessages,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: T.priceSmall
-                                    .copyWith(color: AppTheme.ink2)),
-                          ])),
-                      const SizedBox(width: 8),
-                      Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+              itemCount: CafeState.chatChannels.length,
+              itemBuilder: (_, i) {
+                final channel = CafeState.chatChannels[i];
+                final unread = state.chatUnread[channel] ?? 0;
+                final last = state.chatMessages(channel).firstOrNull;
+                return AppCard(
+                  index: i,
+                  onTap: () {
+                    state.openChatChannel(channel);
+                    GoRouter.of(context).push('/chat');
+                  },
+                  child: Row(children: [
+                    Avatar(
+                        label: channelLabel(channel),
+                        color: channelColor(channel)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Text(channelLabel(channel),
+                                style: T.h3.copyWith(
+                                    fontWeight: FontWeight.w700, fontSize: 16)),
                             Text(
-                                last == null
-                                    ? ''
-                                    : '${last.timestamp.hour}:${last.timestamp.minute.toString().padLeft(2, '0')}',
-                                style: T.label.copyWith(color: AppTheme.ink3)),
+                              last == null
+                                  ? L.noMessages
+                                  : '${last.authorName}: ${last.kind == 'task' && last.task != null ? last.task!.title : last.body}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  T.priceSmall.copyWith(color: AppTheme.ink2),
+                            ),
                           ]),
-                    ]),
-                  );
-                })),
+                    ),
+                    if (unread > 0)
+                      Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cta,
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Text('$unread',
+                            style: T.label.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                  ]),
+                );
+              },
+            ),
+          ),
       ]),
     );
   }
@@ -93,115 +132,288 @@ class StaffChatScreen extends StatefulWidget {
 }
 
 class _StaffChatScreenState extends State<StaffChatScreen> {
-  final input = TextEditingController();
-  final _scrollController = ScrollController();
-  String? _lastScrollKey;
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+  late final CafeState _state;
+  late final String _channel;
+  ChatMessageDto? _replyTo;
+  bool _sending = false;
+  List<String> _mentionCandidates = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _state = context.read<CafeState>();
+    _channel = _state.activeChatChannel ?? 'general';
+    _input.addListener(_onTyping);
+  }
 
   @override
   void dispose() {
-    input.dispose();
-    _scrollController.dispose();
+    _state.closeChatChannel();
+    _input.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        final target = _scrollController.position.maxScrollExtent;
-        if (animated) {
-          _scrollController.animateTo(
-            target,
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-          );
-        } else {
-          _scrollController.jumpTo(target);
-        }
-      }
-    });
+  void _onTyping() {
+    final text = _input.text;
+    // Telegram-style: a lone "/" opens the command sheet.
+    if (text == '/') {
+      _input.clear();
+      _showCommandSheet();
+      return;
+    }
+    // "@" on the last token: offer name completion.
+    final lastToken = text.split(' ').last;
+    if (lastToken.startsWith('@') && lastToken.length >= 1) {
+      final needle = lastToken.substring(1).toLowerCase();
+      final names = _knownNames()
+          .where((name) => name.toLowerCase().startsWith(needle))
+          .take(4)
+          .toList();
+      setState(() => _mentionCandidates = names);
+    } else if (_mentionCandidates.isNotEmpty) {
+      setState(() => _mentionCandidates = const []);
+    }
   }
 
-  void _scrollIfMessageSetChanged(String groupId, List<ChatMessage> messages) {
-    final lastId = messages.isEmpty ? 'empty' : messages.last.id;
-    final key = '$groupId:${messages.length}:$lastId';
-    if (_lastScrollKey == key) return;
-    final firstPaint =
-        _lastScrollKey == null || !_lastScrollKey!.startsWith(groupId);
-    _lastScrollKey = key;
-    _scrollToBottom(animated: !firstPaint);
+  List<String> _knownNames() {
+    final names = <String>{};
+    for (final employee in _state.staffAccounts) {
+      names.add(employee.name);
+    }
+    for (final message in _state.chatMessages(_channel)) {
+      if (!message.isBot) names.add(message.authorName);
+    }
+    names.remove(_state.activeUserName);
+    return names.toList()..sort();
+  }
+
+  void _applyMention(String name) {
+    final parts = _input.text.split(' ')..removeLast();
+    // Mentions match by prefix server-side; the first word is enough and
+    // keeps the input readable.
+    parts.add('@${name.split(' ').first}');
+    _input.text = '${parts.join(' ')} ';
+    _input.selection =
+        TextSelection.fromPosition(TextPosition(offset: _input.text.length));
+    setState(() => _mentionCandidates = const []);
+  }
+
+  void _showCommandSheet() {
+    final commands = [
+      (L.cmdTaskHint, L.cmdTaskDesc, '/task '),
+      (L.cmdRemindHint, L.cmdRemindDesc, '/remind '),
+      ('/done', L.cmdDoneDesc, '/done'),
+      ('/open', L.cmdOpenDesc, '/open'),
+      ('/close', L.cmdCloseDesc, '/close'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surfaceAlt,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(L.commandsTitle, style: T.h2),
+          const SizedBox(height: 10),
+          for (final command in commands)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(command.$1,
+                  style: T.bodySemi.copyWith(fontFamily: 'JetBrainsMono')),
+              subtitle: Text(command.$2,
+                  style: T.small.copyWith(color: AppTheme.ink2)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _input.text = command.$3;
+                _input.selection = TextSelection.fromPosition(
+                    TextPosition(offset: _input.text.length));
+              },
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _send() async {
+    final body = _input.text.trim();
+    if (body.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    final error = await _state.sendChat(
+        channel: _channel, body: body, replyTo: _replyTo?.id);
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      if (error == null) {
+        _input.clear();
+        _replyTo = null;
+      }
+    });
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+    }
+  }
+
+  void _openThread(ChatMessageDto parent) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChatThreadSheet(channel: _channel, parentId: parent.id),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final group = state.currentGroup ?? state.groups.first;
-    final messages =
-        state.messages.where((m) => m.groupId == group.id).toList();
-    final zoneColor = group.type == FeedType.kitchen
-        ? AppTheme.warning
-        : group.type == FeedType.bar
-            ? AppTheme.bar
-            : AppTheme.ink3;
-
-    _scrollIfMessageSetChanged(group.id, messages);
-
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final messages = state.chatMessages(_channel);
+    final hasMore = state.chatHasMore[_channel] ?? false;
 
     return AppScaffold(
+      bottomNav: null,
       child: Column(children: [
-        _ChatHeader(
-          group: group,
-          color: zoneColor,
-          onBack: () => context.pop(),
+        Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 8),
+          child: Row(children: [
+            IconButton(
+                onPressed: () => context.pop(),
+                icon: const Icon(Icons.arrow_back, color: AppTheme.ink)),
+            Avatar(
+                label: channelLabel(_channel), color: channelColor(_channel)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(channelLabel(_channel), style: T.screenTitle),
+            ),
+          ]),
         ),
         Expanded(
-            child: messages.isEmpty
-                ? EmptyState(
-                    icon: Icons.chat_bubble_outline,
-                    title: L.chatEmpty,
-                    sub: L.startConversation)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(2, 14, 2, 18),
-                    itemCount: messages.length,
-                    itemBuilder: (ctx, i) {
-                      final msg = messages[i];
-                      if (msg.kind == MessageKind.tableCard) {
-                        return ForwardedTableCard(message: msg);
-                      }
-                      if (msg.kind == MessageKind.orderCard) {
-                        return OrderReceiptCard(message: msg);
-                      }
-                      final senderName = state.staff
-                              .firstWhereOrNull((u) => u.id == msg.senderId)
-                              ?.name ??
-                          msg.senderId;
-                      return ChatBubble(message: msg, senderName: senderName);
-                    })),
+          child: state.chatLoading && messages.isEmpty
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              : ListView.builder(
+                  controller: _scroll,
+                  reverse: true, // newest at the bottom, Telegram-style
+                  itemCount: messages.length + (hasMore ? 1 : 0),
+                  itemBuilder: (_, index) {
+                    if (index >= messages.length) {
+                      return Center(
+                        child: TextButton(
+                          onPressed: () => state.loadOlderChat(_channel),
+                          child: Text(L.loadOlder,
+                              style:
+                                  T.smallSemi.copyWith(color: AppTheme.cta)),
+                        ),
+                      );
+                    }
+                    final message = messages[index];
+                    return ChatBubble(
+                      message: message,
+                      own: !message.isBot &&
+                          message.authorName == state.activeUserName,
+                      onReply: () => setState(() => _replyTo = message),
+                      onOpenThread: () => _openThread(message),
+                    );
+                  },
+                ),
+        ),
+        if (_mentionCandidates.isNotEmpty)
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final name in _mentionCandidates)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(name, style: T.smallSemi),
+                      backgroundColor: AppTheme.card,
+                      onPressed: () => _applyMention(name),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (_replyTo != null)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.separator),
+            ),
+            child: Row(children: [
+              const Icon(Icons.reply, size: 16, color: AppTheme.cta),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${L.replyingTo} ${_replyTo!.authorName}: '
+                  '${_replyTo!.kind == 'task' && _replyTo!.task != null ? _replyTo!.task!.title : _replyTo!.body}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: T.small.copyWith(color: AppTheme.ink2),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _replyTo = null),
+                child: const Icon(Icons.close, size: 16, color: AppTheme.ink3),
+              ),
+            ]),
+          ),
         Padding(
-          padding: EdgeInsets.only(
-              bottom: keyboardInset > 0 ? keyboardInset + 8 : 8, top: 8),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(children: [
-            Expanded(child: AppTextField(controller: input, label: L.message)),
+            IconButton(
+              tooltip: L.commandsTitle,
+              onPressed: _showCommandSheet,
+              icon: const Icon(Icons.bolt_outlined, color: AppTheme.ink2),
+            ),
+            Expanded(
+              child: TextField(
+                controller: _input,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                decoration: InputDecoration(
+                  hintText: L.message,
+                  hintStyle: T.body.copyWith(color: AppTheme.ink3),
+                  filled: true,
+                  fillColor: AppTheme.card,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () {
-                final text = input.text.trim();
-                if (text.isEmpty) return;
-                state.sendMessage(text);
-                input.clear();
-                _scrollToBottom();
-              },
+              onTap: _send,
               child: Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                  color: AppTheme.cta,
-                  shape: BoxShape.circle,
-                  boxShadow: [AppTheme.shadowCard],
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.espresso,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.send_rounded,
-                    color: Colors.white, size: 20),
+                child: _sending
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.send_rounded,
+                        size: 20, color: Colors.white),
               ),
             ),
           ]),
@@ -211,102 +423,155 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
   }
 }
 
-class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({
-    required this.group,
-    required this.color,
-    required this.onBack,
+/// One message bubble: text, system/bot note, checklist header or live task.
+class ChatBubble extends StatelessWidget {
+  const ChatBubble({
+    super.key,
+    required this.message,
+    required this.own,
+    required this.onReply,
+    required this.onOpenThread,
   });
 
-  final ChatGroup group;
-  final Color color;
-  final VoidCallback onBack;
+  final ChatMessageDto message;
+  final bool own;
+  final VoidCallback onReply;
+  final VoidCallback onOpenThread;
+
+  String _time() {
+    final created =
+        message.createdAt == null ? null : DateTime.tryParse(message.createdAt!);
+    if (created == null) return '';
+    final local = created.toLocal();
+    return '${local.hour}:${local.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(4, 6, 12, 12),
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: const [AppTheme.shadowCard],
-      ),
-      child: Row(children: [
-        IconButton(
-          onPressed: onBack,
-          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.ink),
-        ),
-        Avatar(label: _groupDisplayName(group), color: color),
-        const SizedBox(width: 12),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_groupDisplayName(group),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: T.h2.copyWith(fontSize: 17)),
-            const SizedBox(height: 2),
-            Text(L.membersCount(group.members.length), style: T.smallSemi),
+    if (message.kind == 'task' && message.task != null) {
+      return _wrap(
+        context,
+        TaskBubbleCard(task: message.task!),
+      );
+    }
+    if (message.kind == 'system' || message.kind == 'checklist') {
+      return _wrap(
+        context,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: message.kind == 'checklist'
+                ? AppColors.gold.withValues(alpha: 0.12)
+                : AppColors.sunken,
+            borderRadius: BorderRadius.circular(14),
+            border: message.kind == 'checklist'
+                ? Border.all(color: AppColors.gold.withValues(alpha: 0.4))
+                : null,
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('🤖 ${L.cafeBot}',
+                style: T.label
+                    .copyWith(color: AppTheme.ink2, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3),
+            Text(message.body, style: T.body),
           ]),
         ),
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+    }
+
+    return _wrap(
+      context,
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        decoration: BoxDecoration(
+          color: own ? AppColors.espresso : AppTheme.card,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(own ? 16 : 5),
+            bottomRight: Radius.circular(own ? 5 : 16),
+          ),
+          boxShadow: const [AppTheme.shadowCard],
         ),
-      ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!own)
+              Text(message.authorName,
+                  style: T.label.copyWith(
+                      color: AppTheme.cta, fontWeight: FontWeight.w800)),
+            if (message.replyPreview != null)
+              Container(
+                margin: const EdgeInsets.only(top: 3, bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: (own ? Colors.white : AppTheme.cta)
+                      .withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border(
+                    left: BorderSide(
+                        color: own ? Colors.white : AppTheme.cta, width: 2),
+                  ),
+                ),
+                child: Text(
+                  '${message.replyPreview!.authorName}: ${message.replyPreview!.body}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: T.small.copyWith(
+                      color: own ? Colors.white70 : AppTheme.ink2),
+                ),
+              ),
+            Text(message.body,
+                style: T.body
+                    .copyWith(color: own ? Colors.white : AppTheme.ink)),
+          ],
+        ),
+      ),
     );
   }
-}
 
-class ChatBubble extends StatelessWidget {
-  const ChatBubble({super.key, required this.message, this.senderName = ''});
-  final ChatMessage message;
-  final String senderName;
-  @override
-  Widget build(BuildContext context) {
-    final own = message.own;
-    final bubbleColor = own ? AppTheme.cta : AppTheme.card;
-    final textColor = own ? Colors.white : AppTheme.ink;
-    final timeColor = own ? Colors.white70 : AppTheme.ink3;
-    return Align(
-      alignment: own ? Alignment.centerRight : Alignment.centerLeft,
+  Widget _wrap(BuildContext context, Widget bubble) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment:
             own ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (!own && senderName.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-              child: Text(senderName, style: T.label),
+          GestureDetector(
+            onLongPress: () {
+              HapticFeedback.selectionClick();
+              onReply();
+            },
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+              child: bubble,
             ),
-          Container(
-            constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * .76),
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.fromLTRB(13, 10, 13, 8),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(own ? 16 : 5),
-                bottomRight: Radius.circular(own ? 5 : 16),
-              ),
-              boxShadow: const [AppTheme.shadowCard],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: onReply,
+                  child: Text(L.replyAction,
+                      style: T.label.copyWith(color: AppTheme.ink3)),
+                ),
+                if (message.replyCount > 0) ...[
+                  Text('  ·  ',
+                      style: T.label.copyWith(color: AppTheme.ink3)),
+                  GestureDetector(
+                    onTap: onOpenThread,
+                    child: Text(L.viewReplies(message.replyCount),
+                        style: T.label.copyWith(
+                            color: AppTheme.cta, fontWeight: FontWeight.w800)),
+                  ),
+                ],
+                Text('  ${_time()}',
+                    style: T.label.copyWith(color: AppTheme.ink3)),
+              ],
             ),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(message.text,
-                  style: T.body.copyWith(color: textColor, height: 1.28)),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                    '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                    style: T.label.copyWith(color: timeColor)),
-              ),
-            ]),
           ),
         ],
       ),
@@ -314,120 +579,225 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-class OrderReceiptCard extends StatelessWidget {
-  const OrderReceiptCard({super.key, required this.message});
-  final ChatMessage message;
+/// The live task bubble: category chip, assignee, due, big Done checkbox —
+/// the SAME object the planner shows; status syncs everywhere via WS.
+class TaskBubbleCard extends StatelessWidget {
+  const TaskBubbleCard({super.key, required this.task});
+  final StaffTaskDto task;
+
   @override
   Widget build(BuildContext context) {
-    final state = context.read<CafeState>();
-    final order = state.orders.firstWhereOrNull((o) => o.id == message.refId);
-    final table = order != null
-        ? state.tables.firstWhereOrNull((t) => t.id == order.tableId)
-        : null;
-    final isKitchen = order?.splitTo == FeedType.kitchen;
-    final zoneColor = isKitchen ? AppTheme.warning : AppTheme.bar;
-    final zoneLabel = isKitchen ? L.kitchen : L.bar;
+    final state = context.watch<CafeState>();
+    final color = taskCategoryColor(task.category);
+    final due = task.dueAt == null ? null : DateTime.tryParse(task.dueAt!);
+    final overdue = task.isOpen &&
+        due != null &&
+        due.toLocal().isBefore(DateTime.now());
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppTheme.card,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [AppTheme.shadowCard],
+    Future<void> toggle() async {
+      final error = await state.setTaskDone(task, !task.isDone);
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: overdue
+                ? AppTheme.danger
+                : color.withValues(alpha: 0.45),
+            width: 1.4),
+        boxShadow: const [AppTheme.shadowCard],
+      ),
+      child: Row(children: [
+        GestureDetector(
+          onTap: toggle,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: task.isDone ? AppColors.ok : AppTheme.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: task.isDone ? AppColors.ok : AppTheme.separator,
+                  width: 1.5),
+            ),
+            child: task.isDone
+                ? const Icon(Icons.check, size: 20, color: Colors.white)
+                : null,
+          ),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(height: 4, color: zoneColor),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(13, 11, 13, 0),
-            child: Row(children: [
-              Icon(Icons.receipt_long_outlined, size: 16, color: zoneColor),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(L.newOrderTable(table?.number ?? '??'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: T.priceSmall.copyWith(
-                        color: zoneColor, fontWeight: FontWeight.w800)),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              task.title,
+              style: T.bodySemi.copyWith(
+                decoration: task.isDone ? TextDecoration.lineThrough : null,
+                color: task.isDone ? AppTheme.ink2 : AppTheme.ink,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(L.taskCategoryLabel(task.category),
+                    style: T.label
+                        .copyWith(color: color, fontWeight: FontWeight.w800)),
               ),
               Text(
-                  '${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: T.label.copyWith(color: AppTheme.ink3)),
+                task.assigneeName.isEmpty
+                    ? L.anyoneOnShift
+                    : task.assigneeName,
+                style: T.label.copyWith(color: AppTheme.ink2),
+              ),
+              if (due != null)
+                Text(
+                  L.dueAtShort(
+                      '${due.toLocal().hour}:${due.toLocal().minute.toString().padLeft(2, '0')}'),
+                  style: T.label.copyWith(
+                      color: overdue ? AppTheme.danger : AppTheme.ink2,
+                      fontWeight:
+                          overdue ? FontWeight.w800 : FontWeight.w600),
+                ),
+              if (overdue)
+                Text(L.overdueTag,
+                    style: T.label.copyWith(
+                        color: AppTheme.danger, fontWeight: FontWeight.w900)),
+              if (task.isDone && task.doneByName.isNotEmpty)
+                Text(L.doneBy(task.doneByName),
+                    style: T.label.copyWith(color: AppColors.ok)),
             ]),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 13),
-            child: Divider(height: 16),
-          ),
-          if (order != null)
-            ...order.items.map((l) => Padding(
-                  padding: const EdgeInsets.fromLTRB(13, 0, 13, 5),
-                  child: Row(children: [
-                    SizedBox(
-                      width: 34,
-                      child: Text('${l.quantity}×',
-                          style: T.priceSmall
-                              .copyWith(fontWeight: FontWeight.w800)),
-                    ),
-                    Expanded(
-                        child: Text(l.item.displayName, style: T.priceSmall)),
-                    if (l.modifiers.isNotEmpty)
-                      Text('(${l.modifiers})',
-                          style: T.label.copyWith(color: AppTheme.ink2)),
-                  ]),
-                )),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(13, 6, 13, 12),
-            child: Text(zoneLabel,
-                style: T.label
-                    .copyWith(color: zoneColor, fontWeight: FontWeight.w900)),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class ForwardedTableCard extends StatelessWidget {
-  const ForwardedTableCard({super.key, required this.message});
-  final ChatMessage message;
-  @override
-  Widget build(BuildContext context) {
-    final state = context.read<CafeState>();
-    final table = state.tables.firstWhereOrNull((t) => t.id == message.refId);
-    return AppCard(
-      borderColor: AppTheme.tOccupied,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          const Icon(Icons.forward, size: 14, color: AppTheme.tOccupied),
-          const SizedBox(width: 8),
-          Text(L.forwarded,
-              style: T.label.copyWith(
-                  color: AppTheme.tOccupied, fontWeight: FontWeight.w800))
-        ]),
-        const SizedBox(height: 8),
-        Text(L.tableN(table?.number ?? '??'),
-            style: T.h2.copyWith(fontSize: 17)),
-        const SizedBox(height: 4),
-        Text(message.text, style: T.priceSmall.copyWith(color: AppTheme.ink2)),
-        const Divider(height: 24),
-        AppButton(
-            label: L.openTable,
-            kind: ButtonKind.ghost,
-            onPressed: () {
-              if (table != null) {
-                state.currentTable = table;
-                GoRouter.of(context).push('/table-details');
-              }
-            })
+          ]),
+        ),
       ]),
     );
   }
 }
 
-String _groupDisplayName(ChatGroup group) => switch (group.type) {
-      FeedType.kitchen => L.kitchen,
-      FeedType.bar => L.bar,
-      _ => L.generalChat,
-    };
+/// A message's thread: the parent bubble + replies (oldest first) + a
+/// composer that answers INTO the thread — where the bot's overdue nudge and
+/// the assignee's "doing it now" live together.
+class ChatThreadSheet extends StatefulWidget {
+  const ChatThreadSheet(
+      {super.key, required this.channel, required this.parentId});
+  final String channel;
+  final int parentId;
+
+  @override
+  State<ChatThreadSheet> createState() => _ChatThreadSheetState();
+}
+
+class _ChatThreadSheetState extends State<ChatThreadSheet> {
+  final _input = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send(CafeState state) async {
+    final body = _input.text.trim();
+    if (body.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    final error = await state.sendChat(
+        channel: widget.channel, body: body, replyTo: widget.parentId);
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (error == null) {
+      _input.clear();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final all = state.chatMessages(widget.channel);
+    final parent = all.where((m) => m.id == widget.parentId).firstOrNull;
+    final replies = all.where((m) => m.replyTo == widget.parentId).toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+
+    return Container(
+      height: MediaQuery.sizeOf(context).height * 0.78,
+      decoration: const BoxDecoration(
+        color: AppTheme.bg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+          16, 14, 16, MediaQuery.viewInsetsOf(context).bottom + 14),
+      child: Column(children: [
+        Text(L.threadTitle, style: T.h2),
+        const SizedBox(height: 10),
+        Expanded(
+          child: ListView(children: [
+            if (parent != null)
+              ChatBubble(
+                message: parent,
+                own: false,
+                onReply: () {},
+                onOpenThread: () {},
+              ),
+            const Divider(height: 22),
+            for (final reply in replies)
+              ChatBubble(
+                message: reply,
+                own: !reply.isBot &&
+                    reply.authorName == state.activeUserName,
+                onReply: () {},
+                onOpenThread: () {},
+              ),
+          ]),
+        ),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _input,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _send(state),
+              decoration: InputDecoration(
+                hintText: L.message,
+                filled: true,
+                fillColor: AppTheme.card,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _send(state),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.espresso,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(Icons.send_rounded,
+                  size: 19, color: Colors.white),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+}

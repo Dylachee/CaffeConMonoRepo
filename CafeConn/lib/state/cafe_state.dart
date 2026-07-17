@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../core/alerts/alert_platform.dart';
+import '../core/alerts/alert_service.dart';
 import '../core/i18n.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
@@ -90,6 +92,26 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// UI language (EN/IT). Mirrored into [L.lang]; every mutation notifies.
   AppLang appLang = AppLang.it;
 
+  // ---- Alerts: shift state + escalation ladder ---------------------------
+  /// The escalation ladder (L1 chime → L2 repeat → L3 escalate). Owns the
+  /// browser glue (tones, vibration, OS banners, push, wake lock).
+  final AlertService alertService = AlertService(platform: createAlertPlatform());
+  AlertPlatform get alertPlatform => alertService.platform;
+
+  /// Employee.is_on_shift for THIS account. Alerts and web pushes only fire
+  /// on on-shift devices; persisted so a reload keeps the shift running.
+  bool isOnShift = false;
+
+  /// Per-device quiet mode: ladders keep tracking (banners stay), but no
+  /// sound/vibration/OS banners.
+  bool alertsQuiet = false;
+
+  /// Web Push availability from the hub (VAPID keys configured) + the
+  /// applicationServerKey for pushManager.subscribe().
+  bool pushEnabled = false;
+  String pushPublicKey = '';
+  bool _alertListenerAttached = false;
+
   bool online = true;
   bool noConnectionDismissed = false;
   bool soundEnabled = true;
@@ -126,6 +148,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   bool capKitchen = true;
   bool capMenu = true;
   bool capManage = true;
+  bool capContent = true;
+  bool capDiscount = true;
 
   // A "pure station" worker has no waiter capability — floor actions are
   // hidden for them, exactly as before, but a waiter+bar person now keeps both.
@@ -134,6 +158,19 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   bool get canSeePanel => capManage;
   bool get canDeliverOrders => capWait;
   bool get canManageMenu => capMenu;
+
+  /// Content section (guest feed + storefront): SMM role, granted
+  /// can_content, or manager/admin.
+  bool get canSeeContent => capContent;
+
+  /// Coupons: issuing/redeeming needs `discount`; the Campaigns tab inside
+  /// the area needs `content`. The area shows up for either.
+  bool get canSeeCoupons => capDiscount || capContent;
+
+  /// Whether this person works orders at all (floor or a station). A pure
+  /// SMM/content account has none of these — orders, menu and tables stay
+  /// hidden for them.
+  bool get worksOrders => capWait || capBar || capKitchen;
 
   /// Feed zone lock. Floor staff (waiter capability) see every zone; a person
   /// who only covers one station is locked to it; someone covering both bar
@@ -152,6 +189,15 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       capKitchen = caps['kitchen'] == true;
       capMenu = caps['menu'] == true;
       capManage = caps['manage'] == true;
+      // Older hubs omit `content`: derive it from the role so an SMM account
+      // is never locked out of its only section.
+      capContent = caps.containsKey('content')
+          ? caps['content'] == true
+          : (capManage || role == UserRole.smm);
+      // Older hubs omit `discount`: only bosses had it implicitly.
+      capDiscount = caps.containsKey('discount')
+          ? caps['discount'] == true
+          : capManage;
       return;
     }
     // Older hub without capabilities: derive them from the role.
@@ -161,10 +207,13 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     capKitchen = boss || role == UserRole.cook;
     capMenu = boss;
     capManage = boss;
+    capContent = boss || role == UserRole.smm;
+    capDiscount = boss;
   }
 
   void _resetCapabilities() {
-    capWait = capBar = capKitchen = capMenu = capManage = true;
+    capWait = capBar =
+        capKitchen = capMenu = capManage = capContent = capDiscount = true;
   }
 
   void setLanguage(AppLang value) {
@@ -178,6 +227,25 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     // Wake the socket + pull fresh data whenever the app comes back to the
     // foreground (phone unlocked, tab refocused) — the #1 desync cause.
     WidgetsBinding.instance.addObserver(this);
+
+    // --- Alert ladder configuration (fires only on-shift, outside quiet) ---
+    isOnShift = _box.get('isOnShift') as bool? ?? false;
+    alertsQuiet = _box.get('alertsQuiet') as bool? ?? false;
+    alertService.isEnabled =
+        () => backendConnected && isOnShift && !alertsQuiet;
+    alertService.volume = () => soundVolume;
+    alertService.onEscalate = _escalateRemote;
+    alertService.osBannerText = (alert) => switch (alert.kind) {
+          AlertKind.call => (L.guestCalling, L.tableN(alert.tableNumber)),
+          AlertKind.bill => (L.guestBill, L.tableN(alert.tableNumber)),
+          AlertKind.order => (L.guestOrder, L.tableN(alert.tableNumber)),
+        };
+    // Repaint the shell (banner list, app-bar pulse) on ladder changes.
+    // boot() can run again (reset to demo) — attach exactly once.
+    if (!_alertListenerAttached) {
+      _alertListenerAttached = true;
+      alertService.addListener(notifyListeners);
+    }
     // Safety net for a silently half-dead socket: periodically catch up.
     _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (backendConnected) _ensureLiveAndResync();
@@ -427,6 +495,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     _realtimeSub?.cancel();
     _realtime?.dispose();
     _remoteApi.close();
+    alertService.dispose();
     super.dispose();
   }
 
@@ -758,10 +827,22 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   void _savePendingQueue() =>
       _box.put('pendingQueue', jsonEncode(_pendingQueue));
 
+  /// Server channel for a legacy local chat group (names match 1:1).
+  String _channelForGroup(ChatGroup group) => switch (group.type) {
+        FeedType.kitchen => 'kitchen',
+        FeedType.bar => 'bar',
+        null => 'general',
+      };
+
   void discussInChat(CafeOrder order, ChatGroup group, String comment) {
     final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
     final text =
         '#discuss Order Table${table?.number.toString().padLeft(2, '0') ?? '??'}:${order.items.map((e) => '${e.quantity}x${e.item.name}').join(', ')}\n\n$comment';
+    // Connected: the real (server) chat is the one staff read now.
+    if (backendConnected) {
+      sendChat(channel: _channelForGroup(group), body: text);
+      return;
+    }
     messages.add(ChatMessage(
       id: _nextMessageId(),
       groupId: group.id,
@@ -778,6 +859,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   void forwardTable(CafeTable table, ChatGroup group, String comment) {
     final text =
         '#forward Table${table.number.toString().padLeft(2, '0')} ·${statusLabel(table.status)}\n\n$comment';
+    if (backendConnected) {
+      sendChat(channel: _channelForGroup(group), body: text);
+      return;
+    }
     messages.add(ChatMessage(
       id: _nextMessageId(),
       groupId: group.id,
@@ -1593,7 +1678,12 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         activeUserName = user.name;
         _box.put('activeUserName', user.name);
       }
+      // The hub is the source of truth for the shift state.
+      isOnShift = user.isOnShift;
+      _box.put('isOnShift', isOnShift);
     }
+    pushEnabled = data.pushEnabled;
+    pushPublicKey = data.pushPublicKey;
     if (data.menu.isNotEmpty) {
       menu
         ..clear()
@@ -1622,6 +1712,145 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     archivedOrders
       ..clear()
       ..addAll(data.history.map(_orderFromDto));
+    // Ladders for anything already pending (a device that just came on shift
+    // must not sit silent next to a waiting guest); stale alerts resolve.
+    _syncAlertsFromState();
+    // Unread chat badges (fire-and-forget; the WS keeps them live after).
+    refreshChatRead();
+  }
+
+  // ---- Alerts: ladder wiring ------------------------------------------------
+
+  int _tableNumberFor(String tableId) =>
+      tables.firstWhereOrNull((t) => t.id == tableId)?.number ?? 0;
+
+  /// Floor staff (waiter capability) handle guest calls and approve guest
+  /// orders — pure station devices stay out of this alert path entirely.
+  bool get _alertsApply => capWait;
+
+  /// Reconcile the ladder with current state: start alerts for every unacked
+  /// call/bill and AWAITING order, resolve alerts whose source is gone.
+  void _syncAlertsFromState() {
+    if (!_alertsApply) return;
+    final liveIds = <String>{};
+    for (final table in tables) {
+      // 'arrived' is informational — only call/bill ring the ladder.
+      if (table.attention != null &&
+          table.attention != 'arrived' &&
+          table.lastSignalId != null) {
+        final id = 'attention-${table.lastSignalId}';
+        liveIds.add(id);
+        alertService.trigger(
+          id: id,
+          kind: table.attention == 'bill' ? AlertKind.bill : AlertKind.call,
+          tableNumber: table.number,
+          escalatedShared: table.attentionEscalated,
+        );
+      }
+    }
+    for (final order in orders) {
+      if (order.status != OrderStatus.awaiting) continue;
+      final id = 'order-${order.id}';
+      liveIds.add(id);
+      alertService.trigger(
+        id: id,
+        kind: AlertKind.order,
+        tableNumber: _tableNumberFor(order.tableId),
+        escalatedShared: order.alertEscalated,
+      );
+    }
+    for (final alert in alertService.active) {
+      if (!liveIds.contains(alert.id)) alertService.resolve(alert.id);
+    }
+  }
+
+  /// L3 reached on this device: flag it server-side (idempotent) so every
+  /// on-shift device highlights the event. 409 = already handled — fine.
+  Future<void> _escalateRemote(ActiveAlert alert) async {
+    final pk = alert.id.split('-').last;
+    try {
+      if (alert.kind == AlertKind.order) {
+        await _remoteApi.escalateOrder(pk);
+      } else {
+        await _remoteApi.escalateSignal(pk);
+      }
+    } on ApiException catch (e) {
+      debugPrint('escalate failed: $e');
+    }
+  }
+
+  /// The in-app banner's Accept. For a call/bill it IS the domain action
+  /// (ack the signal — the hub broadcasts and every device silences). For a
+  /// guest order Accept only navigates: the order is handled by confirm or
+  /// reject, which resolve the alert everywhere via order.updated.
+  Future<void> acceptAlert(ActiveAlert alert) async {
+    if (alert.kind == AlertKind.order) return;
+    alertService.resolve(alert.id);
+    final pk = alert.id.split('-').last;
+    try {
+      await _remoteApi.ackAttention(pk);
+    } on ApiException catch (e) {
+      backendError = e.message;
+      debugPrint('acceptAlert ack failed: $e');
+      notifyListeners();
+    }
+  }
+
+  /// The "On shift" toggle: one gesture unlocks audio + notifications, flips
+  /// the hub flag, and manages the Web-Push subscription. Returns null on
+  /// success or a message for the UI.
+  Future<String?> setOnShift(bool on) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      var osNotificationsGranted = false;
+      if (on) {
+        // Inside the tap: permission prompt + silent clip + 1ms vibration —
+        // the legal unlock for AudioContext, notifications and vibration.
+        osNotificationsGranted = await alertPlatform.unlock();
+      }
+      isOnShift = await _remoteApi.setShift(on);
+      _box.put('isOnShift', isOnShift);
+      if (on) {
+        if (pushEnabled && osNotificationsGranted) {
+          final subscription =
+              await alertPlatform.subscribePush(pushPublicKey);
+          if (subscription != null) {
+            try {
+              await _remoteApi.pushSubscribe(
+                endpoint: subscription.endpoint,
+                p256dh: subscription.p256dh,
+                auth: subscription.auth,
+              );
+            } on ApiException catch (e) {
+              debugPrint('push subscribe failed: $e');
+            }
+          }
+        }
+        _syncAlertsFromState(); // pending guests start alerting immediately
+      } else {
+        alertService.silenceAll();
+        final endpoint = await alertPlatform.unsubscribePush();
+        if (endpoint != null) {
+          try {
+            await _remoteApi.pushUnsubscribe(endpoint);
+          } on ApiException catch (e) {
+            debugPrint('push unsubscribe failed: $e');
+          }
+        }
+      }
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  void setAlertsQuiet(bool quiet) {
+    alertsQuiet = quiet;
+    _box.put('alertsQuiet', quiet);
+    notifyListeners();
   }
 
   @override
@@ -1673,29 +1902,86 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       case RealtimeEventType.orderCreated:
         final createdDto = event.order;
         if (createdDto != null) {
-          final isNew = orders.indexWhere((o) => o.id == createdDto.id) < 0;
           _upsertOrderFromDto(createdDto);
-          // A fresh guest order needs the waiter's approval — buzz so it isn't
-          // missed, on top of the badge/banner that already updated.
-          if (isNew &&
-              !isStationRole &&
+          // A fresh guest order starts the escalation ladder (L1 chime +
+          // banner) on every on-shift floor device. The ladder replaces the
+          // old bare heavyImpact buzz.
+          if (_alertsApply &&
               _orderStatusFromName(createdDto.status) == OrderStatus.awaiting) {
-            HapticFeedback.heavyImpact();
+            alertService.trigger(
+              id: 'order-${createdDto.id}',
+              kind: AlertKind.order,
+              tableNumber: _tableNumberFor(createdDto.tableId),
+            );
           }
         }
         break;
       case RealtimeEventType.orderUpdated:
         final dto = event.order;
-        if (dto != null) _upsertOrderFromDto(dto);
+        if (dto != null) {
+          _upsertOrderFromDto(dto);
+          // Left AWAITING (confirmed/rejected anywhere): the alert is
+          // handled — silence this device and close its OS banner.
+          if (_orderStatusFromName(dto.status) != OrderStatus.awaiting) {
+            alertService.resolve('order-${dto.id}');
+          }
+        }
+        break;
+      case RealtimeEventType.orderEscalated:
+        final dto = event.order;
+        if (dto != null) {
+          _upsertOrderFromDto(dto);
+          if (_alertsApply &&
+              _orderStatusFromName(dto.status) == OrderStatus.awaiting) {
+            alertService.markEscalated(
+              id: 'order-${dto.id}',
+              kind: AlertKind.order,
+              tableNumber: _tableNumberFor(dto.tableId),
+            );
+          }
+        }
         break;
       case RealtimeEventType.tableUpdated:
         _applyTableUpdate(event.table);
         break;
       case RealtimeEventType.attentionCreated:
         _applyAttention(event.attention, acked: false);
+        final signal = event.attention;
+        if (signal != null && _alertsApply && signal.signalType != 'arrived') {
+          alertService.trigger(
+            id: 'attention-${signal.id}',
+            kind: signal.signalType == 'bill_request'
+                ? AlertKind.bill
+                : AlertKind.call,
+            tableNumber: _tableNumberFor(signal.tableId),
+          );
+        }
         break;
       case RealtimeEventType.attentionAcked:
         _applyAttention(event.attention, acked: true);
+        // First handler (or the guest cancelling) clears every device.
+        if (event.attention != null) {
+          alertService.resolve('attention-${event.attention!.id}');
+        }
+        break;
+      case RealtimeEventType.attentionEscalated:
+        final escalated = event.attention;
+        if (escalated != null && _alertsApply && !escalated.ack) {
+          alertService.markEscalated(
+            id: 'attention-${escalated.id}',
+            kind: escalated.signalType == 'bill_request'
+                ? AlertKind.bill
+                : AlertKind.call,
+            tableNumber: _tableNumberFor(escalated.tableId),
+          );
+        }
+        break;
+      case RealtimeEventType.chatMessage:
+      case RealtimeEventType.chatUpdated:
+        if (event.chatMessage != null) _applyChatMessage(event.chatMessage!);
+        break;
+      case RealtimeEventType.taskUpdated:
+        if (event.task != null) _applyTaskUpdate(event.task!);
         break;
       case RealtimeEventType.connectionReady:
         // Every reconnect: pull current state so events missed while the
@@ -1811,6 +2097,452 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('createRemoteOrder failed: $e');
       notifyListeners();
       return null;
+    }
+  }
+
+  // --- Content: venue social feed + storefront -------------------------------
+  // Loaded lazily when the Content section opens. Every mutation surfaces the
+  // hub's error message verbatim (returns it to the caller) — nothing is
+  // swallowed silently.
+
+  List<SocialPostDto> feedPosts = [];
+  int feedPinnedLimit = 3;
+  bool feedLoading = false;
+  VenueSettingsDto? venueSettings;
+  List<ThemePresetDto> themePresets = [];
+  bool venueLoading = false;
+
+  int get pinnedPostCount => feedPosts.where((p) => p.isPinned).length;
+
+  Future<String?> refreshContentFeed() async {
+    if (!backendConnected) return L.connectToManage;
+    feedLoading = true;
+    notifyListeners();
+    try {
+      final dto = await _remoteApi.staffFeed();
+      feedPosts = dto.posts;
+      feedPinnedLimit = dto.pinnedLimit;
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('refreshContentFeed failed: $e');
+      return e.message;
+    } finally {
+      feedLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Create a post from a pasted URL. Returns null on success or the hub's
+  /// error message (invalid link, duplicate, …) to show verbatim.
+  Future<String?> addFeedPost(String url) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      await _remoteApi.createFeedPost(url);
+      return refreshContentFeed();
+    } on ApiException catch (e) {
+      debugPrint('addFeedPost failed: $e');
+      return e.message;
+    }
+  }
+
+  void _replaceFeedPost(SocialPostDto updated) {
+    final i = feedPosts.indexWhere((p) => p.id == updated.id);
+    if (i >= 0) feedPosts[i] = updated;
+    notifyListeners();
+  }
+
+  /// Pin/unpin. Exceeding the pinned limit is the hub's 409 — its message is
+  /// returned for the UI to show as-is.
+  Future<String?> setFeedPostPinned(SocialPostDto post, bool pinned) async {
+    try {
+      final updated = pinned
+          ? await _remoteApi.pinFeedPost(post.id)
+          : await _remoteApi.unpinFeedPost(post.id);
+      _replaceFeedPost(updated);
+      // Order (pinned first) comes from the hub — refresh keeps it canonical.
+      return refreshContentFeed();
+    } on ApiException catch (e) {
+      debugPrint('setFeedPostPinned failed: $e');
+      return e.message;
+    }
+  }
+
+  Future<String?> toggleFeedPostHidden(SocialPostDto post) async {
+    try {
+      _replaceFeedPost(await _remoteApi.toggleFeedPostHidden(post.id));
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('toggleFeedPostHidden failed: $e');
+      return e.message;
+    }
+  }
+
+  Future<String?> deleteFeedPost(SocialPostDto post) async {
+    try {
+      await _remoteApi.deleteFeedPost(post.id);
+      feedPosts.removeWhere((p) => p.id == post.id);
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('deleteFeedPost failed: $e');
+      return e.message;
+    }
+  }
+
+  Future<String?> refreshVenueSettings() async {
+    if (!backendConnected) return L.connectToManage;
+    venueLoading = true;
+    notifyListeners();
+    try {
+      final payload = await _remoteApi.venueSettings();
+      venueSettings = payload.venue;
+      themePresets = payload.presets;
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('refreshVenueSettings failed: $e');
+      return e.message;
+    } finally {
+      venueLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// PATCH storefront fields (DRF wire names). Returns null on success or the
+  /// hub's validation message (bad HEX, unknown block, …) verbatim.
+  Future<String?> saveVenueSettings(Map<String, dynamic> fields) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final payload = await _remoteApi.updateVenueSettings(fields);
+      venueSettings = payload.venue;
+      themePresets = payload.presets;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('saveVenueSettings failed: $e');
+      return e.message;
+    }
+  }
+
+  /// Upload or remove ([bytes] == null) the venue logo/cover.
+  Future<String?> setVenueImage(String kind,
+      {List<int>? bytes, String filename = 'image.jpg'}) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final payload = bytes == null
+          ? await _remoteApi.deleteVenueImage(kind)
+          : await _remoteApi.uploadVenueImage(kind, bytes, filename);
+      venueSettings = payload.venue;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('setVenueImage failed: $e');
+      return e.message;
+    }
+  }
+
+  // --- Coupons: campaigns, issue, redeem -------------------------------------
+  // Same contract as the content section: every mutation returns null on
+  // success or the hub's error message verbatim for the UI to show.
+
+  List<CouponCampaignDto> couponCampaigns = [];
+  bool couponCampaignsLoading = false;
+
+  /// Active campaigns only — what the Issue screen offers.
+  List<CouponCampaignDto> get issuableCampaigns =>
+      couponCampaigns.where((c) => c.isActive).toList();
+
+  Future<String?> refreshCouponCampaigns() async {
+    if (!backendConnected) return L.connectToManage;
+    couponCampaignsLoading = true;
+    notifyListeners();
+    try {
+      couponCampaigns = await _remoteApi.couponCampaigns();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('refreshCouponCampaigns failed: $e');
+      return e.message;
+    } finally {
+      couponCampaignsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> saveCouponCampaign(Map<String, dynamic> fields,
+      {int? id}) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      if (id == null) {
+        await _remoteApi.createCouponCampaign(fields);
+      } else {
+        await _remoteApi.updateCouponCampaign(id, fields);
+      }
+      return refreshCouponCampaigns();
+    } on ApiException catch (e) {
+      debugPrint('saveCouponCampaign failed: $e');
+      return e.message;
+    }
+  }
+
+  /// Signed claim link for the fullscreen issue QR. Returns (result, error) —
+  /// exactly one of the two is non-null.
+  Future<(CouponIssueDto?, String?)> issueCoupon(int campaignId) async {
+    if (!backendConnected) return (null, L.connectToManage);
+    try {
+      return (await _remoteApi.issueCoupon(campaignId), null);
+    } on ApiException catch (e) {
+      debugPrint('issueCoupon failed: $e');
+      return (null, e.message);
+    }
+  }
+
+  /// Look up a scanned/typed coupon for the confirmation sheet.
+  Future<(CouponPreviewDto?, String?)> couponPreview(
+      {String? token, String? code}) async {
+    if (!backendConnected) return (null, L.connectToManage);
+    try {
+      return (
+        await _remoteApi.couponRedeemPreview(token: token, code: code),
+        null
+      );
+    } on ApiException catch (e) {
+      debugPrint('couponPreview failed: $e');
+      return (null, e.message);
+    }
+  }
+
+  /// Redeem. The hub broadcasts order.updated for an attached order, so the
+  /// discount line appears on every device via the realtime path.
+  Future<(StaffCouponDto?, String?)> redeemCoupon(
+      {String? token, String? code, String? orderId}) async {
+    if (!backendConnected) return (null, L.connectToManage);
+    try {
+      final coupon = await _remoteApi.redeemCoupon(
+          token: token, code: code, orderId: orderId);
+      return (coupon, null);
+    } on ApiException catch (e) {
+      debugPrint('redeemCoupon failed: $e');
+      return (null, e.message);
+    }
+  }
+
+  // --- Staff chat (server-backed) + tasks ------------------------------------
+  // The chat screens read ONLY this server state when connected; the legacy
+  // local chat models remain for the offline demo shell.
+
+  static const chatChannels = ['general', 'kitchen', 'bar'];
+  final Map<String, List<ChatMessageDto>> chatByChannel = {};
+  final Map<String, int?> _chatCursors = {};
+  final Map<String, bool> chatHasMore = {};
+  Map<String, int> chatUnread = {};
+  bool chatLoading = false;
+
+  /// The channel currently open on screen — its messages auto-mark read and
+  /// never bump the unread badge.
+  String? activeChatChannel;
+
+  List<ChatMessageDto> chatMessages(String channel) =>
+      chatByChannel[channel] ?? const [];
+
+  int get chatUnreadTotal =>
+      chatUnread.values.fold(0, (sum, value) => sum + value);
+
+  Future<void> refreshChatRead() async {
+    if (!backendConnected) return;
+    try {
+      final state = await _remoteApi.chatReadState();
+      chatUnread = state.unread;
+      notifyListeners();
+    } on ApiException catch (e) {
+      debugPrint('refreshChatRead failed: $e');
+    }
+  }
+
+  /// Open a channel: first page on first open, mark read, stop badge bumps.
+  Future<String?> openChatChannel(String channel) async {
+    activeChatChannel = channel;
+    if (!backendConnected) return L.connectToManage;
+    if (chatMessages(channel).isEmpty) {
+      chatLoading = true;
+      notifyListeners();
+      try {
+        final page = await _remoteApi.chatHistory(channel);
+        chatByChannel[channel] = page.messages;
+        _chatCursors[channel] = page.nextCursor;
+        chatHasMore[channel] = page.hasMore;
+      } on ApiException catch (e) {
+        debugPrint('openChatChannel failed: $e');
+        return e.message;
+      } finally {
+        chatLoading = false;
+        notifyListeners();
+      }
+    }
+    _markActiveChannelRead();
+    return null;
+  }
+
+  void closeChatChannel() {
+    activeChatChannel = null;
+  }
+
+  Future<String?> loadOlderChat(String channel) async {
+    final cursor = _chatCursors[channel];
+    if (!backendConnected || cursor == null) return null;
+    try {
+      final page = await _remoteApi.chatHistory(channel, cursor: cursor);
+      chatByChannel[channel] = [...chatMessages(channel), ...page.messages];
+      _chatCursors[channel] = page.nextCursor;
+      chatHasMore[channel] = page.hasMore;
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('loadOlderChat failed: $e');
+      return e.message;
+    }
+  }
+
+  /// Send text or a slash command; the bot's answer arrives as `result` and
+  /// via the WS echo (idempotent upsert by id).
+  Future<String?> sendChat({
+    required String channel,
+    required String body,
+    int? replyTo,
+  }) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final sent = await _remoteApi.sendChatMessage(
+          channel: channel, body: body, replyTo: replyTo);
+      _applyChatMessage(sent.message);
+      if (sent.result != null) _applyChatMessage(sent.result!);
+      _markActiveChannelRead();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  void _markActiveChannelRead() {
+    final channel = activeChatChannel;
+    if (channel == null || !backendConnected) return;
+    final newest = chatMessages(channel).firstOrNull;
+    chatUnread[channel] = 0;
+    notifyListeners();
+    if (newest != null) {
+      _remoteApi.markChatRead(channel, newest.id).catchError((Object e) {
+        debugPrint('markChatRead failed: $e');
+      });
+    }
+  }
+
+  /// Upsert one message into its channel list (newest first). Bumps the
+  /// unread badge for background channels and lets bot nudges chime at L1.
+  void _applyChatMessage(ChatMessageDto message) {
+    final list = [...chatMessages(message.channel)];
+    final index = list.indexWhere((m) => m.id == message.id);
+    final isNew = index < 0;
+    if (isNew) {
+      list.insert(0, message);
+      list.sort((a, b) => b.id.compareTo(a.id));
+    } else {
+      list[index] = message;
+    }
+    chatByChannel[message.channel] = list;
+
+    if (isNew) {
+      final ownName = activeUserName;
+      final fromSelf = !message.isBot && message.authorName == ownName;
+      if (message.channel == activeChatChannel) {
+        _markActiveChannelRead();
+      } else if (!fromSelf) {
+        chatUnread[message.channel] = (chatUnread[message.channel] ?? 0) + 1;
+      }
+      // Bot nudges/reminders ride alert LEVEL 1 ONLY: one soft chime, no
+      // ladder, no banner — they must never feel like a guest call.
+      if (message.isBot &&
+          message.kind == 'system' &&
+          alertService.isEnabled()) {
+        alertPlatform.playTone(AlertTone.ready, soundVolume);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// task.updated: refresh the task inside every bubble + the planner lists.
+  void _applyTaskUpdate(StaffTaskDto task) {
+    for (final channel in chatByChannel.keys) {
+      final list = chatByChannel[channel]!;
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].task?.id == task.id) list[i] = list[i].withTask(task);
+      }
+    }
+    final plannerIndex = plannerTasks.indexWhere((t) => t.id == task.id);
+    if (plannerIndex >= 0) {
+      plannerTasks[plannerIndex] = task;
+    }
+    notifyListeners();
+  }
+
+  // --- Planner ---------------------------------------------------------------
+
+  List<StaffTaskDto> plannerTasks = [];
+  List<StaffTaskDto> plannerRules = [];
+  String? plannerDate; // ISO yyyy-MM-dd currently shown
+  bool plannerLoading = false;
+
+  Future<String?> refreshPlanner({String? date}) async {
+    if (!backendConnected) return L.connectToManage;
+    plannerLoading = true;
+    notifyListeners();
+    try {
+      final result = await _remoteApi.tasksForDay(date: date);
+      plannerTasks = result.tasks;
+      plannerRules = result.rules;
+      plannerDate = date;
+      return null;
+    } on ApiException catch (e) {
+      debugPrint('refreshPlanner failed: $e');
+      return e.message;
+    } finally {
+      plannerLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Planner quick-add — the same syntax as /task. The new task's bubble is
+  /// posted to general by the hub (single source of truth).
+  Future<String?> plannerQuickAdd(String input) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      await _remoteApi.quickAddTask(input);
+      return refreshPlanner(date: plannerDate);
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
+  /// A task's chat thread (bubble + replies) for the planner deep-link.
+  Future<({ChatMessageDto? message, List<ChatMessageDto> replies})?>
+      fetchTaskThread(int taskId) async {
+    if (!backendConnected) return null;
+    try {
+      return await _remoteApi.taskThread(taskId);
+    } on ApiException catch (e) {
+      debugPrint('fetchTaskThread failed: $e');
+      return null;
+    }
+  }
+
+  /// The big Done checkbox — everywhere (bubble, planner). Errors verbatim.
+  Future<String?> setTaskDone(StaffTaskDto task, bool done) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final updated = await _remoteApi.setTaskDone(task.id, done: done);
+      _applyTaskUpdate(updated);
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
     }
   }
 
@@ -1983,6 +2715,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Stop realtime + clear the token (return to local-only mode).
   Future<void> disconnectBackend() async {
+    alertService.silenceAll();
     await _realtimeSub?.cancel();
     _realtimeSub = null;
     await _realtime?.dispose();
@@ -2036,6 +2769,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     // acknowledge it) survives an app restart.
     table.attention = d.ack ? null : d.attention;
     table.lastSignalId = d.ack ? null : d.attentionSignalId;
+    table.attentionEscalated = d.ack ? false : d.attentionEscalated;
     return table;
   }
 
@@ -2060,6 +2794,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       id: d.id,
       tableId: d.tableId,
       items: lines,
+      discountAmount: d.discountAmount,
+      couponCode: d.couponCode,
       status: _orderStatusFromName(d.status),
       // Server timestamp, not "now": otherwise every bootstrap/WS echo reset
       // the kitchen timer of an existing order back to 00:00.
@@ -2071,7 +2807,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
           : DateTime.tryParse(d.acceptedAt!)?.toLocal(),
       note: d.note,
       splitTo: d.station == 'bar' ? FeedType.bar : FeedType.kitchen,
-    );
+    )..alertEscalated = d.alertEscalated;
   }
 
   MenuItem _placeholderMenuItem(OrderItemDto it) => MenuItem(

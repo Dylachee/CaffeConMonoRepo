@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/alerts/alert_platform.dart';
 import '../../core/i18n.dart';
 import '../../models/models.dart';
 import 'package:provider/provider.dart';
@@ -98,6 +100,54 @@ class SettingsScreen extends StatelessWidget {
                 value: state.soundEnabled,
                 onChanged: (v) => state.setSetting(
                     'soundEnabled', v, (x) => state.soundEnabled = x)),
+          ]),
+          _SettingsSection(L.alertsSection, [
+            _SettingsToggle(
+                label: L.quietMode,
+                value: state.alertsQuiet,
+                onChanged: (v) => state.setAlertsQuiet(v)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(children: [
+                Expanded(child: Text(L.alertVolume, style: T.body)),
+                SizedBox(
+                  width: 160,
+                  child: Slider(
+                    value: state.soundVolume.clamp(0.0, 1.0),
+                    activeColor: AppTheme.cta,
+                    onChanged: (v) => state.setSetting(
+                        'soundVolume', v, (x) => state.soundVolume = x),
+                    onChangeEnd: (_) =>
+                        // Audible preview at the chosen level.
+                        state.alertPlatform.playTone(
+                            AlertTone.call, state.soundVolume),
+                  ),
+                ),
+              ]),
+            ),
+            _SettingsRow(
+                label: L.stationMode,
+                trailing:
+                    const Icon(Icons.brightness_2_outlined, color: AppTheme.cta),
+                onTap: () => GoRouter.of(context).push('/station')),
+            if (state.backendConnected && !state.pushEnabled)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Text(L.pushDisabledHint,
+                    style: T.small.copyWith(color: AppTheme.warning)),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(L.pushMatrixTitle, style: T.smallSemi),
+                    const SizedBox(height: 3),
+                    Text(L.pushMatrixBody,
+                        style: T.small.copyWith(color: AppTheme.ink2)),
+                  ]),
+            ),
           ]),
           _SettingsSection(L.connection, [
             _SettingsRow(

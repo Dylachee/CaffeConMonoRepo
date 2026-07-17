@@ -16,7 +16,16 @@ dependencies:
   flutter_animate: ^4.5.0
   go_router: ^14.2.0
   hive_flutter: ^1.1.0
+  # Venue logo/cover upload in the Storefront editor (web + Android).
+  image_picker: ^1.1.2
+  # Coupon redeem: scanning the guest's wallet QR (web + Android).
+  # NOTE for the human build: add camera permissions —
+  #   android/app/src/main/AndroidManifest.xml: <uses-permission android:name="android.permission.CAMERA" />
+  #   ios/Runner/Info.plist: NSCameraUsageDescription
+  mobile_scanner: ^5.2.3
   provider: ^6.1.2
+  # Coupon issue: rendering the signed claim link as a QR (pure Dart).
+  qr_flutter: ^4.1.0
   # Networking to the CafeConnect Django hub (REST + WebSocket realtime).
   http: ^1.2.0
   web_socket_channel: ^3.0.0

@@ -84,4 +84,58 @@ class ApiConfig {
   static Uri attentionSignals() => Uri.parse('$apiRoot/attention-signals/');
   static Uri ackAttention(String id) =>
       Uri.parse('$apiRoot/attention-signals/$id/ack/');
+
+  // Content: venue social feed + storefront (SMM / content capability).
+  static Uri staffFeed() => Uri.parse('$apiRoot/staff/feed/');
+  static Uri staffFeedPost(int id) => Uri.parse('$apiRoot/staff/feed/$id/');
+  static Uri staffFeedPin(int id) => Uri.parse('$apiRoot/staff/feed/$id/pin/');
+  static Uri staffFeedUnpin(int id) =>
+      Uri.parse('$apiRoot/staff/feed/$id/unpin/');
+  static Uri staffFeedHide(int id) =>
+      Uri.parse('$apiRoot/staff/feed/$id/hide/');
+  static Uri staffVenue() => Uri.parse('$apiRoot/staff/venue/');
+  static Uri staffVenueImage(String kind) =>
+      Uri.parse('$apiRoot/staff/venue/$kind/');
+
+  // Alerts: shift toggle, push subscriptions, escalation flags.
+  static Uri staffShift() => Uri.parse('$apiRoot/staff/shift/');
+  static Uri pushSubscriptions() =>
+      Uri.parse('$apiRoot/staff/push-subscriptions/');
+  static Uri escalateSignal(String id) =>
+      Uri.parse('$apiRoot/attention-signals/$id/escalate/');
+  static Uri escalateOrder(String id) =>
+      Uri.parse('$apiRoot/orders/$id/escalate/');
+
+  // Staff chat (persistent, threaded) + tasks (chat bubbles = planner rows).
+  static Uri chatMessages({String? channel, int? cursor, int? limit}) =>
+      Uri.parse('$apiRoot/staff/chat/messages/').replace(queryParameters: {
+        if (channel != null) 'channel': channel,
+        if (cursor != null) 'cursor': '$cursor',
+        if (limit != null) 'limit': '$limit',
+      });
+  static Uri chatSend() => Uri.parse('$apiRoot/staff/chat/messages/');
+  static Uri chatThread(int id) =>
+      Uri.parse('$apiRoot/staff/chat/thread/$id/');
+  static Uri chatRead() => Uri.parse('$apiRoot/staff/chat/read/');
+  static Uri staffTasks({String? date}) =>
+      Uri.parse('$apiRoot/staff/tasks/').replace(queryParameters: {
+        if (date != null) 'date': date,
+      });
+  static Uri staffTask(int id) => Uri.parse('$apiRoot/staff/tasks/$id/');
+  static Uri staffTaskDone(int id) =>
+      Uri.parse('$apiRoot/staff/tasks/$id/done/');
+  static Uri staffTaskThread(int id) =>
+      Uri.parse('$apiRoot/staff/tasks/$id/thread/');
+
+  // Coupons: campaigns (content capability) + issue/redeem (discount).
+  static Uri couponCampaigns() =>
+      Uri.parse('$apiRoot/staff/coupons/campaigns/');
+  static Uri couponCampaign(int id) =>
+      Uri.parse('$apiRoot/staff/coupons/campaigns/$id/');
+  static Uri couponIssue() => Uri.parse('$apiRoot/staff/coupons/issue/');
+  static Uri couponRedeemPreview() =>
+      Uri.parse('$apiRoot/staff/coupons/redeem-preview/');
+  static Uri couponRedeem() => Uri.parse('$apiRoot/staff/coupons/redeem/');
+  static Uri couponVoid(int id) =>
+      Uri.parse('$apiRoot/staff/coupons/$id/void-redemption/');
 }

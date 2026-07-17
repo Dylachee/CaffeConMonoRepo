@@ -7,7 +7,10 @@ import '../../core/i18n.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
+import '../../widgets/alert_banner.dart';
 import '../chat/chat.dart';
+import '../content/content_screen.dart';
+import '../coupons/coupons_screen.dart';
 import '../menu/staff_menu.dart';
 import '../orders/order_composer.dart';
 import '../orders/order_feed.dart';
@@ -43,25 +46,38 @@ class _MainShellScreenState extends State<MainShellScreen> {
     super.dispose();
   }
 
-  /// Tab set per role (the whole point of the shell):
+  /// Tab set per capability (the whole point of the shell):
   ///   cook / bartender — their order feed, the menu and the chats;
   ///   waiter — everything except the analytics panel;
+  ///   SMM — only Content (and the team chats);
   ///   manager / admin — everything.
   List<_ShellTab> _tabsFor(CafeState state) => [
         if (state.canSeeTables)
           _ShellTab(L.tables, Icons.table_bar, const WaiterTableGridScreen(),
               badge: state.pendingApprovalOrders.length),
-        _ShellTab(L.orders, Icons.assignment, const UnifiedOrderFeedScreen()),
+        // Orders and the menu exist for people who work them (floor or a
+        // station). A pure content account never sees them.
+        if (state.worksOrders)
+          _ShellTab(L.orders, Icons.assignment, const UnifiedOrderFeedScreen()),
         // Floor staff get the SAME order composer as inside a table — the only
         // difference is the table is picked at the end. Stations (cook/bar)
         // keep the read-only showcase/stop-list: they don't take orders.
-        _ShellTab(
-            L.menu,
-            Icons.restaurant_menu,
-            state.isStationRole
-                ? const StaffMenuScreen()
-                : const WaiterOrderScreen(pickTableLater: true)),
-        _ShellTab(L.chats, Icons.chat_bubble, const StaffChatListScreen()),
+        if (state.worksOrders)
+          _ShellTab(
+              L.menu,
+              Icons.restaurant_menu,
+              state.isStationRole
+                  ? const StaffMenuScreen()
+                  : const WaiterOrderScreen(pickTableLater: true)),
+        _ShellTab(L.chats, Icons.chat_bubble, const StaffChatListScreen(),
+            badge: state.chatUnreadTotal),
+        // Coupons: issue/redeem needs `discount`, campaign analytics needs
+        // `content` — the area appears for either, tabs filter inside.
+        if (state.canSeeCoupons)
+          _ShellTab(L.coupons, Icons.confirmation_number_outlined,
+              const CouponsScreen()),
+        if (state.canSeeContent)
+          _ShellTab(L.content, Icons.storefront, const ContentScreen()),
         if (state.canSeePanel)
           _ShellTab(L.panel, Icons.analytics, const StaffPanelScreen()),
       ];
@@ -90,11 +106,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
     // never needs to hide its navigation.
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      body: PageView(
-        key: ValueKey(state.currentRole),
-        controller: _pageController,
-        onPageChanged: (i) => setState(() => _currentIndex = i),
-        children: tabs.map((t) => t.page).toList(),
+      body: Column(
+        children: [
+          // Always-visible shift toggle (the alert/permission unlock) and the
+          // in-app alert banners — on every tab, impossible to miss.
+          const ShiftBar(),
+          const AlertBannerStack(),
+          Expanded(
+            child: PageView(
+              key: ValueKey(state.currentRole),
+              controller: _pageController,
+              onPageChanged: (i) => setState(() => _currentIndex = i),
+              children: tabs.map((t) => t.page).toList(),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: _ShellBottomNav(
         selectedIndex: _currentIndex,

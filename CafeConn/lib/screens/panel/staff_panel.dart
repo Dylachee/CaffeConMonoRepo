@@ -1652,6 +1652,7 @@ class _StaffAccessCard extends StatelessWidget {
       'waiter' => 'can_wait',
       'bar' => 'can_bar',
       'kitchen' => 'can_kitchen',
+      'smm' => 'can_content',
       _ => null,
     };
     final caps = <(String, String, bool)>[
@@ -1659,6 +1660,8 @@ class _StaffAccessCard extends StatelessWidget {
       ('can_bar', L.capBar, employee.canBar),
       ('can_kitchen', L.capKitchen, employee.canKitchen),
       ('can_manage_menu', L.capMenu, employee.canManageMenu),
+      ('can_content', L.capContent, employee.canContent),
+      ('can_grant_discount', L.capDiscount, employee.canGrantDiscount),
     ];
 
     Future<void> toggle(String field, bool value) async {

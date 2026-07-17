@@ -7,6 +7,8 @@
 /// Keeping these as pure Dart (no Flutter imports) makes them unit-testable.
 library;
 
+import '../core/i18n.dart';
+
 int _asInt(dynamic v, [int fallback = 0]) {
   if (v is int) return v;
   if (v is num) return v.toInt();
@@ -208,6 +210,15 @@ class OrderDto {
 
   /// Order-level guest comment (allergies / serving requests).
   final String note;
+
+  /// Coupon snapshot (0 / '' when no coupon is applied). Written only by the
+  /// hub at redemption; the app just shows the "− discount" line.
+  final double discountAmount;
+  final String couponCode;
+
+  /// Alert ladder L3: some on-shift device saw this AWAITING order unhandled
+  /// for 60s — highlight it everywhere.
+  final bool alertEscalated;
   final List<OrderItemDto> items;
 
   const OrderDto({
@@ -219,6 +230,9 @@ class OrderDto {
     this.createdAt,
     this.acceptedAt,
     this.note = '',
+    this.discountAmount = 0,
+    this.couponCode = '',
+    this.alertEscalated = false,
   });
 
   factory OrderDto.fromBootstrap(Map<String, dynamic> j) => OrderDto(
@@ -229,6 +243,9 @@ class OrderDto {
         createdAt: j['createdAt'] == null ? null : _asString(j['createdAt']),
         acceptedAt: j['acceptedAt'] == null ? null : _asString(j['acceptedAt']),
         note: _asString(j['note'], ''),
+        discountAmount: _asDouble(j['discountAmount']),
+        couponCode: _asString(j['couponCode']),
+        alertEscalated: _asBool(j['alertEscalated']),
         items: ((j['items'] as List?) ?? const [])
             .map((e) =>
                 OrderItemDto.fromBootstrap((e as Map).cast<String, dynamic>()))
@@ -246,11 +263,224 @@ class OrderDto {
       createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
       acceptedAt: j['accepted_at'] == null ? null : _asString(j['accepted_at']),
       note: _asString(j['notes'], ''),
+      discountAmount: _asDouble(j['discount_amount']),
+      couponCode: _asString(j['coupon_code']),
+      alertEscalated: _asBool(j['alert_escalated']),
       items: ((j['items'] as List?) ?? const [])
           .map((e) => OrderItemDto.fromDrf((e as Map).cast<String, dynamic>()))
           .toList(),
     );
   }
+}
+
+/// One row of a campaign's per-source analytics.
+class CampaignUtmStatDto {
+  final String utmSource;
+  final int issued;
+  final int redeemed;
+  const CampaignUtmStatDto(
+      {required this.utmSource, required this.issued, required this.redeemed});
+  factory CampaignUtmStatDto.fromJson(Map<String, dynamic> j) =>
+      CampaignUtmStatDto(
+        utmSource: _asString(j['utm_source']),
+        issued: _asInt(j['issued']),
+        redeemed: _asInt(j['redeemed']),
+      );
+}
+
+/// A coupon campaign (GET/POST /api/staff/coupons/campaigns/), counters
+/// included for the SMM analytics list.
+class CouponCampaignDto {
+  final int id;
+  final String slug;
+  final String title;
+  final String titleIt;
+  final String description;
+  final String descriptionIt;
+
+  /// Wire value: percent | fixed.
+  final String discountType;
+  final double discountValue;
+  final String sourceUtm;
+  final String? validFrom;
+  final String? validUntil;
+  final int? maxTotalIssues;
+  final int perWalletLimit;
+  final bool isActive;
+  final int issuedCount;
+  final int redeemedCount;
+  final List<CampaignUtmStatDto> byUtm;
+
+  const CouponCampaignDto({
+    required this.id,
+    required this.slug,
+    required this.title,
+    required this.titleIt,
+    required this.description,
+    required this.descriptionIt,
+    required this.discountType,
+    required this.discountValue,
+    required this.sourceUtm,
+    required this.validFrom,
+    required this.validUntil,
+    required this.maxTotalIssues,
+    required this.perWalletLimit,
+    required this.isActive,
+    required this.issuedCount,
+    required this.redeemedCount,
+    required this.byUtm,
+  });
+
+  String get displayTitle =>
+      // Same convention as MenuItem.displayName: IT label when the app is in
+      // Italian and one exists, English otherwise.
+      (L.isIt && titleIt.isNotEmpty ? titleIt : title);
+
+  /// "−15%" / "−3.00 €" headline shared by the issue and redeem screens.
+  String get discountLabel {
+    if (discountType == 'percent') {
+      final isWhole = discountValue == discountValue.roundToDouble();
+      final text = isWhole
+          ? discountValue.round().toString()
+          : discountValue.toString();
+      return '−$text%';
+    }
+    return '−${discountValue.toStringAsFixed(2)} €';
+  }
+
+  factory CouponCampaignDto.fromJson(Map<String, dynamic> j) =>
+      CouponCampaignDto(
+        id: _asInt(j['id']),
+        slug: _asString(j['slug']),
+        title: _asString(j['title']),
+        titleIt: _asString(j['title_it']),
+        description: _asString(j['description']),
+        descriptionIt: _asString(j['description_it']),
+        discountType: _asString(j['discount_type'], 'percent'),
+        discountValue: _asDouble(j['discount_value']),
+        sourceUtm: _asString(j['source_utm']),
+        validFrom: j['valid_from'] == null ? null : _asString(j['valid_from']),
+        validUntil:
+            j['valid_until'] == null ? null : _asString(j['valid_until']),
+        maxTotalIssues:
+            j['max_total_issues'] == null ? null : _asInt(j['max_total_issues']),
+        perWalletLimit: _asInt(j['per_wallet_limit'], 1),
+        isActive: _asBool(j['is_active'], true),
+        issuedCount: _asInt(j['issued_count']),
+        redeemedCount: _asInt(j['redeemed_count']),
+        byUtm: ((j['by_utm'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => CampaignUtmStatDto.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+/// POST /api/staff/coupons/issue/ — the signed claim link the guest scans.
+class CouponIssueDto {
+  final String token;
+  final String claimUrl;
+  final int expiresIn;
+  final CouponCampaignDto campaign;
+  const CouponIssueDto({
+    required this.token,
+    required this.claimUrl,
+    required this.expiresIn,
+    required this.campaign,
+  });
+  factory CouponIssueDto.fromJson(Map<String, dynamic> j) => CouponIssueDto(
+        token: _asString(j['token']),
+        claimUrl: _asString(j['claimUrl']),
+        expiresIn: _asInt(j['expiresIn']),
+        campaign: CouponCampaignDto.fromJson(
+            ((j['campaign'] as Map?) ?? const {}).cast<String, dynamic>()),
+      );
+}
+
+/// A guest coupon as staff sees it (redeem preview / redeem result).
+class StaffCouponDto {
+  final int id;
+  final String code;
+
+  /// Wire value: active | redeemed | expired | void.
+  final String status;
+  final String campaignTitle;
+  final String campaignTitleIt;
+  final String discountType;
+  final double discountValue;
+  final String issuedVia;
+  final String utmSource;
+  final int? orderId;
+  final String redeemedBy;
+  final String? redeemedAt;
+
+  const StaffCouponDto({
+    required this.id,
+    required this.code,
+    required this.status,
+    required this.campaignTitle,
+    required this.campaignTitleIt,
+    required this.discountType,
+    required this.discountValue,
+    required this.issuedVia,
+    required this.utmSource,
+    required this.orderId,
+    required this.redeemedBy,
+    required this.redeemedAt,
+  });
+
+  String get displayTitle =>
+      (L.isIt && campaignTitleIt.isNotEmpty ? campaignTitleIt : campaignTitle);
+
+  String get discountLabel {
+    if (discountType == 'percent') {
+      final isWhole = discountValue == discountValue.roundToDouble();
+      final text = isWhole
+          ? discountValue.round().toString()
+          : discountValue.toString();
+      return '−$text%';
+    }
+    return '−${discountValue.toStringAsFixed(2)} €';
+  }
+
+  factory StaffCouponDto.fromJson(Map<String, dynamic> j) => StaffCouponDto(
+        id: _asInt(j['id']),
+        code: _asString(j['code']),
+        status: _asString(j['status'], 'active'),
+        campaignTitle: _asString(j['campaign_title']),
+        campaignTitleIt: _asString(j['campaign_title_it']),
+        discountType: _asString(j['discount_type'], 'percent'),
+        discountValue: _asDouble(j['discount_value']),
+        issuedVia: _asString(j['issued_via']),
+        utmSource: _asString(j['utm_source']),
+        orderId: j['order_id'] == null ? null : _asInt(j['order_id']),
+        redeemedBy: _asString(j['redeemed_by']),
+        redeemedAt:
+            j['redeemed_at'] == null ? null : _asString(j['redeemed_at']),
+      );
+}
+
+/// POST /api/staff/coupons/redeem-preview/ result.
+class CouponPreviewDto {
+  final StaffCouponDto coupon;
+  final String displayStatus;
+  final String? discountPreview;
+  final String? orderTotal;
+  const CouponPreviewDto({
+    required this.coupon,
+    required this.displayStatus,
+    this.discountPreview,
+    this.orderTotal,
+  });
+  factory CouponPreviewDto.fromJson(Map<String, dynamic> j) =>
+      CouponPreviewDto(
+        coupon: StaffCouponDto.fromJson(
+            ((j['coupon'] as Map?) ?? const {}).cast<String, dynamic>()),
+        displayStatus: _asString(j['displayStatus'], 'active'),
+        discountPreview: j['discountPreview'] == null
+            ? null
+            : _asString(j['discountPreview']),
+        orderTotal: j['orderTotal'] == null ? null : _asString(j['orderTotal']),
+      );
 }
 
 class TableDto {
@@ -272,6 +502,9 @@ class TableDto {
   /// Latest unacked attention-signal id (bootstrap only) — lets the staff app
   /// ack a signal that fired before this device connected.
   final String? attentionSignalId;
+
+  /// The unacked signal reached alert ladder L3 somewhere — highlight it.
+  final bool attentionEscalated;
   final bool ack;
 
   const TableDto({
@@ -288,6 +521,7 @@ class TableDto {
     required this.attention,
     required this.attentionReason,
     this.attentionSignalId,
+    this.attentionEscalated = false,
     required this.ack,
   });
 
@@ -308,6 +542,7 @@ class TableDto {
         attentionSignalId: j['attentionSignalId'] == null
             ? null
             : _asString(j['attentionSignalId']),
+        attentionEscalated: _asBool(j['attentionEscalated']),
         ack: _asBool(j['ack']),
       );
 
@@ -344,12 +579,16 @@ class CurrentUserDto {
   /// Empty when the hub predates capability-aware bootstraps (fall back to
   /// deriving them from [role]).
   final Map<String, dynamic> capabilities;
+
+  /// Employee.is_on_shift — alerts only fire on on-shift devices.
+  final bool isOnShift;
   const CurrentUserDto(
       {required this.id,
       required this.username,
       required this.name,
       this.role = '',
-      this.capabilities = const {}});
+      this.capabilities = const {},
+      this.isOnShift = false});
   factory CurrentUserDto.fromJson(Map<String, dynamic> j) => CurrentUserDto(
         id: _asString(j['id']),
         username: _asString(j['username']),
@@ -358,11 +597,12 @@ class CurrentUserDto {
         capabilities: j['capabilities'] is Map
             ? (j['capabilities'] as Map).cast<String, dynamic>()
             : const {},
+        isOnShift: _asBool(j['isOnShift']),
       );
 }
 
 /// A staff member as the manager sees them in the access panel: identity,
-/// primary role and the four grantable capability flags.
+/// primary role and the grantable capability flags.
 class EmployeeDto {
   final String id;
   final String username;
@@ -374,6 +614,8 @@ class EmployeeDto {
   final bool canBar;
   final bool canKitchen;
   final bool canManageMenu;
+  final bool canContent;
+  final bool canGrantDiscount;
   const EmployeeDto({
     required this.id,
     required this.username,
@@ -385,6 +627,8 @@ class EmployeeDto {
     required this.canBar,
     required this.canKitchen,
     required this.canManageMenu,
+    this.canContent = false,
+    this.canGrantDiscount = false,
   });
   factory EmployeeDto.fromJson(Map<String, dynamic> j) => EmployeeDto(
         id: _asString(j['id']),
@@ -397,6 +641,356 @@ class EmployeeDto {
         canBar: _asBool(j['can_bar']),
         canKitchen: _asBool(j['can_kitchen']),
         canManageMenu: _asBool(j['can_manage_menu']),
+        canContent: _asBool(j['can_content']),
+        canGrantDiscount: _asBool(j['can_grant_discount']),
+      );
+}
+
+/// One post on the venue's guest social feed (GET/POST /api/staff/feed/).
+/// `embedHtml` is hub-generated markup; the app only shows metadata and a
+/// platform preview card — rendering the embed is the guest page's job.
+class SocialPostDto {
+  final int id;
+  final String sourceUrl;
+
+  /// Wire value: instagram | threads | twitter_x | facebook.
+  final String platform;
+  final String domain;
+  final bool isHidden;
+  final bool isPinned;
+  final String createdBy;
+  final String? createdAt;
+
+  const SocialPostDto({
+    required this.id,
+    required this.sourceUrl,
+    required this.platform,
+    required this.domain,
+    required this.isHidden,
+    required this.isPinned,
+    this.createdBy = '',
+    this.createdAt,
+  });
+
+  factory SocialPostDto.fromJson(Map<String, dynamic> j) => SocialPostDto(
+        id: _asInt(j['id']),
+        sourceUrl: _asString(j['source_url']),
+        platform: _asString(j['platform']),
+        domain: _asString(j['domain']),
+        isHidden: _asBool(j['is_hidden']),
+        isPinned: _asBool(j['is_pinned']),
+        createdBy: _asString(j['created_by']),
+        createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
+      );
+}
+
+/// The staff feed list: posts (pinned first) + the configurable pinned limit.
+class StaffFeedDto {
+  final List<SocialPostDto> posts;
+  final int pinnedLimit;
+  const StaffFeedDto({required this.posts, required this.pinnedLimit});
+
+  factory StaffFeedDto.fromJson(Map<String, dynamic> j) => StaffFeedDto(
+        posts: ((j['posts'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => SocialPostDto.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        pinnedLimit: _asInt(j['pinnedLimit'], 3),
+      );
+}
+
+/// One storefront block (cover / facts / badges / cta / popular / about):
+/// its position in this list is the render order on the guest page.
+class StorefrontBlockDto {
+  final String key;
+  final bool visible;
+  const StorefrontBlockDto({required this.key, required this.visible});
+  factory StorefrontBlockDto.fromJson(Map<String, dynamic> j) =>
+      StorefrontBlockDto(
+          key: _asString(j['key']), visible: _asBool(j['visible'], true));
+  Map<String, dynamic> toJson() => {'key': key, 'visible': visible};
+}
+
+/// A built-in theme preset from the hub ("sissi" is always first).
+class ThemePresetDto {
+  final String key;
+  final String name;
+  final String nameIt;
+
+  /// bg / card / ink / mut / line / accent / accent_deep / accent_soft → hex.
+  final Map<String, String> palette;
+  const ThemePresetDto({
+    required this.key,
+    required this.name,
+    required this.nameIt,
+    required this.palette,
+  });
+  factory ThemePresetDto.fromJson(Map<String, dynamic> j) => ThemePresetDto(
+        key: _asString(j['key']),
+        name: _asString(j['name']),
+        nameIt: _asString(j['name_it'], _asString(j['name'])),
+        palette: ((j['palette'] as Map?) ?? const {})
+            .map((k, v) => MapEntry(k.toString(), v.toString())),
+      );
+}
+
+/// The venue storefront settings (GET/PATCH /api/staff/venue/).
+class VenueSettingsDto {
+  final String name;
+  final String tagline;
+  final String taglineIt;
+  final String about;
+  final String aboutIt;
+  final String address;
+  final String addressIt;
+  final String hours;
+  final String hoursIt;
+  final List<Map<String, String>> badges; // [{en, it}]
+  final String mapsUrl;
+  final String logoUrl;
+  final String coverUrl;
+
+  /// bg / card / ink / mut / line / accent / accent_deep / accent_soft → hex.
+  final Map<String, String> palette;
+  final List<StorefrontBlockDto> blocks;
+  final int pinnedPostsLimit;
+
+  const VenueSettingsDto({
+    required this.name,
+    required this.tagline,
+    required this.taglineIt,
+    required this.about,
+    required this.aboutIt,
+    required this.address,
+    required this.addressIt,
+    required this.hours,
+    required this.hoursIt,
+    required this.badges,
+    required this.mapsUrl,
+    required this.logoUrl,
+    required this.coverUrl,
+    required this.palette,
+    required this.blocks,
+    required this.pinnedPostsLimit,
+  });
+
+  static const _paletteWire = {
+    'bg': 'color_bg',
+    'card': 'color_card',
+    'ink': 'color_ink',
+    'mut': 'color_mut',
+    'line': 'color_line',
+    'accent': 'color_accent',
+    'accent_deep': 'color_accent_deep',
+    'accent_soft': 'color_accent_soft',
+  };
+
+  factory VenueSettingsDto.fromJson(Map<String, dynamic> j) =>
+      VenueSettingsDto(
+        name: _asString(j['name']),
+        tagline: _asString(j['tagline']),
+        taglineIt: _asString(j['tagline_it']),
+        about: _asString(j['about']),
+        aboutIt: _asString(j['about_it']),
+        address: _asString(j['address']),
+        addressIt: _asString(j['address_it']),
+        hours: _asString(j['hours']),
+        hoursIt: _asString(j['hours_it']),
+        badges: ((j['badges'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((b) => {
+                  'en': _asString(b['en']),
+                  'it': _asString(b['it']),
+                })
+            .toList(),
+        mapsUrl: _asString(j['maps_url']),
+        logoUrl: _asString(j['logo_url']),
+        coverUrl: _asString(j['cover_url']),
+        palette: _paletteWire.map(
+            (key, wire) => MapEntry(key, _asString(j[wire], '#000000'))),
+        blocks: ((j['storefront_blocks'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => StorefrontBlockDto.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        pinnedPostsLimit: _asInt(j['pinned_posts_limit'], 3),
+      );
+
+  /// Wire name of one palette entry (bg → color_bg).
+  static String paletteWireName(String key) => _paletteWire[key] ?? key;
+}
+
+/// GET /api/staff/venue/ payload: settings + built-in presets.
+class VenuePayloadDto {
+  final VenueSettingsDto venue;
+  final List<ThemePresetDto> presets;
+  const VenuePayloadDto({required this.venue, required this.presets});
+  factory VenuePayloadDto.fromJson(Map<String, dynamic> j) => VenuePayloadDto(
+        venue: VenueSettingsDto.fromJson(
+            ((j['venue'] as Map?) ?? const {}).cast<String, dynamic>()),
+        presets: ((j['presets'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => ThemePresetDto.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+/// A staff task — the same object behind chat bubbles and the planner.
+class StaffTaskDto {
+  final int id;
+  final String title;
+  final String note;
+
+  /// Wire: opening | closing | cleaning | inventory | service | other.
+  final String category;
+  final int? assigneeId;
+  final String assigneeName;
+  final String createdByName;
+  final String? dueAt;
+
+  /// Wire: none | daily | weekly.
+  final String recurrence;
+  final List<int> recurrenceWeekdays;
+
+  /// Wire: open | done | cancelled.
+  final String status;
+  final String doneByName;
+  final String? doneAt;
+
+  /// Wire: chat | planner | bot.
+  final String source;
+
+  /// Non-empty when the task came from a checklist ("opening"/"closing").
+  final String checklistKey;
+
+  const StaffTaskDto({
+    required this.id,
+    required this.title,
+    required this.note,
+    required this.category,
+    required this.assigneeId,
+    required this.assigneeName,
+    required this.createdByName,
+    required this.dueAt,
+    required this.recurrence,
+    required this.recurrenceWeekdays,
+    required this.status,
+    required this.doneByName,
+    required this.doneAt,
+    required this.source,
+    required this.checklistKey,
+  });
+
+  bool get isDone => status == 'done';
+  bool get isOpen => status == 'open';
+
+  factory StaffTaskDto.fromJson(Map<String, dynamic> j) => StaffTaskDto(
+        id: _asInt(j['id']),
+        title: _asString(j['title']),
+        note: _asString(j['note']),
+        category: _asString(j['category'], 'other'),
+        assigneeId: j['assignee'] == null ? null : _asInt(j['assignee']),
+        assigneeName: _asString(j['assignee_name']),
+        createdByName: _asString(j['created_by_name']),
+        dueAt: j['due_at'] == null ? null : _asString(j['due_at']),
+        recurrence: _asString(j['recurrence'], 'none'),
+        recurrenceWeekdays: ((j['recurrence_weekdays'] as List?) ?? const [])
+            .map((e) => _asInt(e))
+            .toList(),
+        status: _asString(j['status'], 'open'),
+        doneByName: _asString(j['done_by_name']),
+        doneAt: j['done_at'] == null ? null : _asString(j['done_at']),
+        source: _asString(j['source'], 'chat'),
+        checklistKey: _asString(j['checklist_key']),
+      );
+}
+
+/// The quoted preview shown on a threaded reply.
+class ChatReplyPreviewDto {
+  final int id;
+  final String authorName;
+  final String kind;
+  final String body;
+  const ChatReplyPreviewDto({
+    required this.id,
+    required this.authorName,
+    required this.kind,
+    required this.body,
+  });
+  factory ChatReplyPreviewDto.fromJson(Map<String, dynamic> j) =>
+      ChatReplyPreviewDto(
+        id: _asInt(j['id']),
+        authorName: _asString(j['author_name'], 'CafeBot'),
+        kind: _asString(j['kind'], 'text'),
+        body: _asString(j['body']),
+      );
+}
+
+/// One persistent chat message. `task` is the LIVE task for task bubbles.
+class ChatMessageDto {
+  final int id;
+
+  /// Wire: general | kitchen | bar.
+  final String channel;
+
+  /// Wire: text | task | checklist | system.
+  final String kind;
+  final String body;
+  final int? authorId;
+  final String authorName; // 'CafeBot' for bot/system posts
+  final StaffTaskDto? task;
+  final int? replyTo;
+  final ChatReplyPreviewDto? replyPreview;
+  final int replyCount;
+  final String? createdAt;
+
+  const ChatMessageDto({
+    required this.id,
+    required this.channel,
+    required this.kind,
+    required this.body,
+    required this.authorId,
+    required this.authorName,
+    required this.task,
+    required this.replyTo,
+    required this.replyPreview,
+    required this.replyCount,
+    required this.createdAt,
+  });
+
+  bool get isBot => authorId == null;
+
+  factory ChatMessageDto.fromJson(Map<String, dynamic> j) => ChatMessageDto(
+        id: _asInt(j['id']),
+        channel: _asString(j['channel'], 'general'),
+        kind: _asString(j['kind'], 'text'),
+        body: _asString(j['body']),
+        authorId: j['author'] == null ? null : _asInt(j['author']),
+        authorName: _asString(j['author_name'], 'CafeBot'),
+        task: j['task'] is Map
+            ? StaffTaskDto.fromJson((j['task'] as Map).cast<String, dynamic>())
+            : null,
+        replyTo: j['reply_to'] == null ? null : _asInt(j['reply_to']),
+        replyPreview: j['reply_preview'] is Map
+            ? ChatReplyPreviewDto.fromJson(
+                (j['reply_preview'] as Map).cast<String, dynamic>())
+            : null,
+        replyCount: _asInt(j['reply_count']),
+        createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
+      );
+
+  /// A copy with an updated live task (task.updated realtime events).
+  ChatMessageDto withTask(StaffTaskDto updated) => ChatMessageDto(
+        id: id,
+        channel: channel,
+        kind: kind,
+        body: body,
+        authorId: authorId,
+        authorName: authorName,
+        task: updated,
+        replyTo: replyTo,
+        replyPreview: replyPreview,
+        replyCount: replyCount,
+        createdAt: createdAt,
       );
 }
 
@@ -429,6 +1023,11 @@ class BootstrapDto {
   final List<CategoryDto> categories;
   final Map<String, dynamic> preferences;
 
+  /// Web Push feature flag + the applicationServerKey for
+  /// pushManager.subscribe(). Disabled when no VAPID keys are in the env.
+  final bool pushEnabled;
+  final String pushPublicKey;
+
   const BootstrapDto({
     required this.currentUser,
     required this.tables,
@@ -437,6 +1036,8 @@ class BootstrapDto {
     required this.history,
     required this.preferences,
     this.categories = const [],
+    this.pushEnabled = false,
+    this.pushPublicKey = '',
   });
 
   factory BootstrapDto.fromJson(Map<String, dynamic> j) => BootstrapDto(
@@ -466,6 +1067,9 @@ class BootstrapDto {
             .toList(),
         preferences:
             (j['preferences'] as Map?)?.cast<String, dynamic>() ?? const {},
+        pushEnabled: _asBool(((j['push'] as Map?) ?? const {})['enabled']),
+        pushPublicKey:
+            _asString(((j['push'] as Map?) ?? const {})['publicKey']),
       );
 }
 
