@@ -79,12 +79,22 @@ class _PlannerScreenState extends State<PlannerScreen> {
   }
 
   Future<void> _toggleDone(StaffTaskDto task) async {
-    final error =
-        await context.read<CafeState>().setTaskDone(task, !task.isDone);
+    final state = context.read<CafeState>();
+    final completing = !task.isDone;
+    final error = await state.setTaskDone(task, completing);
     if (error != null && mounted) {
       _snack(error);
     } else {
       _load(); // buckets change (open -> done)
+      if (completing && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(L.t('Task completed', 'Attività completata')),
+          action: SnackBarAction(
+            label: L.t('Undo', 'Annulla'),
+            onPressed: () => state.setTaskDone(task, false),
+          ),
+        ));
+      }
     }
   }
 
@@ -117,7 +127,7 @@ class _PlannerScreenState extends State<PlannerScreen> {
       // "My tasks": mine or up-for-grabs, on the same route.
       tasks = tasks
           .where((t) =>
-              t.assigneeName.isEmpty || t.assigneeName == state.activeUserName)
+              t.assigneeId == null || t.assigneeId == state.activeEmployeeId)
           .toList();
     }
 
@@ -128,6 +138,7 @@ class _PlannerScreenState extends State<PlannerScreen> {
             t.isOpen && _isToday && dueOf(t) != null && dueOf(t)!.isBefore(now))
         .toList();
     final done = tasks.where((t) => t.isDone).toList();
+    final cancelled = tasks.where((t) => t.status == 'cancelled').toList();
     final open = tasks.where((t) => t.isOpen && !overdue.contains(t)).toList();
 
     // Checklist progress bars (Opening 3/7) from the checklist provenance.
@@ -287,6 +298,17 @@ class _PlannerScreenState extends State<PlannerScreen> {
                           onToggle: () => _toggleDone(task),
                           onOpen: () => _openThread(task)),
                 ],
+                if (manage && cancelled.isNotEmpty) ...[
+                  SectionTitle(
+                    '${L.t('Cancelled', 'Annullate')} (${cancelled.length})',
+                  ),
+                  for (final task in cancelled)
+                    _PlannerRow(
+                      task: task,
+                      onToggle: () {},
+                      onOpen: () => _openThread(task),
+                    ),
+                ],
                 const SizedBox(height: 30),
               ],
             ),
@@ -349,26 +371,124 @@ class _PlannerRow extends StatelessWidget {
       }
     }
 
+    Future<void> leave() async {
+      final error = await state.leaveTask(task);
+      if (!context.mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppTheme.danger),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            L.t('Task returned to the team', 'Attività restituita al team')),
+        action: SnackBarAction(
+          label: L.t('Undo', 'Annulla'),
+          onPressed: () => state.takeTask(task),
+        ),
+      ));
+    }
+
+    Future<void> reassign() async {
+      await state.refreshStaffAccounts();
+      if (!context.mounted) return;
+      final choice = await showModalBottomSheet<Object>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title:
+                    Text(L.t('Available to everyone', 'Disponibile a tutti')),
+                onTap: () => Navigator.pop(sheetContext, 'available'),
+              ),
+              for (final person in state.staffAccounts)
+                ListTile(
+                  title: Text(person.name),
+                  subtitle: Text(person.role),
+                  onTap: () => Navigator.pop(sheetContext, person),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (!context.mounted || choice == null) return;
+      await run(() => state.updateTask(task, {
+            'assignee': choice is EmployeeDto ? choice.id : null,
+          }));
+    }
+
+    Future<void> setDueTime() async {
+      final initial = due?.toLocal() ?? DateTime.now();
+      final date = await showDatePicker(
+        context: context,
+        initialDate: initial,
+        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+        lastDate: DateTime.now().add(const Duration(days: 730)),
+      );
+      if (!context.mounted || date == null) return;
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(initial),
+      );
+      if (!context.mounted || time == null) return;
+      final value =
+          DateTime(date.year, date.month, date.day, time.hour, time.minute)
+              .toUtc()
+              .toIso8601String();
+      await run(() => state.updateTask(task, {'due_at': value}));
+    }
+
+    Future<void> cancel() async {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(L.t('Cancel task?', 'Annullare l\'attività?')),
+          content: Text(task.title),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(L.t('Keep', 'Mantieni')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(L.cancel),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) await run(() => state.cancelTask(task));
+    }
+
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       onTap: onOpen, // the task's chat thread — the whole story in one place
       child: Row(children: [
-        GestureDetector(
-          onTap: (mine || task.isDone) ? onToggle : null,
-          child: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: task.isDone ? AppColors.ok : AppTheme.bg,
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                  color: task.isDone ? AppColors.ok : AppTheme.separator,
-                  width: 1.5),
+        Semantics(
+          button: true,
+          label: task.isDone
+              ? L.t('Reopen task', 'Riapri attività')
+              : L.completeTask,
+          child: InkWell(
+            onTap: (mine || state.capManage || task.isDone) ? onToggle : null,
+            borderRadius: BorderRadius.circular(9),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: task.isDone ? AppColors.ok : AppTheme.bg,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                    color: task.isDone ? AppColors.ok : AppTheme.separator,
+                    width: 1.5),
+              ),
+              child: task.isDone
+                  ? const Icon(Icons.check, size: 18, color: Colors.white)
+                  : Icon(mine ? Icons.circle_outlined : Icons.lock_outline,
+                      size: 17, color: AppTheme.ink3),
             ),
-            child: task.isDone
-                ? const Icon(Icons.check, size: 18, color: Colors.white)
-                : Icon(mine ? Icons.circle_outlined : Icons.lock_outline,
-                    size: 17, color: AppTheme.ink3),
           ),
         ),
         const SizedBox(width: 11),
@@ -398,7 +518,26 @@ class _PlannerRow extends StatelessWidget {
             ),
           ]),
         ),
-        if (task.isAvailable)
+        if (state.capManage && !task.isDone && task.status != 'cancelled')
+          PopupMenuButton<String>(
+            tooltip: L.t('Task actions', 'Azioni attività'),
+            onSelected: (value) {
+              if (value == 'reassign') reassign();
+              if (value == 'due') setDueTime();
+              if (value == 'thread') onOpen();
+              if (value == 'cancel') cancel();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                  value: 'reassign', child: Text(L.t('Reassign', 'Riassegna'))),
+              PopupMenuItem(
+                  value: 'due',
+                  child: Text(L.t('Set due time', 'Imposta scadenza'))),
+              PopupMenuItem(value: 'thread', child: Text(L.openThread)),
+              PopupMenuItem(value: 'cancel', child: Text(L.cancel)),
+            ],
+          )
+        else if (task.isAvailable)
           SizedBox(
             height: 44,
             child: FilledButton(
@@ -407,12 +546,12 @@ class _PlannerRow extends StatelessWidget {
             ),
           )
         else if (mine && !task.isDone)
-          SizedBox(
-            height: 44,
-            child: TextButton(
-              onPressed: () => run(() => state.leaveTask(task)),
-              child: Text(L.leaveTask),
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(onPressed: onToggle, child: Text(L.completeTask)),
+              TextButton(onPressed: leave, child: Text(L.leaveTask)),
+            ],
           )
         else
           Container(

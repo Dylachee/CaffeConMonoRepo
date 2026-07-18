@@ -386,6 +386,7 @@ class StaffBootstrapView(APIView):
 
     def get(self, request):
         restaurant = restaurant_for_request(request)
+        capabilities = capabilities_for_request(request)
         preferences, _ = StaffPreference.objects.get_or_create(
             user=request.user, restaurant=restaurant
         )
@@ -394,7 +395,7 @@ class StaffBootstrapView(APIView):
             .select_related("table", "coupon", "employee")
             .prefetch_related("items", "items__menu_item")
             .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
-            .order_by("-created_at")[:100]
+            .order_by("-created_at")
         )
         # Recently-archived orders (a freed table's paid visits) so the app's
         # per-table history survives a reload/resync. The app caps it per table.
@@ -422,6 +423,27 @@ class StaffBootstrapView(APIView):
             ),
         )
         employee = employee_for_request(request)
+        stations = [
+            station for station in ("kitchen", "bar") if capabilities[station]
+        ]
+        if capabilities["wait"]:
+            order_payload = [
+                serialize_for_flutter_order(order) for order in orders[:100]
+            ]
+        elif stations:
+            order_payload = []
+            station_orders = orders.filter(
+                items__station__in=stations
+            ).distinct()[:100]
+            for order in station_orders:
+                payload = serialize_for_flutter_order(order)
+                payload["items"] = [
+                    item for item in payload["items"] if item["station"] in stations
+                ]
+                order_payload.append(payload)
+        else:
+            order_payload = []
+        can_read_catalog = capabilities["wait"] or capabilities["menu"]
         restaurants = Restaurant.objects.filter(is_active=True)
         if not request.user.is_superuser:
             restaurants = restaurants.filter(memberships__user=request.user).distinct()
@@ -445,7 +467,7 @@ class StaffBootstrapView(APIView):
                     "username": request.user.username,
                     "name": employee.name if employee else request.user.get_full_name(),
                     "role": role_for_request(request),
-                    "capabilities": capabilities_for_request(request),
+                    "capabilities": capabilities,
                     "isOnShift": employee.is_on_shift if employee else False,
                     # Kept as empty compatibility fields for older staff builds.
                     "shiftAreas": [],
@@ -457,17 +479,29 @@ class StaffBootstrapView(APIView):
                     "enabled": web_push.push_configured(),
                     "publicKey": web_push.vapid_public_key(),
                 },
-                "tables": [serialize_for_flutter_table(table) for table in tables_qs],
+                "tables": (
+                    [serialize_for_flutter_table(table) for table in tables_qs]
+                    if capabilities["wait"]
+                    else []
+                ),
                 "menu": [
                     serialize_for_flutter_menu(item)
                     for item in MenuItem.objects.filter(restaurant=restaurant)
                     if "archived" not in (item.tags or [])
-                ],
-                "categories": MenuCategorySerializer(
-                    MenuCategory.objects.filter(restaurant=restaurant), many=True
-                ).data,
-                "orders": [serialize_for_flutter_order(order) for order in orders],
-                "history": [serialize_for_flutter_order(order) for order in history],
+                ] if can_read_catalog else [],
+                "categories": (
+                    MenuCategorySerializer(
+                        MenuCategory.objects.filter(restaurant=restaurant), many=True
+                    ).data
+                    if can_read_catalog
+                    else []
+                ),
+                "orders": order_payload,
+                "history": (
+                    [serialize_for_flutter_order(order) for order in history]
+                    if capabilities["wait"] or capabilities["reports"]
+                    else []
+                ),
                 "preferences": StaffPreferenceSerializer(preferences).data,
                 "websocketPath": f"/ws/restaurants/{restaurant.slug}/staff/?token=<token>",
             }

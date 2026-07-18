@@ -955,6 +955,34 @@ class StaffTaskDto {
   bool get isInProgress =>
       status == 'in_progress' || (status == 'open' && assigneeId != null);
 
+  StaffTaskDto copyWith({
+    int? assigneeId,
+    bool clearAssignee = false,
+    String? assigneeName,
+    String? dueAt,
+    String? status,
+    String? doneByName,
+    String? doneAt,
+    bool clearDone = false,
+  }) =>
+      StaffTaskDto(
+        id: id,
+        title: title,
+        note: note,
+        category: category,
+        assigneeId: clearAssignee ? null : (assigneeId ?? this.assigneeId),
+        assigneeName: clearAssignee ? '' : (assigneeName ?? this.assigneeName),
+        createdByName: createdByName,
+        dueAt: dueAt ?? this.dueAt,
+        recurrence: recurrence,
+        recurrenceWeekdays: recurrenceWeekdays,
+        status: status ?? this.status,
+        doneByName: clearDone ? '' : (doneByName ?? this.doneByName),
+        doneAt: clearDone ? null : (doneAt ?? this.doneAt),
+        source: source,
+        checklistKey: checklistKey,
+      );
+
   factory StaffTaskDto.fromJson(Map<String, dynamic> j) => StaffTaskDto(
         id: _asInt(j['id']),
         title: _asString(j['title']),

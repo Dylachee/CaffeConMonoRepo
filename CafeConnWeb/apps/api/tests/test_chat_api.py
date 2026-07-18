@@ -255,6 +255,25 @@ class TasksApiTests(TestCase):
         titles = {task["title"] for task in self.client_w.get("/api/staff/tasks/").json()["tasks"]}
         self.assertEqual(titles, {"available", "my done"})
 
+    def test_manager_reassignment_is_audited_and_cancelled_is_in_history(self):
+        from apps.core.models import TaskEvent
+
+        _, other = make_client("reassigned")
+        task = StaffTask.objects.create(
+            title="move me", assignee=self.waiter, status="in_progress"
+        )
+        response = self.client_m.patch(
+            f"/api/staff/tasks/{task.pk}/", {"assignee": other.pk}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        event = TaskEvent.objects.get(task=task, action=TaskEvent.Action.REASSIGNED)
+        self.assertIn("tstch-tw", event.detail)
+        self.assertIn("tstch-reassigned", event.detail)
+
+        self.client_m.delete(f"/api/staff/tasks/{task.pk}/")
+        payload = self.client_m.get("/api/staff/tasks/").json()
+        self.assertIn(task.pk, {item["id"] for item in payload["cancelled"]})
+
     def test_overdue_nudge_flow_reply_lands_in_thread(self):
         # The full B2 story: task bubble -> bot nudge as reply -> assignee answers.
         import datetime

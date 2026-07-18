@@ -22,7 +22,7 @@ class GuestThemeRenderingTests(TestCase):
         cache.clear()
 
     def test_default_root_matches_original_sissi_palette(self):
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         for css in (
             "--bg:#f2efe8",
             "--card:#ffffff",
@@ -40,7 +40,7 @@ class GuestThemeRenderingTests(TestCase):
         """The derived surface/text tokens must reproduce the historical CSS
         values byte-for-byte for the default palette — this is what keeps the
         zero-config page pixel-identical after the theming refactor."""
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         for css in (
             "--ink-a62:rgba(30,27,22,0.62)",
             "--accent-a45:rgba(200,130,30,0.45)",
@@ -65,7 +65,7 @@ class GuestThemeRenderingTests(TestCase):
         settings.color_bg = "#16151a"
         settings.color_card = "#211f27"
         settings.save()
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertIn("--ink-a62:rgba(242,238,233,0.62)", html)
         # Neutral surfaces switch from the Sissi literals to card/bg blends.
         self.assertNotIn("--surface-hi:#fffdfa", html)
@@ -75,7 +75,7 @@ class GuestThemeRenderingTests(TestCase):
         settings.color_accent = "#2f6f96"
         settings.color_bg = "#eef2f4"
         settings.save()
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertIn("--accent:#2f6f96", html)
         self.assertIn("--bg:#eef2f4", html)
         self.assertIn('content="#eef2f4"', html)
@@ -85,7 +85,7 @@ class GuestThemeRenderingTests(TestCase):
         settings.name = "Trattoria Prova"
         settings.tagline = "A test tagline"
         settings.save()
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertIn("Trattoria Prova", html)
         self.assertIn("A test tagline", html)
 
@@ -95,7 +95,7 @@ class GuestThemeRenderingTests(TestCase):
             {"key": "about", "visible": False},
         ]
         settings.save()
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertNotIn('data-i18n="about"', html)
         # Other blocks are backfilled visible.
         self.assertIn('data-i18n="daily_special"', html)
@@ -103,7 +103,7 @@ class GuestThemeRenderingTests(TestCase):
     def test_initial_render_loads_zero_social_scripts(self):
         make_post(1)
         make_post(2, pinned=True)
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         for script_url in EMBED_SCRIPTS.values():
             self.assertNotIn(script_url, html)
         # No embed markup inlined either — the Feed tab fetches it lazily.
@@ -111,7 +111,7 @@ class GuestThemeRenderingTests(TestCase):
         self.assertNotIn("platform.twitter.com", html)
 
     def test_feed_tab_and_screen_present(self):
-        html = self.client.get("/menu/").content.decode()
+        html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertIn('data-testid="nav-feed"', html)
         self.assertIn('data-screen="feed"', html)
         self.assertIn('data-testid="feed-list"', html)
@@ -124,7 +124,7 @@ class GuestFeedEndpointTests(TestCase):
     def test_pinned_first_then_chronological(self):
         posts = [make_post(i) for i in range(1, 5)]
         pinned = make_post(99, pinned=True)
-        payload = self.client.get("/menu/feed/").json()
+        payload = self.client.get("/r/sissy-bar/feed/").json()
         self.assertTrue(payload["ok"])
         self.assertEqual([p["id"] for p in payload["pinned"]], [pinned.pk])
         self.assertEqual(
@@ -136,18 +136,18 @@ class GuestFeedEndpointTests(TestCase):
     def test_hidden_posts_never_reach_guests(self):
         make_post(1, hidden=True)
         visible = make_post(2)
-        payload = self.client.get("/menu/feed/").json()
+        payload = self.client.get("/r/sissy-bar/feed/").json()
         self.assertEqual([p["id"] for p in payload["posts"]], [visible.pk])
         self.assertEqual(payload["pinned"], [])
 
     def test_cursor_pagination(self):
         posts = [make_post(i) for i in range(1, 9)]
-        first = self.client.get("/menu/feed/?limit=3").json()
+        first = self.client.get("/r/sissy-bar/feed/?limit=3").json()
         self.assertEqual(len(first["posts"]), 3)
         self.assertTrue(first["hasMore"])
         self.assertEqual(first["nextCursor"], first["posts"][-1]["id"])
 
-        second = self.client.get(f"/menu/feed/?limit=3&cursor={first['nextCursor']}").json()
+        second = self.client.get(f"/r/sissy-bar/feed/?limit=3&cursor={first['nextCursor']}").json()
         self.assertEqual(len(second["posts"]), 3)
         # No overlap, strictly descending ids across pages.
         first_ids = {p["id"] for p in first["posts"]}
@@ -156,7 +156,7 @@ class GuestFeedEndpointTests(TestCase):
         # Pinned posts ride along only on the first page.
         self.assertEqual(second["pinned"], [])
 
-        third = self.client.get(f"/menu/feed/?limit=3&cursor={second['nextCursor']}").json()
+        third = self.client.get(f"/r/sissy-bar/feed/?limit=3&cursor={second['nextCursor']}").json()
         self.assertEqual(len(third["posts"]), 2)
         self.assertFalse(third["hasMore"])
         self.assertIsNone(third["nextCursor"])
@@ -165,6 +165,6 @@ class GuestFeedEndpointTests(TestCase):
 
     def test_junk_cursor_and_limit_are_harmless(self):
         make_post(1)
-        response = self.client.get("/menu/feed/?cursor=abc&limit=junk")
+        response = self.client.get("/r/sissy-bar/feed/?cursor=abc&limit=junk")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["posts"]), 1)

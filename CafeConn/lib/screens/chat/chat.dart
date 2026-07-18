@@ -730,10 +730,19 @@ class TaskBubbleCard extends StatelessWidget {
     final mine = task.assigneeId == state.activeEmployeeId;
 
     Future<void> toggle() async {
-      final error = await state.setTaskDone(task, !task.isDone);
+      final completing = !task.isDone;
+      final error = await state.setTaskDone(task, completing);
       if (error != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+      } else if (completing && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(L.t('Task completed', 'Attività completata')),
+          action: SnackBarAction(
+            label: L.t('Undo', 'Annulla'),
+            onPressed: () => state.setTaskDone(task, false),
+          ),
+        ));
       }
     }
 
@@ -743,6 +752,25 @@ class TaskBubbleCard extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
       }
+    }
+
+    Future<void> leave() async {
+      final error = await state.leaveTask(task);
+      if (!context.mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppTheme.danger),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            L.t('Task returned to the team', 'Attività restituita al team')),
+        action: SnackBarAction(
+          label: L.t('Undo', 'Annulla'),
+          onPressed: () => state.takeTask(task),
+        ),
+      ));
     }
 
     return Container(
@@ -756,25 +784,32 @@ class TaskBubbleCard extends StatelessWidget {
         boxShadow: const [AppTheme.shadowCard],
       ),
       child: Row(children: [
-        GestureDetector(
-          onTap: (mine || task.isDone) ? toggle : null,
-          child: Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: task.isDone ? AppColors.ok : AppTheme.bg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: task.isDone ? AppColors.ok : AppTheme.separator,
-                  width: 1.5),
+        Semantics(
+          button: true,
+          label: task.isDone
+              ? L.t('Reopen task', 'Riapri attività')
+              : L.completeTask,
+          child: InkWell(
+            onTap: (mine || task.isDone) ? toggle : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: task.isDone ? AppColors.ok : AppTheme.bg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: task.isDone ? AppColors.ok : AppTheme.separator,
+                    width: 1.5),
+              ),
+              child: task.isDone
+                  ? const Icon(Icons.check, size: 20, color: Colors.white)
+                  : mine
+                      ? const Icon(Icons.circle_outlined,
+                          size: 18, color: AppTheme.ink2)
+                      : const Icon(Icons.lock_outline,
+                          size: 17, color: AppTheme.ink3),
             ),
-            child: task.isDone
-                ? const Icon(Icons.check, size: 20, color: Colors.white)
-                : mine
-                    ? const Icon(Icons.circle_outlined,
-                        size: 18, color: AppTheme.ink2)
-                    : const Icon(Icons.lock_outline,
-                        size: 17, color: AppTheme.ink3),
           ),
         ),
         const SizedBox(width: 11),
@@ -839,9 +874,12 @@ class TaskBubbleCard extends StatelessWidget {
           ),
         ] else if (mine && task.isInProgress) ...[
           const SizedBox(width: 4),
-          TextButton(
-            onPressed: () => run(() => state.leaveTask(task)),
-            child: Text(L.leaveTask),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(onPressed: toggle, child: Text(L.completeTask)),
+              TextButton(onPressed: leave, child: Text(L.leaveTask)),
+            ],
           ),
         ],
       ]),

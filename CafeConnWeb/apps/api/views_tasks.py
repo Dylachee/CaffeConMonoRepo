@@ -98,6 +98,12 @@ class StaffTasksView(APIView):
             done_at__gte=day_start,
             done_at__lt=day_end,
         )
+        if _caps(request)["manage"]:
+            tasks = tasks | instances.filter(
+                status=StaffTask.Status.CANCELLED,
+                updated_at__gte=day_start,
+                updated_at__lt=day_end,
+            )
         payload = StaffTaskSerializer(
             tasks.distinct().order_by("due_at", "id"), many=True
         ).data
@@ -117,6 +123,10 @@ class StaffTasksView(APIView):
                 "mine": [item for item in payload if employee and item.get("assignee") == employee.pk],
                 "available": [item for item in payload if not item.get("assignee")],
                 "done": [item for item in payload if item.get("status") == StaffTask.Status.DONE],
+                "cancelled": [
+                    item for item in payload
+                    if item.get("status") == StaffTask.Status.CANCELLED
+                ],
                 "rules": rules,
             }
         )
@@ -230,6 +240,7 @@ class StaffTaskDetailView(APIView):
             )
         restaurant = restaurant_for_request(request)
         task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
+        previous_assignee = task.assignee
         serializer = StaffTaskSerializer(
             task,
             data=request.data,
@@ -238,6 +249,17 @@ class StaffTaskDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         task = serializer.save()
+        if task.assignee_id != (previous_assignee.pk if previous_assignee else None):
+            TaskEvent.objects.create(
+                restaurant=restaurant,
+                task=task,
+                actor=_employee_or_none(request),
+                action=TaskEvent.Action.REASSIGNED,
+                detail=(
+                    f"{previous_assignee.name if previous_assignee else 'Available'} → "
+                    f"{task.assignee.name if task.assignee else 'Available'}"
+                ),
+            )
         from apps.api.events import broadcast_task_event
 
         broadcast_task_event("updated", task)

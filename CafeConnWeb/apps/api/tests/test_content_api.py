@@ -239,7 +239,8 @@ class VenueApiTests(TestCase):
         token = response.json()["token"]
         self.assertTrue(token)
 
-        page = self.client_smm.get(f"/menu/?preview={token}")
+        self.assertEqual(response.json()["url"], f"/r/sissy-bar/?preview={token}")
+        page = self.client_smm.get(response.json()["url"])
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "--bg:#101014")
         # A draft never touches the saved settings.

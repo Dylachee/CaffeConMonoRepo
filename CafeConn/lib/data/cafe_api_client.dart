@@ -535,6 +535,21 @@ class CafeApiClient {
         .cast<String, dynamic>());
   }
 
+  Future<StaffTaskDto> updateTask(
+      int taskId, Map<String, dynamic> fields) async {
+    final res = await _send(() => _http.patch(ApiConfig.staffTask(taskId),
+        headers: _headers(), body: jsonEncode(fields)));
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
+  }
+
+  Future<StaffTaskDto> cancelTask(int taskId) async {
+    final res = await _send(
+        () => _http.delete(ApiConfig.staffTask(taskId), headers: _headers()));
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
+  }
+
   /// The task's chat thread (bubble + replies) for the planner deep-link.
   Future<({ChatMessageDto? message, List<ChatMessageDto> replies})> taskThread(
       int taskId) async {

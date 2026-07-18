@@ -2656,32 +2656,72 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// The big Done checkbox — everywhere (bubble, planner). Errors verbatim.
   Future<String?> setTaskDone(StaffTaskDto task, bool done) async {
     if (!backendConnected) return L.connectToManage;
+    _applyTaskUpdate(task.copyWith(
+      status: done ? 'done' : 'in_progress',
+      doneByName: done ? activeUserName : null,
+      doneAt: done ? DateTime.now().toUtc().toIso8601String() : null,
+      clearDone: !done,
+    ));
     try {
       final updated = await _remoteApi.setTaskDone(task.id, done: done);
       _applyTaskUpdate(updated);
       return null;
     } on ApiException catch (e) {
+      _applyTaskUpdate(task);
       return e.message;
     }
   }
 
   Future<String?> takeTask(StaffTaskDto task) async {
     if (!backendConnected) return L.connectToManage;
+    _applyTaskUpdate(task.copyWith(
+      assigneeId: activeEmployeeId,
+      assigneeName: activeUserName,
+      status: 'in_progress',
+    ));
     try {
       _applyTaskUpdate(await _remoteApi.takeTask(task.id));
       return null;
     } on ApiException catch (e) {
+      _applyTaskUpdate(task);
       return e.message;
     }
   }
 
   Future<String?> leaveTask(StaffTaskDto task, {String note = ''}) async {
     if (!backendConnected) return L.connectToManage;
+    _applyTaskUpdate(task.copyWith(
+      clearAssignee: true,
+      status: 'available',
+      clearDone: true,
+    ));
     try {
       _applyTaskUpdate(await _remoteApi.leaveTask(task.id, note: note));
       return null;
     } on ApiException catch (e) {
+      _applyTaskUpdate(task);
       return e.message;
+    }
+  }
+
+  Future<String?> updateTask(
+      StaffTaskDto task, Map<String, dynamic> fields) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      _applyTaskUpdate(await _remoteApi.updateTask(task.id, fields));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<String?> cancelTask(StaffTaskDto task) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      _applyTaskUpdate(await _remoteApi.cancelTask(task.id));
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
     }
   }
 

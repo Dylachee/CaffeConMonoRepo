@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
@@ -68,11 +67,7 @@ class _CouponsScreenState extends State<CouponsScreen>
                       icon: const Icon(Icons.arrow_back_rounded),
                     )
                   : null,
-              actions: [
-                IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () => GoRouter.of(context).push('/settings')),
-              ]),
+              actions: const []),
           SizedBox(
             height: 38,
             child: TabBar(
