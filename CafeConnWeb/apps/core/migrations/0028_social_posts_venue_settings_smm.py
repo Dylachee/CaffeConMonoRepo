@@ -10,7 +10,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0025_normalize_sissi_menu'),
+        ('core', '0027_normalize_sissi_menu'),
     ]
 
     operations = [

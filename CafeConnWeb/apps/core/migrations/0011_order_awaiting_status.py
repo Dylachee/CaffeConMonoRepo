@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [
-        ("core", "0008_seed_waiter_accounts"),
+        ("core", "0010_seed_waiter_accounts"),
     ]
 
     operations = [

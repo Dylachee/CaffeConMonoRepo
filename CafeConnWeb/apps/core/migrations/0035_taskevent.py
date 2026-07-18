@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0032_restaurant_employee_can_manage_employee_can_reports_and_more'),
+        ('core', '0034_restaurant_employee_can_manage_employee_can_reports_and_more'),
     ]
 
     operations = [

@@ -40,7 +40,7 @@ def remove_waiters(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0007_seed_daily_menu_20260705"),
+        ("core", "0009_sync_printed_sissi_menu"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

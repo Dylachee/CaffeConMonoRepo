@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0020_printed_menu_categories"),
+        ("core", "0022_printed_menu_categories"),
     ]
 
     operations = [

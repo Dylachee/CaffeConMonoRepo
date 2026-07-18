@@ -35,7 +35,7 @@ def noop(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0018_reload_sissi_menu"),
+        ("core", "0020_reload_sissi_menu"),
     ]
 
     operations = [

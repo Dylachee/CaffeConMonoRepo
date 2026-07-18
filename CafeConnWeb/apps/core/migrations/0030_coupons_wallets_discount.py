@@ -10,7 +10,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0027_seed_venue_settings'),
+        ('core', '0029_seed_venue_settings'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

@@ -65,7 +65,7 @@ def unseed(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0022_seed_popular_tags"),
+        ("core", "0024_seed_popular_tags"),
     ]
 
     operations = [

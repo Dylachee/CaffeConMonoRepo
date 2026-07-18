@@ -73,7 +73,7 @@ def unseed(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0030_chat_tasks_checklists"),
+        ("core", "0032_chat_tasks_checklists"),
     ]
 
     operations = [

@@ -52,7 +52,7 @@ def noop(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0011_reset_sissi_menu"),
+        ("core", "0013_reset_sissi_menu"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

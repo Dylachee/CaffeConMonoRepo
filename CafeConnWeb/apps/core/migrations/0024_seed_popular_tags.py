@@ -64,7 +64,7 @@ def unseed_popular(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0021_order_accepted_at"),
+        ("core", "0023_order_accepted_at"),
     ]
 
     operations = [

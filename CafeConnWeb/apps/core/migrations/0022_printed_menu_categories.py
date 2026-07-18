@@ -48,7 +48,7 @@ def noop(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0019_raw_staff_menu_client_tags"),
+        ("core", "0021_raw_staff_menu_client_tags"),
     ]
 
     operations = [

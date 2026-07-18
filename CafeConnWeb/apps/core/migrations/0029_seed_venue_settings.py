@@ -67,7 +67,7 @@ def unseed_venue_settings(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0026_social_posts_venue_settings_smm"),
+        ("core", "0028_social_posts_venue_settings_smm"),
     ]
 
     operations = [

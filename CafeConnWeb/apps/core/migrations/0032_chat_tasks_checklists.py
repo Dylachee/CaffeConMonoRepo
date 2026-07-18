@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0029_alerts_push_escalation'),
+        ('core', '0031_alerts_push_escalation'),
     ]
 
     operations = [

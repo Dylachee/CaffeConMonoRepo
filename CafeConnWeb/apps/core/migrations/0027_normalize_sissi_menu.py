@@ -113,7 +113,7 @@ def noop(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0024_menu_categories"),
+        ("core", "0026_menu_categories"),
     ]
 
     operations = [

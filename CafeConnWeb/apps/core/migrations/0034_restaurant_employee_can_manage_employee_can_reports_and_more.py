@@ -35,7 +35,7 @@ def reverse_normalize_tasks(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0031_seed_checklists'),
+        ('core', '0033_seed_checklists'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

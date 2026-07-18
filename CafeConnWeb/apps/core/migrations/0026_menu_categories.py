@@ -117,7 +117,7 @@ def reverse_backfill(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0023_menu_families"),
+        ("core", "0025_menu_families"),
     ]
 
     operations = [

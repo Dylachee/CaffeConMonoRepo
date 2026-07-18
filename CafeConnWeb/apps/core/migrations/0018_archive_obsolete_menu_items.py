@@ -13,7 +13,7 @@ def archive_obsolete_menu_items(apps, schema_editor):
     guest/staff menu screens should not list them as stop-list items.
     """
     MenuItem = apps.get_model("core", "MenuItem")
-    reset_menu = import_module("apps.core.migrations.0011_reset_sissi_menu")
+    reset_menu = import_module("apps.core.migrations.0013_reset_sissi_menu")
     obsolete = {
         (name, category, price)
         for name, category, _station, price, _description, _composition, available in reset_menu.ITEMS
@@ -33,7 +33,7 @@ def archive_obsolete_menu_items(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0015_dedupe_menu_by_label"),
+        ("core", "0017_dedupe_menu_by_label"),
     ]
 
     operations = [

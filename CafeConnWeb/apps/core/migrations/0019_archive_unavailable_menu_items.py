@@ -19,7 +19,7 @@ def archive_unavailable_menu_items(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0016_archive_obsolete_menu_items"),
+        ("core", "0018_archive_obsolete_menu_items"),
     ]
 
     operations = [

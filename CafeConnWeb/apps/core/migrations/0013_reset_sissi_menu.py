@@ -323,7 +323,7 @@ def reset_menu(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0010_employee_capabilities"),
+        ("core", "0012_employee_capabilities"),
     ]
     operations = [
         migrations.RunPython(reset_menu, migrations.RunPython.noop),

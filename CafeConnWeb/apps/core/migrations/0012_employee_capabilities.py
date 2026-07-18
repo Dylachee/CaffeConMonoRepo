@@ -5,7 +5,7 @@ class Migration(migrations.Migration):
     """Per-employee capability grants a manager can toggle on top of the role."""
 
     dependencies = [
-        ("core", "0009_order_awaiting_status"),
+        ("core", "0011_order_awaiting_status"),
     ]
 
     operations = [

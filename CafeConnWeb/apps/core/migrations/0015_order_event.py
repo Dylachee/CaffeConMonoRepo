@@ -4,7 +4,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0012_reset_staff_accounts"),
+        ("core", "0014_reset_staff_accounts"),
     ]
 
     operations = [

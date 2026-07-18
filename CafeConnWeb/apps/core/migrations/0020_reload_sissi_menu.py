@@ -337,7 +337,7 @@ def noop(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0017_archive_unavailable_menu_items"),
+        ("core", "0019_archive_unavailable_menu_items"),
     ]
 
     operations = [

@@ -28,7 +28,7 @@ def dedupe_menu(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0013_order_event"),
+        ("core", "0015_order_event"),
     ]
 
     operations = [

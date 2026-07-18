@@ -31,7 +31,7 @@ def dedupe_by_label(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0014_dedupe_menu_items"),
+        ("core", "0016_dedupe_menu_items"),
     ]
 
     operations = [
