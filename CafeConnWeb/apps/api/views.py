@@ -402,8 +402,9 @@ class StaffBootstrapView(APIView):
                     "role": role_for_request(request),
                     "capabilities": capabilities_for_request(request),
                     "isOnShift": employee.is_on_shift if employee else False,
-                    "shiftAreas": employee.shift_areas if employee else [],
-                    "lastShiftAreas": employee.last_shift_areas if employee else [],
+                    # Kept as empty compatibility fields for older staff builds.
+                    "shiftAreas": [],
+                    "lastShiftAreas": [],
                 },
                 # Web Push feature flag + the applicationServerKey the browser
                 # needs for pushManager.subscribe(). Disabled = keys not in env.
@@ -1287,7 +1288,6 @@ class StaffAccountCreateView(APIView):
         Employee.Role.BAR,
         Employee.Role.MANAGER,
         Employee.Role.SMM,
-        Employee.Role.ACCOUNTANT,
     }
 
     def post(self, request):
@@ -1367,20 +1367,7 @@ class StaffShiftView(APIView):
             )
 
         if wants_on:
-            requested = request.data.get("areas")
-            if requested is None:
-                requested = employee.last_shift_areas or (["floor"] if "floor" in allowed_areas else [])
-            if not isinstance(requested, list):
-                return Response(
-                    {"detail": "areas must be a list."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            areas = [area for area in requested if area in allowed_areas]
-            if not areas:
-                areas = [next(iter(sorted(allowed_areas)))]
             employee.is_on_shift = True
-            employee.shift_areas = areas
-            employee.last_shift_areas = areas
         else:
             active_tables = Table.objects.filter(
                 restaurant=employee.restaurant, waiter=employee
@@ -1406,17 +1393,12 @@ class StaffShiftView(APIView):
             if any(handoff.values()) and not capabilities["manage"]:
                 raise PermissionDenied("Only a manager can force an active shift to end.")
             employee.is_on_shift = False
-            employee.shift_areas = []
-        employee.save(
-            update_fields=[
-                "is_on_shift", "shift_areas", "last_shift_areas", "updated_at"
-            ]
-        )
+        employee.save(update_fields=["is_on_shift", "updated_at"])
         return Response(
             {
                 "on": employee.is_on_shift,
-                "areas": employee.shift_areas,
-                "preset": employee.last_shift_areas,
+                "areas": [],
+                "preset": [],
             }
         )
 

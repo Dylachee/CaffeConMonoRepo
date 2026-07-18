@@ -183,7 +183,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "role", "phone", "is_on_shift",
             "can_wait", "can_bar", "can_kitchen", "can_manage_menu", "can_content",
             "can_grant_discount", "can_manage", "can_reports",
-            "shift_areas", "last_shift_areas",
             "capabilities", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]

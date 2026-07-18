@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -50,14 +51,31 @@ class ChatMessagesApiTests(TestCase):
         ids_second = {m["id"] for m in second["messages"]}
         self.assertFalse(ids_first & ids_second)
 
-    def test_channels_are_isolated_and_validated(self):
-        send(self.client_w, "kitchen note", channel="kitchen")
+    def test_channels_are_isolated_and_capability_gated(self):
+        self.assertEqual(
+            send(self.client_w, "kitchen note", channel="kitchen").status_code,
+            403,
+        )
+        self.assertEqual(
+            send(self.client_w, "floor note", channel="floor").status_code,
+            201,
+        )
+        send(self.client_m, "kitchen note", channel="kitchen")
         general = self.client_w.get(
             "/api/staff/chat/messages/?channel=general"
         ).json()["messages"]
         self.assertFalse(any(m["body"] == "kitchen note" for m in general))
         bad = self.client_w.get("/api/staff/chat/messages/?channel=nope")
         self.assertEqual(bad.status_code, 400)
+
+    def test_unavailable_channels_do_not_leak_through_reads(self):
+        send(self.client_m, "station secret", channel="kitchen")
+        self.assertEqual(
+            self.client_w.get("/api/staff/chat/messages/?channel=kitchen").status_code,
+            403,
+        )
+        unread = self.client_w.get("/api/staff/chat/read/").json()["unread"]
+        self.assertNotIn("kitchen", unread)
 
     def test_reply_threads_with_preview_and_count(self):
         parent_id = send(self.client_w, "who takes table 5?").json()["message"]["id"]
@@ -221,6 +239,21 @@ class TasksApiTests(TestCase):
 
         manager_view = self.client_m.get("/api/staff/tasks/").json()
         self.assertTrue(any(r["id"] == rule.pk for r in manager_view["rules"]))
+
+    def test_regular_staff_only_receive_mine_available_and_own_done(self):
+        _, other = make_client("hidden")
+        StaffTask.objects.create(title="other active", assignee=other, status="in_progress")
+        StaffTask.objects.create(title="available", status="available")
+        StaffTask.objects.create(
+            title="other done", assignee=other, done_by=other, status="done",
+            done_at=timezone.now(),
+        )
+        StaffTask.objects.create(
+            title="my done", assignee=self.waiter, done_by=self.waiter, status="done",
+            done_at=timezone.now(),
+        )
+        titles = {task["title"] for task in self.client_w.get("/api/staff/tasks/").json()["tasks"]}
+        self.assertEqual(titles, {"available", "my done"})
 
     def test_overdue_nudge_flow_reply_lands_in_thread(self):
         # The full B2 story: task bubble -> bot nudge as reply -> assignee answers.

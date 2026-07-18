@@ -175,7 +175,6 @@ class Employee(models.Model):
         KITCHEN = "kitchen", "Kitchen"
         BAR = "bar", "Bar"
         MANAGER = "manager", "Manager"
-        ACCOUNTANT = "accountant", "Accountant"
         ADMIN = "admin", "Admin"
         SMM = "smm", "SMM"
 
@@ -245,7 +244,7 @@ class Employee(models.Model):
             # Guest-coupon issue/redeem. Campaign CRUD is `content` (SMM's
             # marketing job); touching money at the table needs this grant.
             "discount": boss or self.can_grant_discount,
-            "reports": boss or self.role == Employee.Role.ACCOUNTANT or self.can_reports,
+            "reports": boss or self.can_reports,
         }
 
 
@@ -1212,6 +1211,7 @@ class ChatMessage(models.Model):
 
     class Channel(models.TextChoices):
         GENERAL = "general", "General"
+        FLOOR = "floor", "Floor"
         KITCHEN = "kitchen", "Kitchen"
         BAR = "bar", "Bar"
 

@@ -11,7 +11,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.serializers import ChatMessageSerializer
-from apps.api.tenant import employee_for_request, restaurant_for_request
+from apps.api.tenant import (
+    chat_channels_for_request,
+    employee_for_request,
+    restaurant_for_request,
+)
 from apps.core import chatbot
 from apps.core.chat_commands import is_command
 from apps.core.models import ChatMessage, ChatReadMark
@@ -20,6 +24,20 @@ _PAGE_MAX = 100
 _PAGE_DEFAULT = 30
 
 CHANNELS = [choice[0] for choice in ChatMessage.Channel.choices]
+
+
+def _validate_channel(request, channel):
+    if channel not in CHANNELS:
+        return Response(
+            {"detail": f"channel must be one of {', '.join(CHANNELS)}."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if channel not in chat_channels_for_request(request):
+        return Response(
+            {"detail": "You do not have access to this channel."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
 
 
 def _employee_or_none(request):
@@ -54,11 +72,9 @@ class StaffChatMessagesView(APIView):
     def get(self, request):
         restaurant = restaurant_for_request(request)
         channel = request.query_params.get("channel", "")
-        if channel not in CHANNELS:
-            return Response(
-                {"detail": f"channel must be one of {', '.join(CHANNELS)}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        invalid = _validate_channel(request, channel)
+        if invalid:
+            return invalid
         try:
             limit = int(request.query_params.get("limit", _PAGE_DEFAULT))
         except (TypeError, ValueError):
@@ -92,11 +108,9 @@ class StaffChatMessagesView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         channel = request.data.get("channel", "")
-        if channel not in CHANNELS:
-            return Response(
-                {"detail": f"channel must be one of {', '.join(CHANNELS)}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        invalid = _validate_channel(request, channel)
+        if invalid:
+            return invalid
         body = (request.data.get("body") or "").strip()
         if not body:
             return Response(
@@ -150,6 +164,9 @@ class StaffChatThreadView(APIView):
         parent = get_object_or_404(
             _messages_queryset(), restaurant=restaurant, pk=pk
         )
+        invalid = _validate_channel(request, parent.channel)
+        if invalid:
+            return invalid
         replies = _messages_queryset().filter(reply_to=parent).order_by("id")
         return Response(
             {
@@ -174,7 +191,8 @@ class StaffChatReadView(APIView):
             for mark in employee.chat_read_marks.all()
         }
         unread = {}
-        for channel in CHANNELS:
+        allowed_channels = chat_channels_for_request(request)
+        for channel in allowed_channels:
             last_read = marks.get(channel, 0)
             unread[channel] = (
                 ChatMessage.objects.filter(
@@ -194,11 +212,9 @@ class StaffChatReadView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         channel = request.data.get("channel", "")
-        if channel not in CHANNELS:
-            return Response(
-                {"detail": f"channel must be one of {', '.join(CHANNELS)}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        invalid = _validate_channel(request, channel)
+        if invalid:
+            return invalid
         try:
             last_read = int(request.data.get("last_read_message_id", 0))
         except (TypeError, ValueError):

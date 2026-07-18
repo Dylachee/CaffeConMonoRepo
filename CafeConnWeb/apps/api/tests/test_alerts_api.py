@@ -26,6 +26,16 @@ class ShiftToggleTests(TestCase):
     def test_shift_toggle_roundtrip(self):
         client, employee = make_client("shift")
         self.assertFalse(employee.is_on_shift)
+
+    def test_shift_ignores_legacy_area_picker_payload(self):
+        client, employee = make_client("simple-shift", role=Employee.Role.MANAGER)
+        response = client.post(
+            "/api/staff/shift/", {"on": True, "areas": ["bar"]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["areas"], [])
+        employee.refresh_from_db()
+        self.assertEqual(employee.shift_areas, [])
         on = client.post("/api/staff/shift/", {"on": True}, format="json")
         self.assertEqual(on.status_code, 200)
         self.assertTrue(on.json()["on"])

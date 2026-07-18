@@ -95,6 +95,21 @@ def capabilities_for_request(request) -> dict[str, bool]:
     }
 
 
+def chat_channels_for_request(request) -> list[str]:
+    """Channels the signed-in membership may read or write."""
+    caps = capabilities_for_request(request)
+    if caps["manage"]:
+        return ["general", "floor", "kitchen", "bar"]
+    channels = ["general"]
+    if caps["wait"]:
+        channels.append("floor")
+    if caps["kitchen"]:
+        channels.append("kitchen")
+    if caps["bar"]:
+        channels.append("bar")
+    return channels
+
+
 class RestaurantQuerysetMixin:
     """Scope DRF viewset reads/writes to the authenticated restaurant."""
 

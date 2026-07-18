@@ -10,6 +10,8 @@ Permission matrix (also backstopped in apps.core.chatbot):
 
 import datetime
 
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -66,6 +68,22 @@ class StaffTasksView(APIView):
             restaurant=restaurant,
             recurrence=StaffTask.Recurrence.NONE
         ).select_related("assignee", "created_by", "done_by", "template_item__template")
+        if not _caps(request)["manage"]:
+            instances = instances.filter(
+                Q(
+                    assignee=employee,
+                    status__in=[
+                        StaffTask.Status.AVAILABLE,
+                        StaffTask.Status.IN_PROGRESS,
+                        StaffTask.Status.OPEN,
+                    ],
+                )
+                | Q(
+                    assignee__isnull=True,
+                    status__in=[StaffTask.Status.AVAILABLE, StaffTask.Status.OPEN],
+                )
+                | Q(status=StaffTask.Status.DONE, done_by=employee)
+            )
         tasks = instances.filter(
             # Open and relevant to this day: due on it, overdue before it,
             # or dueless (created on/before the day).
@@ -288,6 +306,7 @@ class StaffTaskTakeView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, pk):
         employee = _employee_or_none(request)
         if employee is None:
@@ -296,7 +315,9 @@ class StaffTaskTakeView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         restaurant = restaurant_for_request(request)
-        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
+        task = get_object_or_404(
+            StaffTask.objects.select_for_update(), restaurant=restaurant, pk=pk
+        )
         if task.assignee_id not in (None, employee.pk):
             return Response(
                 {"detail": "This task was already taken."},
