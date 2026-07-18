@@ -464,8 +464,9 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
               physics: const NeverScrollableScrollPhysics(),
               buildDefaultDragHandles: true,
               itemCount: _blocks.length,
-              onReorder: (oldIndex, newIndex) => setState(() {
-                if (newIndex > oldIndex) newIndex -= 1;
+              // onReorderItem (unlike the deprecated onReorder) delivers
+              // newIndex already adjusted for the removed item.
+              onReorderItem: (oldIndex, newIndex) => setState(() {
                 final block = _blocks.removeAt(oldIndex);
                 _blocks.insert(newIndex, block);
               }),

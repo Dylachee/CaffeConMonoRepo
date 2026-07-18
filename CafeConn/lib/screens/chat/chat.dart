@@ -166,7 +166,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
     }
     // "@" on the last token: offer name completion.
     final lastToken = text.split(' ').last;
-    if (lastToken.startsWith('@') && lastToken.length >= 1) {
+    if (lastToken.startsWith('@')) {
       final needle = lastToken.substring(1).toLowerCase();
       final names = _knownNames()
           .where((name) => name.toLowerCase().startsWith(needle))

@@ -1,8 +1,13 @@
+// This file is only reached through the conditional import for web, where
+// dart:html is legitimate; the Notification/visibility surfaces it uses have
+// no drop-in replacement worth a full package:web migration yet.
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:js_util' as js_util;
-import 'dart:typed_data';
+
+import 'js_util_compat.dart' as js_util;
 
 import 'package:flutter/foundation.dart';
 
@@ -36,7 +41,7 @@ class WebAlertPlatform implements AlertPlatform {
     // iOS Safari has no navigator.vibrate — feature-detect, stay silent.
     try {
       if (js_util.hasProperty(html.window.navigator, 'vibrate')) {
-        html.window.navigator.vibrate(1);
+        js_util.callMethod(html.window.navigator, 'vibrate', const [1]);
       }
     } catch (_) {}
 
@@ -104,7 +109,7 @@ class WebAlertPlatform implements AlertPlatform {
   void vibrate(List<int> pattern) {
     try {
       if (js_util.hasProperty(html.window.navigator, 'vibrate')) {
-        html.window.navigator.vibrate(pattern);
+        js_util.callMethod(html.window.navigator, 'vibrate', [pattern]);
       }
     } catch (_) {}
   }
