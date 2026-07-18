@@ -519,7 +519,7 @@ class L {
         'about' => t('About us', 'Chi siamo'),
         _ => key,
       };
-  static String get imagesSection => t('Logo & cover', 'Logo e copertina');
+  static String get imagesSection => t('Hero images', 'Immagini hero');
   static String get uploadLogo => t('Upload logo', 'Carica logo');
   static String get uploadCover => t('Upload cover', 'Carica copertina');
   static String get removeImage => t('Remove', 'Rimuovi');

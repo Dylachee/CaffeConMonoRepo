@@ -156,7 +156,8 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     final err = await state.setVenueImage(kind,
-        bytes: bytes, filename: picked.name.isEmpty ? '$kind.jpg' : picked.name);
+        bytes: bytes,
+        filename: picked.name.isEmpty ? '$kind.jpg' : picked.name);
     if (err != null) _showError(err);
   }
 
@@ -222,6 +223,36 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
     return '${ApiConfig.baseUrl}$url';
   }
 
+  Widget _heroImages(VenueSettingsDto venue) => AppCard(
+        child: Column(children: [
+          _ImageRow(
+            label: L.uploadLogo,
+            url: _absoluteUrl(venue.logoUrl),
+            onUpload: () => _pickImage('logo'),
+            onRemove: venue.logoUrl.isEmpty
+                ? null
+                : () async {
+                    final err =
+                        await context.read<CafeState>().setVenueImage('logo');
+                    if (err != null) _showError(err);
+                  },
+          ),
+          const SizedBox(height: 10),
+          _ImageRow(
+            label: L.uploadCover,
+            url: _absoluteUrl(venue.coverUrl),
+            onUpload: () => _pickImage('cover'),
+            onRemove: venue.coverUrl.isEmpty
+                ? null
+                : () async {
+                    final err =
+                        await context.read<CafeState>().setVenueImage('cover');
+                    if (err != null) _showError(err);
+                  },
+          ),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
@@ -243,9 +274,8 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
     final palette = _draftPalette;
     final ink = palette['ink'] ?? '';
     final bg = palette['bg'] ?? '';
-    final lowContrast = cu.isValidHex(ink) &&
-        cu.isValidHex(bg) &&
-        !cu.meetsWcagAA(ink, bg);
+    final lowContrast =
+        cu.isValidHex(ink) && cu.isValidHex(bg) && !cu.meetsWcagAA(ink, bg);
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -285,6 +315,11 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
                 Expanded(child: Text(L.contrastWarning, style: T.small)),
               ]),
             ),
+
+          // The cover and logo define the whole guest first impression, so
+          // keep them immediately below the live preview, not buried later.
+          SectionTitle(L.imagesSection),
+          _heroImages(venue),
 
           // ---- theme presets ----
           SectionTitle(L.themePresets),
@@ -488,40 +523,6 @@ class _StorefrontEditorScreenState extends State<StorefrontEditorScreen> {
                 );
               },
             ),
-          ),
-
-          // ---- logo & cover ----
-          SectionTitle(L.imagesSection),
-          AppCard(
-            child: Column(children: [
-              _ImageRow(
-                label: L.uploadLogo,
-                url: _absoluteUrl(venue.logoUrl),
-                onUpload: () => _pickImage('logo'),
-                onRemove: venue.logoUrl.isEmpty
-                    ? null
-                    : () async {
-                        final err = await context
-                            .read<CafeState>()
-                            .setVenueImage('logo');
-                        if (err != null) _showError(err);
-                      },
-              ),
-              const SizedBox(height: 10),
-              _ImageRow(
-                label: L.uploadCover,
-                url: _absoluteUrl(venue.coverUrl),
-                onUpload: () => _pickImage('cover'),
-                onRemove: venue.coverUrl.isEmpty
-                    ? null
-                    : () async {
-                        final err = await context
-                            .read<CafeState>()
-                            .setVenueImage('cover');
-                        if (err != null) _showError(err);
-                      },
-              ),
-            ]),
           ),
 
           // ---- pinned limit ----
