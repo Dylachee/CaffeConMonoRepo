@@ -150,6 +150,10 @@ def claim_coupon(
     the campaign, re-claiming returns the newest one instead of failing — so
     re-opening a claim link never scares a guest with an error.
     """
+    if wallet.restaurant_id != campaign.restaurant_id:
+        raise CouponError("This wallet belongs to another restaurant.")
+    if issued_by is not None and issued_by.restaurant_id != campaign.restaurant_id:
+        raise CouponError("This employee belongs to another restaurant.")
     with transaction.atomic():
         # Lock the campaign row: the max_total_issues check and the insert
         # must be atomic against concurrent claims.
@@ -181,6 +185,7 @@ def claim_coupon(
             raise CouponError("Could not allocate a coupon code, please retry.")
 
         coupon = IssuedCoupon.objects.create(
+            restaurant=campaign.restaurant,
             campaign=campaign,
             wallet=wallet,
             code=code,
@@ -258,6 +263,8 @@ def redeem_coupon(
 
         if order is not None:
             order = Order.objects.select_for_update().get(pk=order.pk)
+            if order.restaurant_id != coupon.restaurant_id:
+                raise CouponError("This coupon belongs to another restaurant.")
             if order.status in (Order.Status.PAID, Order.Status.CANCELLED):
                 raise CouponError("This order is closed — the coupon cannot be applied to it.")
             if order.coupon_id is not None and order.coupon_id != coupon.pk:

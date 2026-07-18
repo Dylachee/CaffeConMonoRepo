@@ -109,8 +109,13 @@ class HandleCommandTests(TestCase):
         task = StaffTask.objects.create(title="x", assignee=other)
         with self.assertRaises(TaskPermissionError):
             chatbot.mark_task_done(task, self.waiter)
-        # Unassigned tasks are anyone's to finish.
+        # Unassigned tasks must be explicitly taken before completion.
         free_task = StaffTask.objects.create(title="y")
+        with self.assertRaises(TaskPermissionError):
+            chatbot.mark_task_done(free_task, self.waiter)
+        free_task.assignee = self.waiter
+        free_task.status = StaffTask.Status.IN_PROGRESS
+        free_task.save(update_fields=["assignee", "status"])
         chatbot.mark_task_done(free_task, self.waiter)
         free_task.refresh_from_db()
         self.assertEqual(free_task.done_by, self.waiter)
@@ -172,6 +177,9 @@ class SchedulerTests(TestCase):
     def test_no_deadline_nudge_when_everything_ticked(self):
         chatbot.run_due_bot_jobs(local(8, 5))
         for task in StaffTask.objects.filter(template_item__isnull=False):
+            task.assignee = self.waiter
+            task.status = StaffTask.Status.IN_PROGRESS
+            task.save(update_fields=["assignee", "status"])
             chatbot.mark_task_done(task, self.waiter)
         stats = chatbot.run_due_bot_jobs(local(10, 5))
         self.assertEqual(stats["checklist_nudges"], 0)

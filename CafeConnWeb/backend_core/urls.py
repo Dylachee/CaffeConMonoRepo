@@ -15,10 +15,18 @@ def home_redirect(request):
 urlpatterns = [
     path("", home_redirect, name="home"),
     path("menu/", include("apps.guest_web.urls")),
+    path(
+        "r/<slug:restaurant_slug>/",
+        include("apps.guest_web.urls", namespace="restaurant_guest"),
+    ),
     path("staff/", staff_app),
     path("staff/<path:path>", staff_app),
     path("dashboard/", include("apps.admin_web.urls")),
     path("system-admin/", admin.site.urls),
+    path(
+        "api/restaurants/<slug:restaurant_slug>/",
+        include("apps.api.urls", namespace="restaurant_api"),
+    ),
     path("api/", include("apps.api.urls")),
     path("health/", TemplateView.as_view(template_name="health.html"), name="health"),
     # Venue media (logo/cover) from MEDIA_ROOT. WhiteNoise only covers static

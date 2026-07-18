@@ -199,6 +199,8 @@ class OrderDto {
 
   /// station_scope: kitchen | bar | mixed.
   final String station;
+  final String? waiterId;
+  final String waiterName;
 
   /// ISO-8601 server timestamp. Nullable: old backends may omit it; the app
   /// then falls back to "now" (and the kitchen timer starts from zero).
@@ -227,6 +229,8 @@ class OrderDto {
     required this.status,
     required this.station,
     required this.items,
+    this.waiterId,
+    this.waiterName = '',
     this.createdAt,
     this.acceptedAt,
     this.note = '',
@@ -240,6 +244,8 @@ class OrderDto {
         tableId: _asString(j['tableId']),
         status: _asString(j['status'], 'accepted'),
         station: _asString(j['station'], 'kitchen'),
+        waiterId: j['waiterId'] == null ? null : _asString(j['waiterId']),
+        waiterName: _asString(j['waiterName']),
         createdAt: j['createdAt'] == null ? null : _asString(j['createdAt']),
         acceptedAt: j['acceptedAt'] == null ? null : _asString(j['acceptedAt']),
         note: _asString(j['note'], ''),
@@ -255,11 +261,14 @@ class OrderDto {
   /// DRF OrderSerializer shape used by WebSocket order.* events.
   factory OrderDto.fromDrf(Map<String, dynamic> j) {
     final table = (j['table'] as Map?)?.cast<String, dynamic>();
+    final employee = (j['employee'] as Map?)?.cast<String, dynamic>();
     return OrderDto(
       id: _asString(j['id']),
       tableId: _asString(table?['id'] ?? j['table_id']),
       status: flutterOrderStatusFromDjango(_asString(j['status'], 'new')),
       station: _asString(j['station_scope'], 'kitchen'),
+      waiterId: employee == null ? null : _asString(employee['id']),
+      waiterName: _asString(employee?['name']),
       createdAt: j['created_at'] == null ? null : _asString(j['created_at']),
       acceptedAt: j['accepted_at'] == null ? null : _asString(j['accepted_at']),
       note: _asString(j['notes'], ''),
@@ -340,9 +349,8 @@ class CouponCampaignDto {
   String get discountLabel {
     if (discountType == 'percent') {
       final isWhole = discountValue == discountValue.roundToDouble();
-      final text = isWhole
-          ? discountValue.round().toString()
-          : discountValue.toString();
+      final text =
+          isWhole ? discountValue.round().toString() : discountValue.toString();
       return '−$text%';
     }
     return '−${discountValue.toStringAsFixed(2)} €';
@@ -362,8 +370,9 @@ class CouponCampaignDto {
         validFrom: j['valid_from'] == null ? null : _asString(j['valid_from']),
         validUntil:
             j['valid_until'] == null ? null : _asString(j['valid_until']),
-        maxTotalIssues:
-            j['max_total_issues'] == null ? null : _asInt(j['max_total_issues']),
+        maxTotalIssues: j['max_total_issues'] == null
+            ? null
+            : _asInt(j['max_total_issues']),
         perWalletLimit: _asInt(j['per_wallet_limit'], 1),
         isActive: _asBool(j['is_active'], true),
         issuedCount: _asInt(j['issued_count']),
@@ -434,9 +443,8 @@ class StaffCouponDto {
   String get discountLabel {
     if (discountType == 'percent') {
       final isWhole = discountValue == discountValue.roundToDouble();
-      final text = isWhole
-          ? discountValue.round().toString()
-          : discountValue.toString();
+      final text =
+          isWhole ? discountValue.round().toString() : discountValue.toString();
       return '−$text%';
     }
     return '−${discountValue.toStringAsFixed(2)} €';
@@ -471,8 +479,7 @@ class CouponPreviewDto {
     this.discountPreview,
     this.orderTotal,
   });
-  factory CouponPreviewDto.fromJson(Map<String, dynamic> j) =>
-      CouponPreviewDto(
+  factory CouponPreviewDto.fromJson(Map<String, dynamic> j) => CouponPreviewDto(
         coupon: StaffCouponDto.fromJson(
             ((j['coupon'] as Map?) ?? const {}).cast<String, dynamic>()),
         displayStatus: _asString(j['displayStatus'], 'active'),
@@ -493,6 +500,7 @@ class TableDto {
   /// Flutter TableStatus name.
   final String status;
   final String colorTag;
+  final String? waiterId;
   final String waiter;
   final String? openedAt;
   final String? currentOrderId;
@@ -515,6 +523,7 @@ class TableDto {
     required this.guestCount,
     required this.status,
     required this.colorTag,
+    this.waiterId,
     required this.waiter,
     required this.openedAt,
     required this.currentOrderId,
@@ -533,6 +542,7 @@ class TableDto {
         guestCount: _asInt(j['guestCount']),
         status: _asString(j['status'], 'free'),
         colorTag: _asString(j['colorTag']),
+        waiterId: j['waiterId'] == null ? null : _asString(j['waiterId']),
         waiter: _asString(j['waiter']),
         openedAt: j['openedAt'] == null ? null : _asString(j['openedAt']),
         currentOrderId:
@@ -555,6 +565,7 @@ class TableDto {
         guestCount: _asInt(j['guest_count']),
         status: flutterTableStatusFromDjango(_asString(j['status'], 'free')),
         colorTag: _asString(j['color_tag']),
+        waiterId: j['waiter_id'] == null ? null : _asString(j['waiter_id']),
         waiter: _asString(j['waiter']),
         openedAt: j['opened_at'] == null ? null : _asString(j['opened_at']),
         currentOrderId: null,
@@ -568,6 +579,7 @@ class TableDto {
 
 class CurrentUserDto {
   final String id;
+  final String? employeeId;
   final String username;
   final String name;
 
@@ -582,15 +594,21 @@ class CurrentUserDto {
 
   /// Employee.is_on_shift — alerts only fire on on-shift devices.
   final bool isOnShift;
+  final List<String> shiftAreas;
+  final List<String> lastShiftAreas;
   const CurrentUserDto(
       {required this.id,
+      this.employeeId,
       required this.username,
       required this.name,
       this.role = '',
       this.capabilities = const {},
-      this.isOnShift = false});
+      this.isOnShift = false,
+      this.shiftAreas = const [],
+      this.lastShiftAreas = const []});
   factory CurrentUserDto.fromJson(Map<String, dynamic> j) => CurrentUserDto(
         id: _asString(j['id']),
+        employeeId: j['employeeId'] == null ? null : _asString(j['employeeId']),
         username: _asString(j['username']),
         name: _asString(j['name']),
         role: _asString(j['role']),
@@ -598,6 +616,32 @@ class CurrentUserDto {
             ? (j['capabilities'] as Map).cast<String, dynamic>()
             : const {},
         isOnShift: _asBool(j['isOnShift']),
+        shiftAreas: _asStringList(j['shiftAreas']),
+        lastShiftAreas: _asStringList(j['lastShiftAreas']),
+      );
+}
+
+class RestaurantDto {
+  final String id;
+  final String name;
+  final String slug;
+  final String timezone;
+  final String currency;
+
+  const RestaurantDto({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.timezone = 'Europe/Rome',
+    this.currency = 'EUR',
+  });
+
+  factory RestaurantDto.fromJson(Map<String, dynamic> j) => RestaurantDto(
+        id: _asString(j['id']),
+        name: _asString(j['name']),
+        slug: _asString(j['slug'], 'sissy-bar'),
+        timezone: _asString(j['timezone'], 'Europe/Rome'),
+        currency: _asString(j['currency'], 'EUR'),
       );
 }
 
@@ -616,6 +660,8 @@ class EmployeeDto {
   final bool canManageMenu;
   final bool canContent;
   final bool canGrantDiscount;
+  final bool canManage;
+  final bool canReports;
   const EmployeeDto({
     required this.id,
     required this.username,
@@ -629,6 +675,8 @@ class EmployeeDto {
     required this.canManageMenu,
     this.canContent = false,
     this.canGrantDiscount = false,
+    this.canManage = false,
+    this.canReports = false,
   });
   factory EmployeeDto.fromJson(Map<String, dynamic> j) => EmployeeDto(
         id: _asString(j['id']),
@@ -643,6 +691,8 @@ class EmployeeDto {
         canManageMenu: _asBool(j['can_manage_menu']),
         canContent: _asBool(j['can_content']),
         canGrantDiscount: _asBool(j['can_grant_discount']),
+        canManage: _asBool(j['can_manage']),
+        canReports: _asBool(j['can_reports']),
       );
 }
 
@@ -785,8 +835,7 @@ class VenueSettingsDto {
     'accent_soft': 'color_accent_soft',
   };
 
-  factory VenueSettingsDto.fromJson(Map<String, dynamic> j) =>
-      VenueSettingsDto(
+  factory VenueSettingsDto.fromJson(Map<String, dynamic> j) => VenueSettingsDto(
         name: _asString(j['name']),
         tagline: _asString(j['tagline']),
         taglineIt: _asString(j['tagline_it']),
@@ -806,8 +855,8 @@ class VenueSettingsDto {
         mapsUrl: _asString(j['maps_url']),
         logoUrl: _asString(j['logo_url']),
         coverUrl: _asString(j['cover_url']),
-        palette: _paletteWire.map(
-            (key, wire) => MapEntry(key, _asString(j[wire], '#000000'))),
+        palette: _paletteWire
+            .map((key, wire) => MapEntry(key, _asString(j[wire], '#000000'))),
         blocks: ((j['storefront_blocks'] as List?) ?? const [])
             .whereType<Map>()
             .map((e) => StorefrontBlockDto.fromJson(e.cast<String, dynamic>()))
@@ -881,7 +930,12 @@ class StaffTaskDto {
   });
 
   bool get isDone => status == 'done';
-  bool get isOpen => status == 'open';
+  bool get isOpen =>
+      status == 'open' || status == 'available' || status == 'in_progress';
+  bool get isAvailable =>
+      status == 'available' || (status == 'open' && assigneeId == null);
+  bool get isInProgress =>
+      status == 'in_progress' || (status == 'open' && assigneeId != null);
 
   factory StaffTaskDto.fromJson(Map<String, dynamic> j) => StaffTaskDto(
         id: _asInt(j['id']),
@@ -1015,6 +1069,9 @@ class OrderEventDto {
 }
 
 class BootstrapDto {
+  final RestaurantDto? restaurant;
+  final List<RestaurantDto> availableRestaurants;
+  final bool isPlatformOwner;
   final CurrentUserDto? currentUser;
   final List<TableDto> tables;
   final List<MenuItemDto> menu;
@@ -1029,6 +1086,9 @@ class BootstrapDto {
   final String pushPublicKey;
 
   const BootstrapDto({
+    this.restaurant,
+    this.availableRestaurants = const [],
+    this.isPlatformOwner = false,
     required this.currentUser,
     required this.tables,
     required this.menu,
@@ -1041,6 +1101,15 @@ class BootstrapDto {
   });
 
   factory BootstrapDto.fromJson(Map<String, dynamic> j) => BootstrapDto(
+        restaurant: j['restaurant'] is Map
+            ? RestaurantDto.fromJson(
+                (j['restaurant'] as Map).cast<String, dynamic>())
+            : null,
+        availableRestaurants: ((j['availableRestaurants'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => RestaurantDto.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        isPlatformOwner: _asBool(j['isPlatformOwner']),
         currentUser: j['currentUser'] == null
             ? null
             : CurrentUserDto.fromJson(

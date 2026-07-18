@@ -80,17 +80,24 @@ def send_to_subscription(subscription, payload: dict) -> bool:
         return False
 
 
-def push_to_on_shift(payload: dict) -> int:
+def push_to_on_shift(
+    payload: dict, *, restaurant_id: int | None = None, employee_id: int | None = None
+) -> int:
     """Fan a payload out to every on-shift employee's subscriptions.
     Returns the number of successful sends. No-op when unconfigured."""
     if not push_configured():
         return 0
-    from apps.core.models import PushSubscription
+    from apps.core.models import PushSubscription, Restaurant
+
+    restaurant_id = restaurant_id or Restaurant.get_default().pk
 
     sent = 0
     subscriptions = PushSubscription.objects.select_related("employee").filter(
-        employee__is_on_shift=True
+        restaurant_id=restaurant_id,
+        employee__is_on_shift=True,
     )
+    if employee_id is not None:
+        subscriptions = subscriptions.filter(employee_id=employee_id)
     for subscription in subscriptions:
         if send_to_subscription(subscription, payload):
             sent += 1

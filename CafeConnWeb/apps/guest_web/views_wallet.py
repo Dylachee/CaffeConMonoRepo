@@ -16,6 +16,7 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.core import coupons
 from apps.core.coupons import CouponError
 from apps.core.models import CouponCampaign, Employee, GuestWallet, IssuedCoupon
+from apps.guest_web.views import restaurant_for_guest_request
 
 WALLET_COOKIE_NAME = "cc_wallet"
 WALLET_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # 1 year; recovery link outlives it
@@ -28,7 +29,9 @@ def _wallet_from_request(request) -> GuestWallet | None:
     token = coupons.parse_wallet_cookie(raw)
     if token is None:
         return None
-    return GuestWallet.objects.filter(pk=token).first()
+    return GuestWallet.objects.filter(
+        restaurant=restaurant_for_guest_request(request), pk=token
+    ).first()
 
 
 def _attach_wallet_cookie(response: HttpResponse, wallet: GuestWallet) -> HttpResponse:
@@ -69,7 +72,7 @@ def _coupon_payload(coupon: IssuedCoupon) -> dict:
 
 
 @require_GET
-def wallet_state(request):
+def wallet_state(request, restaurant_slug=None):
     """The guest's wallet. Never creates a wallet or sets a cookie — reads
     stay side-effect-free so the menu page stays cookie-free by default."""
     wallet = _wallet_from_request(request)
@@ -80,7 +83,7 @@ def wallet_state(request):
         wallet.coupons.select_related("campaign").order_by("-created_at")
     )
     recovery_url = request.build_absolute_uri(
-        f"/menu/wallet/recover/{coupons.make_recovery_token(wallet)}/"
+        f"/r/{wallet.restaurant.slug}/wallet/recover/{coupons.make_recovery_token(wallet)}/"
     )
     return JsonResponse(
         {
@@ -96,7 +99,7 @@ def wallet_state(request):
 
 
 @require_POST
-def claim_coupon_view(request):
+def claim_coupon_view(request, restaurant_slug=None):
     """Land a coupon in the wallet from either claim flow:
 
       * `claim`    — signed token from a waiter's on-screen QR;
@@ -114,6 +117,7 @@ def claim_coupon_view(request):
             status=429,
         )
 
+    restaurant = restaurant_for_guest_request(request)
     token = (request.POST.get("claim") or "").strip()
     slug = (request.POST.get("campaign") or "").strip()
     utm_source = (request.POST.get("utm_source") or "").strip()
@@ -122,18 +126,24 @@ def claim_coupon_view(request):
         if token:
             payload = coupons.parse_claim_token(token)
             try:
-                campaign = CouponCampaign.objects.get(pk=payload["campaign"])
+                campaign = CouponCampaign.objects.get(
+                    restaurant=restaurant, pk=payload["campaign"]
+                )
             except CouponCampaign.DoesNotExist:
                 raise CouponError("This campaign no longer exists.")
             issued_by = (
-                Employee.objects.filter(pk=payload["employee"]).first()
+                Employee.objects.filter(
+                    restaurant=restaurant, pk=payload["employee"]
+                ).first()
                 if payload.get("employee")
                 else None
             )
             issued_via = IssuedCoupon.IssuedVia.STAFF_QR
         elif slug:
             try:
-                campaign = CouponCampaign.objects.get(slug=slug)
+                campaign = CouponCampaign.objects.get(
+                    restaurant=restaurant, slug=slug
+                )
             except CouponCampaign.DoesNotExist:
                 raise CouponError("This campaign does not exist.")
             issued_by = None
@@ -144,7 +154,7 @@ def claim_coupon_view(request):
         wallet = _wallet_from_request(request)
         created_wallet = wallet is None
         if created_wallet:
-            wallet = GuestWallet.objects.create()
+            wallet = GuestWallet.objects.create(restaurant=restaurant)
 
         coupon, created = coupons.claim_coupon(
             campaign,
@@ -163,16 +173,19 @@ def claim_coupon_view(request):
 
 
 @require_GET
-def recover_wallet(request, token):
+def recover_wallet(request, token, restaurant_slug=None):
     """Signed "save forever" link: re-attach the wallet cookie on this device
     and land on the menu with the Wallet tab open."""
     try:
         wallet_pk = coupons.parse_recovery_token(token)
     except CouponError:
-        return redirect("/menu/?wallet=invalid")
-    wallet = GuestWallet.objects.filter(pk=wallet_pk).first()
+        return redirect(f"/r/{restaurant_for_guest_request(request).slug}/?wallet=invalid")
+    restaurant = restaurant_for_guest_request(request)
+    wallet = GuestWallet.objects.filter(
+        restaurant=restaurant, pk=wallet_pk
+    ).first()
     if wallet is None:
-        return redirect("/menu/?wallet=invalid")
+        return redirect(f"/r/{restaurant.slug}/?wallet=invalid")
     wallet.touch()
-    response = redirect("/menu/?wallet=1")
+    response = redirect(f"/r/{restaurant.slug}/?wallet=1")
     return _attach_wallet_cookie(response, wallet)

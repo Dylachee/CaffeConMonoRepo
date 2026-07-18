@@ -125,23 +125,18 @@ class _PlannerScreenState extends State<PlannerScreen> {
         t.dueAt == null ? null : DateTime.tryParse(t.dueAt!)?.toLocal();
     final overdue = tasks
         .where((t) =>
-            t.isOpen &&
-            _isToday &&
-            dueOf(t) != null &&
-            dueOf(t)!.isBefore(now))
+            t.isOpen && _isToday && dueOf(t) != null && dueOf(t)!.isBefore(now))
         .toList();
     final done = tasks.where((t) => t.isDone).toList();
-    final open = tasks
-        .where((t) => t.isOpen && !overdue.contains(t))
-        .toList();
+    final open = tasks.where((t) => t.isOpen && !overdue.contains(t)).toList();
 
     // Checklist progress bars (Opening 3/7) from the checklist provenance.
     final checklistGroups = <String, List<StaffTaskDto>>{};
     for (final task in tasks.where((t) => t.checklistKey.isNotEmpty)) {
       checklistGroups.putIfAbsent(task.checklistKey, () => []).add(task);
     }
-    final byCategory = groupBy(
-        open.where((t) => t.checklistKey.isEmpty), (StaffTaskDto t) => t.category);
+    final byCategory = groupBy(open.where((t) => t.checklistKey.isEmpty),
+        (StaffTaskDto t) => t.category);
 
     return AppScaffold(
       bottomNav: null,
@@ -273,12 +268,8 @@ class _PlannerScreenState extends State<PlannerScreen> {
                       child: Row(children: [
                         Text('${L.sectionDone} (${done.length})',
                             style: T.sectionTitle),
-                        Icon(
-                            _showDone
-                                ? Icons.expand_less
-                                : Icons.expand_more,
-                            size: 18,
-                            color: AppTheme.ink2),
+                        Icon(_showDone ? Icons.expand_less : Icons.expand_more,
+                            size: 18, color: AppTheme.ink2),
                       ]),
                     ),
                   ),
@@ -338,15 +329,25 @@ class _PlannerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
     final color = taskCategoryColor(task.category);
     final due = task.dueAt == null ? null : DateTime.tryParse(task.dueAt!);
+    final mine = task.assigneeId == state.activeEmployeeId;
+
+    Future<void> run(Future<String?> Function() action) async {
+      final error = await action();
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+      }
+    }
 
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       onTap: onOpen, // the task's chat thread — the whole story in one place
       child: Row(children: [
         GestureDetector(
-          onTap: onToggle,
+          onTap: (mine || task.isDone) ? onToggle : null,
           child: Container(
             width: 30,
             height: 30,
@@ -359,12 +360,14 @@ class _PlannerRow extends StatelessWidget {
             ),
             child: task.isDone
                 ? const Icon(Icons.check, size: 18, color: Colors.white)
-                : null,
+                : Icon(mine ? Icons.circle_outlined : Icons.lock_outline,
+                    size: 17, color: AppTheme.ink3),
           ),
         ),
         const SizedBox(width: 11),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
               task.title,
               maxLines: 2,
@@ -388,12 +391,29 @@ class _PlannerRow extends StatelessWidget {
             ),
           ]),
         ),
-        Container(
-          width: 8,
-          height: 8,
-          margin: const EdgeInsets.only(left: 8),
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+        if (task.isAvailable)
+          SizedBox(
+            height: 44,
+            child: FilledButton(
+              onPressed: () => run(() => state.takeTask(task)),
+              child: Text(L.takeTask),
+            ),
+          )
+        else if (mine && !task.isDone)
+          SizedBox(
+            height: 44,
+            child: TextButton(
+              onPressed: () => run(() => state.leaveTask(task)),
+              child: Text(L.leaveTask),
+            ),
+          )
+        else
+          Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
       ]),
     );
   }

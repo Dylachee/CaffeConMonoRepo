@@ -36,16 +36,38 @@ Color taskCategoryColor(String category) => switch (category) {
       _ => AppColors.free,
     };
 
-class StaffChatListScreen extends StatelessWidget {
+class StaffChatListScreen extends StatefulWidget {
   const StaffChatListScreen({super.key});
+
+  @override
+  State<StaffChatListScreen> createState() => _StaffChatListScreenState();
+}
+
+class _StaffChatListScreenState extends State<StaffChatListScreen> {
+  bool _showTasks = false;
+  String _taskFilter = 'mine';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshPlanner());
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
+    final tasks = state.plannerTasks.where((task) {
+      return switch (_taskFilter) {
+        'available' => task.isAvailable,
+        'done' => task.isDone && task.assigneeId == state.activeEmployeeId,
+        _ => !task.isDone && task.assigneeId == state.activeEmployeeId,
+      };
+    }).toList();
     return AppScaffold(
       bottomNav: null,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Header(title: L.chats, subtitle: L.teamOnline, actions: [
+        Header(title: L.team, subtitle: L.teamOnline, actions: [
           IconButton(
             tooltip: L.planner,
             icon: const Icon(Icons.event_note_outlined, color: AppTheme.ink),
@@ -57,12 +79,89 @@ class StaffChatListScreen extends StatelessWidget {
             onPressed: () => GoRouter.of(context).push('/settings'),
           ),
         ]),
+        Container(
+          height: 44,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.separator),
+          ),
+          child: Row(children: [
+            Expanded(
+              child: _TeamSegment(
+                label: L.chats,
+                icon: Icons.forum_outlined,
+                selected: !_showTasks,
+                onTap: () => setState(() => _showTasks = false),
+              ),
+            ),
+            Expanded(
+              child: _TeamSegment(
+                label: L.myTasks,
+                icon: Icons.task_alt_outlined,
+                selected: _showTasks,
+                onTap: () => setState(() => _showTasks = true),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
         if (!state.backendConnected)
           Expanded(
             child: EmptyState(
                 icon: Icons.chat_bubble_outline,
                 title: L.chats,
                 sub: L.chatConnectHint),
+          )
+        else if (_showTasks)
+          Expanded(
+            child: Column(children: [
+              SizedBox(
+                height: 38,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    CategoryChip(
+                      label: L.myTasks,
+                      active: _taskFilter == 'mine',
+                      onTap: () => setState(() => _taskFilter = 'mine'),
+                    ),
+                    CategoryChip(
+                      label: L.availableTasks,
+                      active: _taskFilter == 'available',
+                      onTap: () => setState(() => _taskFilter = 'available'),
+                    ),
+                    CategoryChip(
+                      label: L.done,
+                      active: _taskFilter == 'done',
+                      onTap: () => setState(() => _taskFilter = 'done'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () => state.refreshPlanner(),
+                  child: tasks.isEmpty
+                      ? ListView(children: [
+                          EmptyState(
+                            icon: Icons.task_alt_outlined,
+                            title: L.myTasks,
+                            sub: L.plannerEmpty,
+                          ),
+                        ])
+                      : ListView.separated(
+                          itemCount: tasks.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (_, index) =>
+                              TaskBubbleCard(task: tasks[index]),
+                        ),
+                ),
+              ),
+            ]),
           )
         else
           Expanded(
@@ -123,6 +222,40 @@ class StaffChatListScreen extends StatelessWidget {
       ]),
     );
   }
+}
+
+class _TeamSegment extends StatelessWidget {
+  const _TeamSegment({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 38),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.surfaceAlt : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon,
+                size: 18, color: selected ? AppTheme.ink : AppTheme.ink3),
+            const SizedBox(width: 7),
+            Text(label,
+                style: T.smallSemi
+                    .copyWith(color: selected ? AppTheme.ink : AppTheme.ink2)),
+          ]),
+        ),
+      );
 }
 
 class StaffChatScreen extends StatefulWidget {
@@ -306,8 +439,7 @@ class _StaffChatScreenState extends State<StaffChatScreen> {
                         child: TextButton(
                           onPressed: () => state.loadOlderChat(_channel),
                           child: Text(L.loadOlder,
-                              style:
-                                  T.smallSemi.copyWith(color: AppTheme.cta)),
+                              style: T.smallSemi.copyWith(color: AppTheme.cta)),
                         ),
                       );
                     }
@@ -439,8 +571,9 @@ class ChatBubble extends StatelessWidget {
   final VoidCallback onOpenThread;
 
   String _time() {
-    final created =
-        message.createdAt == null ? null : DateTime.tryParse(message.createdAt!);
+    final created = message.createdAt == null
+        ? null
+        : DateTime.tryParse(message.createdAt!);
     if (created == null) return '';
     final local = created.toLocal();
     return '${local.hour}:${local.minute.toString().padLeft(2, '0')}';
@@ -468,10 +601,11 @@ class ChatBubble extends StatelessWidget {
                 ? Border.all(color: AppColors.gold.withValues(alpha: 0.4))
                 : null,
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('🤖 ${L.cafeBot}',
-                style: T.label
-                    .copyWith(color: AppTheme.ink2, fontWeight: FontWeight.w800)),
+                style: T.label.copyWith(
+                    color: AppTheme.ink2, fontWeight: FontWeight.w800)),
             const SizedBox(height: 3),
             Text(message.body, style: T.body),
           ]),
@@ -517,13 +651,13 @@ class ChatBubble extends StatelessWidget {
                   '${message.replyPreview!.authorName}: ${message.replyPreview!.body}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: T.small.copyWith(
-                      color: own ? Colors.white70 : AppTheme.ink2),
+                  style: T.small
+                      .copyWith(color: own ? Colors.white70 : AppTheme.ink2),
                 ),
               ),
             Text(message.body,
-                style: T.body
-                    .copyWith(color: own ? Colors.white : AppTheme.ink)),
+                style:
+                    T.body.copyWith(color: own ? Colors.white : AppTheme.ink)),
           ],
         ),
       ),
@@ -559,8 +693,7 @@ class ChatBubble extends StatelessWidget {
                       style: T.label.copyWith(color: AppTheme.ink3)),
                 ),
                 if (message.replyCount > 0) ...[
-                  Text('  ·  ',
-                      style: T.label.copyWith(color: AppTheme.ink3)),
+                  Text('  ·  ', style: T.label.copyWith(color: AppTheme.ink3)),
                   GestureDetector(
                     onTap: onOpenThread,
                     child: Text(L.viewReplies(message.replyCount),
@@ -590,12 +723,20 @@ class TaskBubbleCard extends StatelessWidget {
     final state = context.watch<CafeState>();
     final color = taskCategoryColor(task.category);
     final due = task.dueAt == null ? null : DateTime.tryParse(task.dueAt!);
-    final overdue = task.isOpen &&
-        due != null &&
-        due.toLocal().isBefore(DateTime.now());
+    final overdue =
+        task.isOpen && due != null && due.toLocal().isBefore(DateTime.now());
+    final mine = task.assigneeId == state.activeEmployeeId;
 
     Future<void> toggle() async {
       final error = await state.setTaskDone(task, !task.isDone);
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+      }
+    }
+
+    Future<void> run(Future<String?> Function() action) async {
+      final error = await action();
       if (error != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
@@ -608,15 +749,13 @@ class TaskBubbleCard extends StatelessWidget {
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: overdue
-                ? AppTheme.danger
-                : color.withValues(alpha: 0.45),
+            color: overdue ? AppTheme.danger : color.withValues(alpha: 0.45),
             width: 1.4),
         boxShadow: const [AppTheme.shadowCard],
       ),
       child: Row(children: [
         GestureDetector(
-          onTap: toggle,
+          onTap: (mine || task.isDone) ? toggle : null,
           child: Container(
             width: 34,
             height: 34,
@@ -629,12 +768,17 @@ class TaskBubbleCard extends StatelessWidget {
             ),
             child: task.isDone
                 ? const Icon(Icons.check, size: 20, color: Colors.white)
-                : null,
+                : mine
+                    ? const Icon(Icons.circle_outlined,
+                        size: 18, color: AppTheme.ink2)
+                    : const Icon(Icons.lock_outline,
+                        size: 17, color: AppTheme.ink3),
           ),
         ),
         const SizedBox(width: 11),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
               task.title,
               style: T.bodySemi.copyWith(
@@ -645,8 +789,7 @@ class TaskBubbleCard extends StatelessWidget {
             const SizedBox(height: 4),
             Wrap(spacing: 6, runSpacing: 4, children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(7),
@@ -656,9 +799,7 @@ class TaskBubbleCard extends StatelessWidget {
                         .copyWith(color: color, fontWeight: FontWeight.w800)),
               ),
               Text(
-                task.assigneeName.isEmpty
-                    ? L.anyoneOnShift
-                    : task.assigneeName,
+                task.assigneeName.isEmpty ? L.anyoneOnShift : task.assigneeName,
                 style: T.label.copyWith(color: AppTheme.ink2),
               ),
               if (due != null)
@@ -667,8 +808,7 @@ class TaskBubbleCard extends StatelessWidget {
                       '${due.toLocal().hour}:${due.toLocal().minute.toString().padLeft(2, '0')}'),
                   style: T.label.copyWith(
                       color: overdue ? AppTheme.danger : AppTheme.ink2,
-                      fontWeight:
-                          overdue ? FontWeight.w800 : FontWeight.w600),
+                      fontWeight: overdue ? FontWeight.w800 : FontWeight.w600),
                 ),
               if (overdue)
                 Text(L.overdueTag,
@@ -680,6 +820,28 @@ class TaskBubbleCard extends StatelessWidget {
             ]),
           ]),
         ),
+        if (task.isAvailable) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 44,
+            child: FilledButton(
+              onPressed: () => run(() => state.takeTask(task)),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.cta,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(L.takeTask),
+            ),
+          ),
+        ] else if (mine && task.isInProgress) ...[
+          const SizedBox(width: 4),
+          TextButton(
+            onPressed: () => run(() => state.leaveTask(task)),
+            child: Text(L.leaveTask),
+          ),
+        ],
       ]),
     );
   }
@@ -756,8 +918,7 @@ class _ChatThreadSheetState extends State<ChatThreadSheet> {
             for (final reply in replies)
               ChatBubble(
                 message: reply,
-                own: !reply.isBot &&
-                    reply.authorName == state.activeUserName,
+                own: !reply.isBot && reply.authorName == state.activeUserName,
                 onReply: () {},
                 onOpenThread: () {},
               ),
@@ -792,8 +953,8 @@ class _ChatThreadSheetState extends State<ChatThreadSheet> {
                 color: AppColors.espresso,
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: const Icon(Icons.send_rounded,
-                  size: 19, color: Colors.white),
+              child:
+                  const Icon(Icons.send_rounded, size: 19, color: Colors.white),
             ),
           ),
         ]),

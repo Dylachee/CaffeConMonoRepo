@@ -9,14 +9,28 @@ from django.views.decorators.http import require_POST
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
 from apps.core.menu_catalog import CLIENT_MENU_TAG
-from apps.core.models import AttentionSignal, MenuCategory, MenuItem, Order, Table
+from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, Restaurant, Table
 from apps.core.services import acknowledge_signal_on_table
+
+
+def _restaurant_for_admin(request):
+    slug = request.GET.get("restaurant") or request.POST.get("restaurant")
+    restaurants = Restaurant.objects.filter(is_active=True)
+    if not request.user.is_superuser:
+        restaurants = restaurants.filter(memberships__user=request.user)
+    if slug:
+        return get_object_or_404(restaurants, slug=slug)
+    restaurant = restaurants.order_by("name").first()
+    if restaurant is None:
+        return get_object_or_404(Restaurant, pk=-1)
+    return restaurant
 
 
 @staff_member_required(login_url="/system-admin/login/")
 def dashboard(request):
-    orders = Order.objects.select_related("table").prefetch_related("items", "items__menu_item")
-    menu_list = [item for item in MenuItem.objects.all() if "archived" not in (item.tags or [])]
+    restaurant = _restaurant_for_admin(request)
+    orders = Order.objects.filter(restaurant=restaurant).select_related("table").prefetch_related("items", "items__menu_item")
+    menu_list = [item for item in MenuItem.objects.filter(restaurant=restaurant) if "archived" not in (item.tags or [])]
     line_total = ExpressionWrapper(
         F("items__unit_price") * F("items__quantity"),
         output_field=DecimalField(max_digits=12, decimal_places=2),
@@ -25,15 +39,16 @@ def dashboard(request):
         "orders_total": orders.count(),
         "orders_pending": orders.filter(status=Order.Status.NEW).count(),
         "orders_ready": orders.filter(status=Order.Status.READY).count(),
-        "active_tables": Table.objects.exclude(status=Table.Status.FREE).count(),
+        "restaurant": restaurant,
+        "active_tables": Table.objects.filter(restaurant=restaurant).exclude(status=Table.Status.FREE).count(),
         "menu_items": len(menu_list),
         "sales_total": orders.aggregate(total=Sum(line_total))["total"] or 0,
         "orders_by_status": orders.values("status").annotate(total=Count("id")).order_by("status"),
         "latest_orders": orders[:10],
-        "active_signals": AttentionSignal.objects.select_related("table").filter(ack=False)[:8],
-        "tables": Table.objects.select_related("waiter").all(),
+        "active_signals": AttentionSignal.objects.filter(restaurant=restaurant).select_related("table").filter(ack=False)[:8],
+        "tables": Table.objects.filter(restaurant=restaurant).select_related("waiter"),
         "menu_list": menu_list[:80],
-        "menu_categories": MenuCategory.objects.annotate(
+        "menu_categories": MenuCategory.objects.filter(restaurant=restaurant).annotate(
             item_count=Count("items", filter=Q(items__is_available=True))
         ).order_by("sort_order", "name"),
         "order_statuses": Order.Status.choices,
@@ -51,7 +66,7 @@ def prototype_page(request):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def update_order_status(request, order_id):
-    order = get_object_or_404(Order, pk=order_id)
+    order = get_object_or_404(Order, restaurant=_restaurant_for_admin(request), pk=order_id)
     next_status = request.POST.get("status")
     if next_status not in Order.Status.values:
         messages.error(request, "Unknown order status.")
@@ -67,7 +82,7 @@ def update_order_status(request, order_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def toggle_menu_item(request, item_id):
-    item = get_object_or_404(MenuItem, pk=item_id)
+    item = get_object_or_404(MenuItem, restaurant=_restaurant_for_admin(request), pk=item_id)
     item.is_available = not item.is_available
     item.save(update_fields=["is_available", "updated_at"])
     messages.success(request, f"{item.name}: {'available' if item.is_available else 'stop-listed'}.")
@@ -77,12 +92,14 @@ def toggle_menu_item(request, item_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def create_menu_item(request):
+    restaurant = _restaurant_for_admin(request)
     category_id = request.POST.get("category")
     if not category_id:
         messages.error(request, "Create a category before adding menu items.")
         return redirect("admin_web:dashboard")
-    category = get_object_or_404(MenuCategory, pk=category_id)
+    category = get_object_or_404(MenuCategory, restaurant=restaurant, pk=category_id)
     item = MenuItem.objects.create(
+        restaurant=restaurant,
         name=request.POST.get("name", "").strip(),
         description=request.POST.get("description", "").strip(),
         composition=request.POST.get("composition", "").strip(),
@@ -99,6 +116,7 @@ def create_menu_item(request):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def create_menu_category(request):
+    restaurant = _restaurant_for_admin(request)
     name = request.POST.get("name", "").strip()
     if not name:
         messages.error(request, "Category name is required.")
@@ -107,14 +125,14 @@ def create_menu_category(request):
     base = slugify(name)[:40] or "category"
     key = base
     suffix = 2
-    while MenuCategory.objects.filter(key=key).exists():
+    while MenuCategory.objects.filter(restaurant=restaurant, key=key).exists():
         tail = f"-{suffix}"
         key = f"{base[:40 - len(tail)]}{tail}"
         suffix += 1
     sort_order = (
-        MenuCategory.objects.aggregate(max_order=Max("sort_order"))["max_order"] or 0
+        MenuCategory.objects.filter(restaurant=restaurant).aggregate(max_order=Max("sort_order"))["max_order"] or 0
     ) + 1
-    MenuCategory.objects.create(key=key, name=name, color=color, sort_order=sort_order)
+    MenuCategory.objects.create(restaurant=restaurant, key=key, name=name, color=color, sort_order=sort_order)
     messages.success(request, f"Category {name} added.")
     return redirect("admin_web:dashboard")
 
@@ -122,7 +140,7 @@ def create_menu_category(request):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def update_menu_category(request, category_id):
-    category = get_object_or_404(MenuCategory, pk=category_id)
+    category = get_object_or_404(MenuCategory, restaurant=_restaurant_for_admin(request), pk=category_id)
     name = request.POST.get("name", "").strip()
     if not name:
         messages.error(request, "Category name is required.")
@@ -137,7 +155,7 @@ def update_menu_category(request, category_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def delete_menu_category(request, category_id):
-    category = get_object_or_404(MenuCategory, pk=category_id)
+    category = get_object_or_404(MenuCategory, restaurant=_restaurant_for_admin(request), pk=category_id)
     if category.items.exists():
         messages.error(request, "Move items out of this category before deleting it.")
         return redirect("admin_web:dashboard")
@@ -150,11 +168,11 @@ def delete_menu_category(request, category_id):
 @staff_member_required(login_url="/system-admin/login/")
 @require_POST
 def ack_attention_signal(request, signal_id):
-    signal = get_object_or_404(AttentionSignal.objects.select_related("table"), pk=signal_id)
-    try:
-        employee = request.user.employee_profile
-    except Exception:
-        employee = None
+    restaurant = _restaurant_for_admin(request)
+    signal = get_object_or_404(AttentionSignal.objects.filter(restaurant=restaurant).select_related("table"), pk=signal_id)
+    employee = Employee.objects.filter(
+        user=request.user, restaurant=restaurant
+    ).first()
     signal.acknowledge(employee)
     table = acknowledge_signal_on_table(signal.table)
     broadcast_attention_event("acked", signal)

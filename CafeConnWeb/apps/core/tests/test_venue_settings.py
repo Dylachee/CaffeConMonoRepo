@@ -11,7 +11,7 @@ class VenueSettingsSoloTests(TestCase):
 
     def test_get_solo_creates_singleton_with_sissi_defaults(self):
         settings = VenueSettings.get_solo()
-        self.assertEqual(settings.slug, "default")
+        self.assertEqual(settings.slug, "sissy-bar")
         self.assertEqual(settings.name, "Caffè & Bistrò Sissi")
         self.assertEqual(settings.palette(), SISSI_PALETTE)
         # Repeated calls return the same row, not new ones.

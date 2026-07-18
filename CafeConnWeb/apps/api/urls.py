@@ -16,6 +16,8 @@ router.register("employees", views.EmployeeViewSet, basename="employee")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("platform/restaurants/", views.PlatformRestaurantsView.as_view(), name="platform-restaurants"),
+    path("platform/restaurants/<int:pk>/", views.PlatformRestaurantDetailView.as_view(), name="platform-restaurant-detail"),
     path("auth/token/", views.ThrottledObtainAuthToken.as_view(), name="auth-token"),
     path("staff/bootstrap/", views.StaffBootstrapView.as_view(), name="staff-bootstrap"),
     path("staff/stats/", views.StaffStatsView.as_view(), name="staff-stats"),
@@ -33,6 +35,8 @@ urlpatterns = [
     path("staff/tasks/", views_tasks.StaffTasksView.as_view(), name="staff-tasks"),
     path("staff/tasks/<int:pk>/", views_tasks.StaffTaskDetailView.as_view(), name="staff-task-detail"),
     path("staff/tasks/<int:pk>/done/", views_tasks.StaffTaskDoneView.as_view(), name="staff-task-done"),
+    path("staff/tasks/<int:pk>/take/", views_tasks.StaffTaskTakeView.as_view(), name="staff-task-take"),
+    path("staff/tasks/<int:pk>/leave/", views_tasks.StaffTaskLeaveView.as_view(), name="staff-task-leave"),
     path("staff/tasks/<int:pk>/thread/", views_tasks.StaffTaskThreadView.as_view(), name="staff-task-thread"),
     # Content: the venue's social feed (SMM / content capability).
     path("staff/feed/", views_feed.StaffFeedView.as_view(), name="staff-feed"),

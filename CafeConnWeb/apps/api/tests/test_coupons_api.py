@@ -216,7 +216,7 @@ class IssueRedeemApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertIn("/menu/?claim=", body["claimUrl"])
+        self.assertIn("/r/sissy-bar/?claim=", body["claimUrl"])
         payload = coupons.parse_claim_token(body["token"])
         self.assertEqual(payload["campaign"], self.campaign.pk)
         self.assertEqual(payload["employee"], self.employee.pk)

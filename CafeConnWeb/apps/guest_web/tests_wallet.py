@@ -112,7 +112,7 @@ class GuestClaimFlowTests(TestCase):
         coupon = body["coupons"][0]
         self.assertEqual(coupon["status"], "active")
         self.assertTrue(coupon["qrSvg"].startswith("<svg"))
-        self.assertIn("/menu/wallet/recover/", body["recovery"]["url"])
+        self.assertIn("/r/sissy-bar/wallet/recover/", body["recovery"]["url"])
         self.assertTrue(body["recovery"]["qrSvg"].startswith("<svg"))
 
     def test_recovery_link_reattaches_wallet_on_new_device(self):
@@ -123,14 +123,14 @@ class GuestClaimFlowTests(TestCase):
         new_device = self.client_class()
         response = new_device.get(f"/menu/wallet/recover/{token}/")
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/menu/?wallet=1")
+        self.assertEqual(response.url, "/r/sissy-bar/?wallet=1")
         self.assertIn(WALLET_COOKIE, response.cookies)
         listing = new_device.get("/menu/wallet/").json()
         self.assertEqual(len(listing["coupons"]), 1)
 
     def test_invalid_recovery_token_redirects_with_error(self):
         response = self.client.get("/menu/wallet/recover/garbage/")
-        self.assertEqual(response.url, "/menu/?wallet=invalid")
+        self.assertEqual(response.url, "/r/sissy-bar/?wallet=invalid")
         self.assertNotIn(WALLET_COOKIE, response.cookies)
 
     def test_redeemed_coupon_shows_as_used_without_qr(self):

@@ -88,6 +88,7 @@ class CafeTable {
   String? currentOrderId;
   List<String> notes;
   DateTime? openedAt;
+  String? waiterId;
   String waiterName = '—';
   // Guest attention signal: 'call', 'bill', 'arrived', or null.
   String? attention;
@@ -107,6 +108,7 @@ class CafeTable {
         'guestCount': guestCount,
         'notes': notes,
         'openedAt': openedAt?.millisecondsSinceEpoch,
+        'waiterId': waiterId,
         'waiterName': waiterName,
         'attention': attention,
       };
@@ -149,6 +151,7 @@ class CafeTable {
     if (j['openedAt'] != null) {
       t.openedAt = DateTime.fromMillisecondsSinceEpoch(j['openedAt'] as int);
     }
+    t.waiterId = j['waiterId'] as String?;
     t.waiterName = j['waiterName'] as String? ?? '—';
     t.attention = j['attention'] as String?;
     return t;
@@ -568,6 +571,8 @@ class CafeOrder {
     this.note = '',
     this.discountAmount = 0,
     this.couponCode = '',
+    this.waiterId,
+    this.waiterName = '',
   });
   final String id;
   final String tableId;
@@ -586,6 +591,8 @@ class CafeOrder {
   /// "− discount (coupon CODE)" line and a discounted total.
   final double discountAmount;
   final String couponCode;
+  final String? waiterId;
+  final String waiterName;
 
   /// This AWAITING order reached alert ladder L3 — highlight it everywhere.
   /// Transient server state, not persisted with the order JSON.
@@ -617,6 +624,8 @@ class CafeOrder {
         'splitTo': splitTo.index,
         'discountAmount': discountAmount,
         'couponCode': couponCode,
+        'waiterId': waiterId,
+        'waiterName': waiterName,
       };
   static CafeOrder fromJson(Map<String, dynamic> j, List<MenuItem> menu) =>
       CafeOrder(
@@ -624,6 +633,8 @@ class CafeOrder {
         tableId: j['tableId'],
         discountAmount: (j['discountAmount'] as num?)?.toDouble() ?? 0,
         couponCode: j['couponCode'] as String? ?? '',
+        waiterId: j['waiterId'] as String?,
+        waiterName: j['waiterName'] as String? ?? '',
         items: (j['items'] as List).map((e) {
           final m = e as Map<String, dynamic>;
           final item = menu.firstWhereOrNull((mi) => mi.id == m['itemId']) ??

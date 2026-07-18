@@ -36,19 +36,26 @@ class ApiConfig {
       ? baseUrl.substring(0, baseUrl.length - 1)
       : baseUrl;
 
-  /// REST root, e.g. http://192.168.1.42:8000/api
-  static String get apiRoot => '$_base/api';
+  static String restaurantSlug = 'sissy-bar';
+
+  /// Restaurant-qualified REST root. Auth and the platform control plane use
+  /// [globalApiRoot]; every operational endpoint uses this root.
+  static String get globalApiRoot => '$_base/api';
+  static String get apiRoot => '$globalApiRoot/restaurants/$restaurantSlug';
 
   /// Authenticated WebSocket URL for the staff realtime feed.
   static Uri staffSocket(String token) {
     final wsBase = _base
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
-    return Uri.parse('$wsBase/ws/staff/?token=$token');
+    return Uri.parse(
+        '$wsBase/ws/restaurants/$restaurantSlug/staff/?token=$token');
   }
 
   // REST endpoints.
-  static Uri authToken() => Uri.parse('$apiRoot/auth/token/');
+  static Uri authToken() => Uri.parse('$globalApiRoot/auth/token/');
+  static Uri platformRestaurants() =>
+      Uri.parse('$globalApiRoot/platform/restaurants/');
   static Uri bootstrap() => Uri.parse('$apiRoot/staff/bootstrap/');
   static Uri stats() => Uri.parse('$apiRoot/staff/stats/');
   static Uri orderHistory() => Uri.parse('$apiRoot/staff/order-history/');
@@ -114,8 +121,7 @@ class ApiConfig {
         if (limit != null) 'limit': '$limit',
       });
   static Uri chatSend() => Uri.parse('$apiRoot/staff/chat/messages/');
-  static Uri chatThread(int id) =>
-      Uri.parse('$apiRoot/staff/chat/thread/$id/');
+  static Uri chatThread(int id) => Uri.parse('$apiRoot/staff/chat/thread/$id/');
   static Uri chatRead() => Uri.parse('$apiRoot/staff/chat/read/');
   static Uri staffTasks({String? date}) =>
       Uri.parse('$apiRoot/staff/tasks/').replace(queryParameters: {
@@ -124,6 +130,10 @@ class ApiConfig {
   static Uri staffTask(int id) => Uri.parse('$apiRoot/staff/tasks/$id/');
   static Uri staffTaskDone(int id) =>
       Uri.parse('$apiRoot/staff/tasks/$id/done/');
+  static Uri staffTaskTake(int id) =>
+      Uri.parse('$apiRoot/staff/tasks/$id/take/');
+  static Uri staffTaskLeave(int id) =>
+      Uri.parse('$apiRoot/staff/tasks/$id/leave/');
   static Uri staffTaskThread(int id) =>
       Uri.parse('$apiRoot/staff/tasks/$id/thread/');
 

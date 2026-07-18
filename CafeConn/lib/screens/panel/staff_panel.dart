@@ -15,69 +15,291 @@ import '../../data/dtos.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
+import '../content/content_screen.dart';
+import '../coupons/coupons_screen.dart';
+import '../planner/planner.dart';
 
-class StaffPanelScreen extends StatefulWidget {
+class StaffPanelScreen extends StatelessWidget {
   const StaffPanelScreen({super.key});
-  @override
-  State<StaffPanelScreen> createState() => _StaffPanelScreenState();
-}
-
-class _StaffPanelScreenState extends State<StaffPanelScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 5, vsync: this);
-    _tabController.addListener(() => setState(() {}));
-  }
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    void open(Widget page) => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => page,
+          ),
+        );
+
     return AppScaffold(
       bottomNav: null,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Header(title: L.panel, subtitle: L.systemManagement, actions: [
-            IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => GoRouter.of(context).push('/settings')),
-          ]),
-          SizedBox(
-            height: 38,
-            child: TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              indicatorColor: AppTheme.cta,
-              labelColor: AppTheme.ink,
-              unselectedLabelColor: AppTheme.ink2,
-              tabs: [
-                Tab(text: L.overview),
-                Tab(text: L.history),
-                Tab(text: L.team),
-                Tab(text: L.menu),
-                Tab(text: L.access)
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+          Header(
+              title: L.t('Manage', 'Gestisci'),
+              subtitle: L.systemManagement,
+              actions: [
+                IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => GoRouter.of(context).push('/settings')),
+              ]),
+          if (state.availableRestaurants.length > 1) ...[
+            _RestaurantSwitcher(state: state),
+            const SizedBox(height: 14),
+          ] else if (state.isPlatformOwner) ...[
+            _RestaurantSwitcher(state: state),
+            const SizedBox(height: 14),
+          ],
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                _OverviewTab(),
-                const _OrderHistoryTab(),
-                const TeamManagementScreen(),
-                const MenuManagementScreen(),
-                _AccessTab(),
-              ],
-            ),
+            child: ListView(children: [
+              if (state.capReports || state.capManage)
+                _ManageGroup(
+                  title: L.t('Today', 'Oggi'),
+                  items: [
+                    if (state.capReports)
+                      _ManageItem(
+                          L.overview,
+                          L.t('Sales, pace and occupancy',
+                              'Vendite, ritmo e occupazione'),
+                          Icons.insights_outlined,
+                          () => open(_ManagePage(
+                              title: L.overview, child: _OverviewTab()))),
+                    if (state.capManage)
+                      _ManageItem(
+                          L.planner,
+                          L.plannerSub,
+                          Icons.event_note_outlined,
+                          () => open(const PlannerScreen())),
+                    if (state.capReports)
+                      _ManageItem(
+                          L.history,
+                          L.t('Orders signed by the serving waiter',
+                              'Ordini firmati dal cameriere'),
+                          Icons.receipt_long_outlined,
+                          () => open(_ManagePage(
+                              title: L.history,
+                              child: const _OrderHistoryTab()))),
+                  ],
+                ),
+              if (state.capManage)
+                _ManageGroup(
+                  title: L.team,
+                  items: [
+                    _ManageItem(
+                        L.team,
+                        L.t('People, roles and shift status',
+                            'Persone, ruoli e stato turno'),
+                        Icons.groups_outlined,
+                        () => open(_ManagePage(
+                            title: L.team,
+                            child: const TeamManagementScreen()))),
+                    _ManageItem(
+                        L.access,
+                        L.t('Effective capabilities by person',
+                            'Permessi effettivi per persona'),
+                        Icons.admin_panel_settings_outlined,
+                        () => open(
+                            _ManagePage(title: L.access, child: _AccessTab()))),
+                  ],
+                ),
+              if (state.capMenu || state.canSeeCoupons)
+                _ManageGroup(
+                  title: L.t('Catalog & offers', 'Catalogo e offerte'),
+                  items: [
+                    if (state.capMenu)
+                      _ManageItem(
+                          L.menu,
+                          L.t('Items, categories and availability',
+                              'Prodotti, categorie e disponibilità'),
+                          Icons.restaurant_menu_outlined,
+                          () => open(_ManagePage(
+                              title: L.menu,
+                              child: const MenuManagementScreen()))),
+                    if (state.canSeeCoupons)
+                      _ManageItem(
+                          L.coupons,
+                          L.couponsSub,
+                          Icons.confirmation_number_outlined,
+                          () => open(const CouponsScreen())),
+                  ],
+                ),
+              if (state.canSeeContent)
+                _ManageGroup(
+                  title: L.t('Public presence', 'Presenza pubblica'),
+                  items: [
+                    _ManageItem(
+                        L.content,
+                        L.contentSub,
+                        Icons.storefront_outlined,
+                        () => open(const ContentScreen())),
+                  ],
+                ),
+              const SizedBox(height: 24),
+            ]),
           ),
         ],
       ),
     );
   }
+}
+
+class _ManageItem {
+  const _ManageItem(this.title, this.subtitle, this.icon, this.onTap);
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+class _ManageGroup extends StatelessWidget {
+  const _ManageGroup({required this.title, required this.items});
+  final String title;
+  final List<_ManageItem> items;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SectionTitle(title),
+          Container(
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.separator),
+            ),
+            child: Column(children: [
+              for (var index = 0; index < items.length; index++) ...[
+                ListTile(
+                  minTileHeight: 58,
+                  leading: Icon(items[index].icon, color: AppTheme.ink2),
+                  title: Text(items[index].title, style: T.bodySemi),
+                  subtitle: Text(items[index].subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: T.small.copyWith(color: AppTheme.ink2)),
+                  trailing:
+                      const Icon(Icons.chevron_right, color: AppTheme.ink3),
+                  onTap: items[index].onTap,
+                ),
+                if (index < items.length - 1)
+                  const Divider(height: 1, indent: 56),
+              ],
+            ]),
+          ),
+        ]),
+      );
+}
+
+class _RestaurantSwitcher extends StatelessWidget {
+  const _RestaurantSwitcher({required this.state});
+  final CafeState state;
+
+  Future<void> _create(BuildContext context) async {
+    final name = TextEditingController();
+    final slug = TextEditingController();
+    final create = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(L.t('Add restaurant', 'Aggiungi ristorante')),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: name,
+            autofocus: true,
+            decoration: InputDecoration(labelText: L.t('Name', 'Nome')),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: slug,
+            decoration: const InputDecoration(labelText: 'URL slug'),
+          ),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(L.cancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(L.t('Create', 'Crea'))),
+        ],
+      ),
+    );
+    if (create != true ||
+        name.text.trim().isEmpty ||
+        slug.text.trim().isEmpty) {
+      name.dispose();
+      slug.dispose();
+      return;
+    }
+    final error = await state.createRestaurant(
+        name.text.trim(), slug.text.trim().toLowerCase());
+    name.dispose();
+    slug.dispose();
+    if (error != null && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+            child: DropdownButtonFormField<String>(
+          initialValue: state.activeRestaurant?.slug,
+          decoration: InputDecoration(
+            labelText: L.t('Restaurant', 'Ristorante'),
+            prefixIcon: const Icon(Icons.storefront_outlined),
+          ),
+          items: state.availableRestaurants
+              .map((restaurant) => DropdownMenuItem(
+                  value: restaurant.slug, child: Text(restaurant.name)))
+              .toList(),
+          onChanged: (slug) async {
+            final restaurant = state.availableRestaurants
+                .firstWhere((item) => item.slug == slug);
+            final error = await state.switchRestaurant(restaurant);
+            if (error != null && context.mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(error)));
+            }
+          },
+        )),
+        if (state.isPlatformOwner) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: IconButton.filled(
+              tooltip: L.t('Add restaurant', 'Aggiungi ristorante'),
+              onPressed: () => _create(context),
+              icon: const Icon(Icons.add),
+            ),
+          ),
+        ],
+      ]);
+}
+
+class _ManagePage extends StatelessWidget {
+  const _ManagePage({required this.title, required this.child});
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AppScaffold(
+        bottomNav: null,
+        child: Column(children: [
+          Header(
+            title: title,
+            actions: [
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          Expanded(child: child),
+        ]),
+      );
 }
 
 class _OverviewTab extends StatefulWidget {
@@ -1662,6 +1884,8 @@ class _StaffAccessCard extends StatelessWidget {
       ('can_manage_menu', L.capMenu, employee.canManageMenu),
       ('can_content', L.capContent, employee.canContent),
       ('can_grant_discount', L.capDiscount, employee.canGrantDiscount),
+      ('can_manage', L.t('Manage', 'Gestione'), employee.canManage),
+      ('can_reports', L.t('Reports', 'Report'), employee.canReports),
     ];
 
     Future<void> toggle(String field, bool value) async {

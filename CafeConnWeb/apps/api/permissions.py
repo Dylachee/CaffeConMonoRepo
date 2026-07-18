@@ -10,11 +10,11 @@ class HasContentCapability(permissions.BasePermission):
     message = "You need the content capability to manage the venue's feed and storefront."
 
     def has_permission(self, request, view):
-        from apps.api.views import caps_for_user  # local import: avoid cycle
+        from apps.api.tenant import capabilities_for_request
 
         if not request.user or not request.user.is_authenticated:
             return False
-        caps = caps_for_user(request.user)
+        caps = capabilities_for_request(request)
         return bool(caps.get("content") or caps.get("manage"))
 
 
@@ -25,11 +25,11 @@ class HasDiscountCapability(permissions.BasePermission):
     message = "You need the discount capability to issue or redeem coupons."
 
     def has_permission(self, request, view):
-        from apps.api.views import caps_for_user  # local import: avoid cycle
+        from apps.api.tenant import capabilities_for_request
 
         if not request.user or not request.user.is_authenticated:
             return False
-        return bool(caps_for_user(request.user).get("discount"))
+        return bool(capabilities_for_request(request).get("discount"))
 
 
 class HasManageCapability(permissions.BasePermission):
@@ -38,8 +38,8 @@ class HasManageCapability(permissions.BasePermission):
     message = "Only a manager or admin can do this."
 
     def has_permission(self, request, view):
-        from apps.api.views import caps_for_user  # local import: avoid cycle
+        from apps.api.tenant import capabilities_for_request
 
         if not request.user or not request.user.is_authenticated:
             return False
-        return bool(caps_for_user(request.user).get("manage"))
+        return bool(capabilities_for_request(request).get("manage"))

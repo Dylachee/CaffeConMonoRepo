@@ -15,6 +15,10 @@ from apps.api.serializers import (
 )
 
 
+def _restaurant_group(instance) -> str:
+    return f"restaurant.{instance.restaurant_id}.staff"
+
+
 def broadcast_chat_event(action: str, message) -> None:
     """chat.message / chat.updated — new bubbles and re-rendered task bubbles."""
     channel_layer = get_channel_layer()
@@ -25,7 +29,7 @@ def broadcast_chat_event(action: str, message) -> None:
         "message": json.loads(JSONRenderer().render(ChatMessageSerializer(message).data)),
     }
     async_to_sync(channel_layer.group_send)(
-        "staff",
+        _restaurant_group(message),
         {"type": "chat.event", "payload": payload},
     )
 
@@ -40,7 +44,7 @@ def broadcast_task_event(action: str, task) -> None:
         "task": json.loads(JSONRenderer().render(StaffTaskSerializer(task).data)),
     }
     async_to_sync(channel_layer.group_send)(
-        "staff",
+        _restaurant_group(task),
         {"type": "chat.event", "payload": payload},
     )
 
@@ -53,7 +57,7 @@ def broadcast_order_event(action: str, order) -> None:
             "order": json.loads(JSONRenderer().render(OrderSerializer(order).data)),
         }
         async_to_sync(channel_layer.group_send)(
-            "staff",
+            _restaurant_group(order),
             {
                 "type": "order.event",
                 "payload": payload,
@@ -64,16 +68,25 @@ def broadcast_order_event(action: str, order) -> None:
     # a new AWAITING order wakes locked on-shift phones; escalation re-alerts.
     # (No-op with no VAPID keys in env — see apps.core.push.)
     if action == "created" and order.status == Order.Status.AWAITING:
-        push.push_to_on_shift(push.awaiting_order_payload("created", order))
+        push.push_to_on_shift(
+            push.awaiting_order_payload("created", order),
+            restaurant_id=order.restaurant_id,
+        )
     elif action == "escalated":
-        push.push_to_on_shift(push.awaiting_order_payload("escalated", order))
+        push.push_to_on_shift(
+            push.awaiting_order_payload("escalated", order),
+            restaurant_id=order.restaurant_id,
+        )
 
 
 def notify_order_alert_handled(order) -> None:
     """A guest order left AWAITING (confirmed/rejected): tell background
     devices so their OS banners close. Live tabs learn via the normal
     order.updated WS event."""
-    push.push_to_on_shift(push.awaiting_order_payload("handled", order))
+    push.push_to_on_shift(
+        push.awaiting_order_payload("handled", order),
+        restaurant_id=order.restaurant_id,
+    )
 
 
 def broadcast_table_event(table) -> None:
@@ -92,7 +105,7 @@ def broadcast_table_event(table) -> None:
         "table": json.loads(JSONRenderer().render(TableSerializer(table).data)),
     }
     async_to_sync(channel_layer.group_send)(
-        "staff",
+        _restaurant_group(table),
         {
             "type": "table.event",
             "payload": payload,
@@ -106,9 +119,10 @@ def broadcast_attention_event(action: str, signal) -> None:
         payload = {
             "event": f"attention.{action}",
             "signal": json.loads(JSONRenderer().render(AttentionSignalSerializer(signal).data)),
+            "targetEmployeeId": signal.table.waiter_id,
         }
         async_to_sync(channel_layer.group_send)(
-            "staff",
+            _restaurant_group(signal),
             {
                 "type": "attention.event",
                 "payload": payload,
@@ -118,4 +132,12 @@ def broadcast_attention_event(action: str, signal) -> None:
     # Background push mirrors the alert lifecycle: created wakes phones,
     # acked closes their OS banners (same tag), escalated re-alerts.
     if action in ("created", "acked", "escalated"):
-        push.push_to_on_shift(push.attention_payload(action, signal))
+        push.push_to_on_shift(
+            push.attention_payload(action, signal),
+            restaurant_id=signal.restaurant_id,
+            employee_id=(
+                signal.table.waiter_id
+                if action == "created" and signal.table.waiter_id
+                else None
+            ),
+        )

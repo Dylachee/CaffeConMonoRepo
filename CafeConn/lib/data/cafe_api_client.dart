@@ -66,6 +66,18 @@ class CafeApiClient {
     return BootstrapDto.fromJson(_decodeMap(res));
   }
 
+  Future<RestaurantDto> createRestaurant({
+    required String name,
+    required String slug,
+  }) async {
+    final res = await _send(() => _http.post(
+          ApiConfig.platformRestaurants(),
+          headers: _headers(),
+          body: jsonEncode({'name': name, 'slug': slug}),
+        ));
+    return RestaurantDto.fromJson(_decodeMap(res));
+  }
+
   /// Manager dashboard analytics, aggregated from the full order history.
   Future<StatsDto> stats() async {
     final res =
@@ -360,8 +372,8 @@ class CafeApiClient {
     final request =
         http.MultipartRequest('POST', ApiConfig.staffVenueImage(kind));
     if (_token != null) request.headers['Authorization'] = 'Token $_token';
-    request.files.add(
-        http.MultipartFile.fromBytes('image', bytes, filename: filename));
+    request.files
+        .add(http.MultipartFile.fromBytes('image', bytes, filename: filename));
     final res = await _send(() async {
       final streamed = await request.send();
       return http.Response.fromStream(streamed);
@@ -448,8 +460,8 @@ class CafeApiClient {
         await _send(() => _http.get(ApiConfig.chatRead(), headers: _headers()));
     final body = _decodeMap(res);
     Map<String, int> asIntMap(dynamic value) => value is Map
-        ? value.map((k, v) =>
-            MapEntry(k.toString(), int.tryParse(v.toString()) ?? 0))
+        ? value.map(
+            (k, v) => MapEntry(k.toString(), int.tryParse(v.toString()) ?? 0))
         : <String, int>{};
     return (unread: asIntMap(body['unread']), marks: asIntMap(body['marks']));
   }
@@ -480,16 +492,30 @@ class CafeApiClient {
   Future<StaffTaskDto> quickAddTask(String input) async {
     final res = await _send(() => _http.post(ApiConfig.staffTasks(),
         headers: _headers(), body: jsonEncode({'input': input})));
-    return StaffTaskDto.fromJson(
-        ((_decodeMap(res)['task'] as Map?) ?? const {}).cast<String, dynamic>());
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
   }
 
   /// The big Done checkbox. [done] false reopens (permission-gated).
   Future<StaffTaskDto> setTaskDone(int taskId, {bool done = true}) async {
     final res = await _send(() => _http.post(ApiConfig.staffTaskDone(taskId),
         headers: _headers(), body: jsonEncode({'done': done})));
-    return StaffTaskDto.fromJson(
-        ((_decodeMap(res)['task'] as Map?) ?? const {}).cast<String, dynamic>());
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
+  }
+
+  Future<StaffTaskDto> takeTask(int taskId) async {
+    final res = await _send(
+        () => _http.post(ApiConfig.staffTaskTake(taskId), headers: _headers()));
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
+  }
+
+  Future<StaffTaskDto> leaveTask(int taskId, {String note = ''}) async {
+    final res = await _send(() => _http.post(ApiConfig.staffTaskLeave(taskId),
+        headers: _headers(), body: jsonEncode({'note': note})));
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
   }
 
   /// The task's chat thread (bubble + replies) for the planner deep-link.
@@ -513,10 +539,23 @@ class CafeApiClient {
   // --- Alerts: shift, push subscriptions, escalation -------------------------
 
   /// Self-service shift toggle — alerts and pushes only reach on-shift staff.
-  Future<bool> setShift(bool on) async {
+  Future<({bool on, List<String> areas, List<String> preset})> setShift(bool on,
+      {List<String>? areas, bool force = false}) async {
     final res = await _send(() => _http.post(ApiConfig.staffShift(),
-        headers: _headers(), body: jsonEncode({'on': on})));
-    return _decodeMap(res)['on'] == true;
+        headers: _headers(),
+        body: jsonEncode({
+          'on': on,
+          if (areas != null) 'areas': areas,
+          if (force) 'force': true,
+        })));
+    final body = _decodeMap(res);
+    List<String> strings(dynamic value) =>
+        ((value as List?) ?? const []).map((e) => e.toString()).toList();
+    return (
+      on: body['on'] == true,
+      areas: strings(body['areas']),
+      preset: strings(body['preset']),
+    );
   }
 
   /// Register this browser's Web-Push subscription with the hub.
@@ -541,8 +580,8 @@ class CafeApiClient {
   Future<void> escalateSignal(String id) => _send(
       () => _http.post(ApiConfig.escalateSignal(id), headers: _headers()));
 
-  Future<void> escalateOrder(String id) => _send(
-      () => _http.post(ApiConfig.escalateOrder(id), headers: _headers()));
+  Future<void> escalateOrder(String id) =>
+      _send(() => _http.post(ApiConfig.escalateOrder(id), headers: _headers()));
 
   // --- Coupons: campaigns, issue, redeem ------------------------------------
 

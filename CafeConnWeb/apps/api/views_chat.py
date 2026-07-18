@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.serializers import ChatMessageSerializer
+from apps.api.tenant import employee_for_request, restaurant_for_request
 from apps.core import chatbot
 from apps.core.chat_commands import is_command
 from apps.core.models import ChatMessage, ChatReadMark
@@ -22,9 +23,7 @@ CHANNELS = [choice[0] for choice in ChatMessage.Channel.choices]
 
 
 def _employee_or_none(request):
-    from apps.api.views import employee_for_user
-
-    return employee_for_user(request.user)
+    return employee_for_request(request)
 
 
 def _messages_queryset():
@@ -53,6 +52,7 @@ class StaffChatMessagesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        restaurant = restaurant_for_request(request)
         channel = request.query_params.get("channel", "")
         if channel not in CHANNELS:
             return Response(
@@ -65,7 +65,9 @@ class StaffChatMessagesView(APIView):
             limit = _PAGE_DEFAULT
         limit = min(max(limit, 1), _PAGE_MAX)
 
-        queryset = _messages_queryset().filter(channel=channel)
+        queryset = _messages_queryset().filter(
+            restaurant=restaurant, channel=channel
+        )
         cursor = request.query_params.get("cursor", "")
         if cursor.isdigit():
             queryset = queryset.filter(id__lt=int(cursor))
@@ -82,6 +84,7 @@ class StaffChatMessagesView(APIView):
         )
 
     def post(self, request):
+        restaurant = restaurant_for_request(request)
         employee = _employee_or_none(request)
         if employee is None:
             return Response(
@@ -102,7 +105,9 @@ class StaffChatMessagesView(APIView):
         reply_to = None
         reply_to_id = request.data.get("reply_to")
         if reply_to_id:
-            reply_to = get_object_or_404(ChatMessage, pk=reply_to_id)
+            reply_to = get_object_or_404(
+                ChatMessage, restaurant=restaurant, pk=reply_to_id
+            )
             if reply_to.channel != channel:
                 return Response(
                     {"detail": "You can only reply within the same channel."},
@@ -141,7 +146,10 @@ class StaffChatThreadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
-        parent = get_object_or_404(_messages_queryset(), pk=pk)
+        restaurant = restaurant_for_request(request)
+        parent = get_object_or_404(
+            _messages_queryset(), restaurant=restaurant, pk=pk
+        )
         replies = _messages_queryset().filter(reply_to=parent).order_by("id")
         return Response(
             {
@@ -157,6 +165,7 @@ class StaffChatReadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        restaurant = restaurant_for_request(request)
         employee = _employee_or_none(request)
         if employee is None:
             return Response({"unread": {}, "marks": {}})
@@ -168,13 +177,16 @@ class StaffChatReadView(APIView):
         for channel in CHANNELS:
             last_read = marks.get(channel, 0)
             unread[channel] = (
-                ChatMessage.objects.filter(channel=channel, id__gt=last_read)
+                ChatMessage.objects.filter(
+                    restaurant=restaurant, channel=channel, id__gt=last_read
+                )
                 .exclude(author=employee)
                 .count()
             )
         return Response({"unread": unread, "marks": marks})
 
     def post(self, request):
+        restaurant = restaurant_for_request(request)
         employee = _employee_or_none(request)
         if employee is None:
             return Response(
@@ -195,7 +207,7 @@ class StaffChatReadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         mark, _ = ChatReadMark.objects.get_or_create(
-            employee=employee, channel=channel
+            restaurant=restaurant, employee=employee, channel=channel
         )
         # Monotonic: a stale tab can't roll the badge state backwards.
         if last_read > mark.last_read_message_id:

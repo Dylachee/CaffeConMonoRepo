@@ -9,10 +9,6 @@ import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/alert_banner.dart';
 import '../chat/chat.dart';
-import '../content/content_screen.dart';
-import '../coupons/coupons_screen.dart';
-import '../menu/staff_menu.dart';
-import '../orders/order_composer.dart';
 import '../orders/order_feed.dart';
 import '../panel/staff_panel.dart';
 import '../tables/table_grid.dart';
@@ -46,40 +42,20 @@ class _MainShellScreenState extends State<MainShellScreen> {
     super.dispose();
   }
 
-  /// Tab set per capability (the whole point of the shell):
-  ///   cook / bartender — their order feed, the menu and the chats;
-  ///   waiter — everything except the analytics panel;
-  ///   SMM — only Content (and the team chats);
-  ///   manager / admin — everything.
+  /// Four stable workspaces at most. Catalog, coupons and content live under
+  /// Manage instead of competing with daily service in the footer.
   List<_ShellTab> _tabsFor(CafeState state) => [
         if (state.canSeeTables)
-          _ShellTab(L.tables, Icons.table_bar, const WaiterTableGridScreen(),
+          _ShellTab(L.t('Work', 'Lavoro'), Icons.table_bar,
+              const WaiterTableGridScreen(),
               badge: state.pendingApprovalOrders.length),
-        // Orders and the menu exist for people who work them (floor or a
-        // station). A pure content account never sees them.
-        if (state.worksOrders)
+        if (!state.canSeeTables && state.worksOrders)
           _ShellTab(L.orders, Icons.assignment, const UnifiedOrderFeedScreen()),
-        // Floor staff get the SAME order composer as inside a table — the only
-        // difference is the table is picked at the end. Stations (cook/bar)
-        // keep the read-only showcase/stop-list: they don't take orders.
-        if (state.worksOrders)
-          _ShellTab(
-              L.menu,
-              Icons.restaurant_menu,
-              state.isStationRole
-                  ? const StaffMenuScreen()
-                  : const WaiterOrderScreen(pickTableLater: true)),
-        _ShellTab(L.chats, Icons.chat_bubble, const StaffChatListScreen(),
+        _ShellTab(L.team, Icons.forum_outlined, const StaffChatListScreen(),
             badge: state.chatUnreadTotal),
-        // Coupons: issue/redeem needs `discount`, campaign analytics needs
-        // `content` — the area appears for either, tabs filter inside.
-        if (state.canSeeCoupons)
-          _ShellTab(L.coupons, Icons.confirmation_number_outlined,
-              const CouponsScreen()),
-        if (state.canSeeContent)
-          _ShellTab(L.content, Icons.storefront, const ContentScreen()),
-        if (state.canSeePanel)
-          _ShellTab(L.panel, Icons.analytics, const StaffPanelScreen()),
+        if (state.canSeeManage)
+          _ShellTab(L.t('Manage', 'Gestisci'), Icons.space_dashboard_outlined,
+              const StaffPanelScreen()),
       ];
 
   @override
@@ -108,9 +84,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
       backgroundColor: AppTheme.bg,
       body: Column(
         children: [
-          // Always-visible shift toggle (the alert/permission unlock) and the
-          // in-app alert banners — on every tab, impossible to miss.
-          const ShiftBar(),
           const AlertBannerStack(),
           Expanded(
             child: PageView(
@@ -133,6 +106,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         labels: tabs.map((t) => t.label).toList(),
         icons: tabs.map((t) => t.icon).toList(),
         badges: tabs.map((t) => t.badge).toList(),
+        showShift: state.worksOrders,
       ),
     );
   }
@@ -145,12 +119,14 @@ class _ShellBottomNav extends StatelessWidget {
     required this.labels,
     required this.icons,
     required this.badges,
+    required this.showShift,
   });
   final int selectedIndex;
   final ValueChanged<int> onTap;
   final List<String> labels;
   final List<IconData> icons;
   final List<int> badges;
+  final bool showShift;
 
   @override
   Widget build(BuildContext context) {
@@ -163,25 +139,38 @@ class _ShellBottomNav extends StatelessWidget {
       child: ClipRRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: NavigationBar(
-            backgroundColor: Colors.transparent,
-            indicatorColor: Colors.transparent,
-            selectedIndex: selectedIndex,
-            onDestinationSelected: onTap,
-            destinations: List.generate(labels.length, (i) {
-              final active = i == selectedIndex;
-              final icon = Icon(icons[i],
-                  color: active ? AppTheme.ink : const Color(0xFFA8A091));
-              return NavigationDestination(
-                icon: badges[i] > 0
-                    ? Badge(
-                        label: Text('${badges[i]}'),
-                        backgroundColor: AppTheme.warning,
-                        child: icon)
-                    : icon,
-                label: labels[i],
-              );
-            }),
+          child: SafeArea(
+            top: false,
+            child: Row(children: [
+              Expanded(
+                  child: NavigationBar(
+                backgroundColor: Colors.transparent,
+                indicatorColor: Colors.transparent,
+                selectedIndex: selectedIndex,
+                onDestinationSelected: onTap,
+                destinations: List.generate(labels.length, (i) {
+                  final active = i == selectedIndex;
+                  final icon = Icon(icons[i],
+                      color: active ? AppTheme.ink : const Color(0xFFA8A091));
+                  return NavigationDestination(
+                    icon: badges[i] > 0
+                        ? Badge(
+                            label: Text('${badges[i]}'),
+                            backgroundColor: AppTheme.warning,
+                            child: icon)
+                        : icon,
+                    label: labels[i],
+                  );
+                }),
+              )),
+              if (showShift) ...[
+                const SizedBox(width: 4),
+                const Padding(
+                  padding: EdgeInsets.only(right: 10),
+                  child: ShiftFooterControl(),
+                ),
+              ],
+            ]),
           ),
         ),
       ),

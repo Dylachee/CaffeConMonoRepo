@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET
 
 from apps.core.models import SocialPost
 from apps.core.social_embed import EMBED_SCRIPTS, domain_for_display
+from apps.guest_web.views import restaurant_for_guest_request
 
 _PAGE_MAX = 30
 _PAGE_DEFAULT = 6
@@ -35,7 +36,8 @@ def _post_payload(post: SocialPost) -> dict:
 
 
 @require_GET
-def feed_posts(request):
+def feed_posts(request, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
     try:
         limit = int(request.GET.get("limit", _PAGE_DEFAULT))
     except (TypeError, ValueError):
@@ -43,7 +45,9 @@ def feed_posts(request):
     limit = min(max(limit, 1), _PAGE_MAX)
 
     cursor = request.GET.get("cursor", "")
-    visible = SocialPost.objects.filter(is_hidden=False)
+    visible = SocialPost.objects.filter(
+        restaurant=restaurant, is_hidden=False
+    )
 
     pinned = []
     if not cursor:

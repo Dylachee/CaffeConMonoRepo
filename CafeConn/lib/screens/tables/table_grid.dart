@@ -43,8 +43,14 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
         state.orders
             .any((o) => o.tableId == t.id && o.status == OrderStatus.awaiting);
     filtered.sort((a, b) {
-      final pa = needsAttention(a) ? 0 : 1;
-      final pb = needsAttention(b) ? 0 : 1;
+      int priority(CafeTable table) {
+        if (needsAttention(table)) return 0;
+        if (table.waiterId == state.activeEmployeeId?.toString()) return 1;
+        return 2;
+      }
+
+      final pa = priority(a);
+      final pb = priority(b);
       return pa != pb ? pa - pb : a.number.compareTo(b.number);
     });
 

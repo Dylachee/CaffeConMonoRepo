@@ -19,7 +19,15 @@ from apps.core.menu_visibility import (
     menu_has_client_items,
     menu_item_guest_visible,
 )
-from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table, VenueSettings
+from apps.core.models import (
+    AttentionSignal,
+    MenuItem,
+    Order,
+    OrderItem,
+    Restaurant,
+    Table,
+    VenueSettings,
+)
 from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
 
 
@@ -152,11 +160,20 @@ def _category_color(category):
     return _CATEGORY_COLORS["panini"]
 
 
+def restaurant_for_guest_request(request) -> Restaurant:
+    match = getattr(request, "resolver_match", None)
+    slug = match.kwargs.get("restaurant_slug") if match else None
+    slug = slug or "sissy-bar"
+    restaurant = get_object_or_404(Restaurant, slug=slug, is_active=True)
+    request.restaurant = restaurant
+    return restaurant
+
+
 def _venue_for_request(request) -> VenueSettings:
     """The venue settings to render, honoring ?preview=<token> — a staff
     editor's draft stored in the cache by /api/staff/venue/preview/. The draft
     is applied to an in-memory copy only; the saved settings never change."""
-    venue = VenueSettings.get_solo()
+    venue = VenueSettings.get_solo(restaurant_for_guest_request(request).slug)
     token = request.GET.get("preview", "")
     if token:
         draft = cache.get(preview_cache_key(token))
@@ -167,9 +184,10 @@ def _venue_for_request(request) -> VenueSettings:
     return venue
 
 
-def menu_page(request, table_id=None, table_number=None):
+def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
-    menu_items = MenuItem.objects.select_related("category").order_by(
+    restaurant = restaurant_for_guest_request(request)
+    menu_items = MenuItem.objects.filter(restaurant=restaurant).select_related("category").order_by(
         "category__sort_order", "category__name", "-is_available", "name"
     )
     # Two ways to address a table:
@@ -177,9 +195,15 @@ def menu_page(request, table_id=None, table_number=None):
     #   /menu/n/<number>/ — the printed table number. QR codes should use this
     #     one: it survives reseeding/recreating the DB, a pk does not.
     if table_number is not None:
-        table = get_object_or_404(Table, number=table_number)
+        table = get_object_or_404(
+            Table, restaurant=restaurant, number=table_number
+        )
     else:
-        table = get_object_or_404(Table, pk=table_id) if table_id is not None else None
+        table = (
+            get_object_or_404(Table, restaurant=restaurant, pk=table_id)
+            if table_id is not None
+            else None
+        )
 
     # Prefer the explicit printed/client menu. If a dirty DB has no client tags
     # at all, fall back to all available non-archived items instead of rendering
@@ -300,6 +324,7 @@ def menu_page(request, table_id=None, table_number=None):
             "menu_payload": menu_payload,
             "table": table,
             "venue": venue,
+            "guest_base": f"/r/{restaurant.slug}/",
             "venue_blocks": block_visible,
             "head_blocks": head_blocks,
             "body_blocks": body_blocks,
@@ -307,7 +332,7 @@ def menu_page(request, table_id=None, table_number=None):
     )
 
 
-def prototype_page(request):
+def prototype_page(request, restaurant_slug=None):
     prototype_path = settings.BASE_DIR / "static" / "prototypes" / "guest.html"
     return FileResponse(open(prototype_path, "rb"), content_type="text/html; charset=utf-8")
 
@@ -355,7 +380,8 @@ def staff_app(request, path=""):
 # ---------------------------------------------------------------------------
 
 @require_POST
-def create_guest_order(request):
+def create_guest_order(request, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
     table_id = request.POST.get("table")
     is_fetch = request.headers.get("X-Requested-With") == "fetch"
     # Only numeric ids can match rows; anything else in pk__in raises a 500.
@@ -365,23 +391,29 @@ def create_guest_order(request):
         if is_fetch:
             return JsonResponse({"ok": False, "error": "empty"}, status=400)
         messages.error(request, "Choose a table and at least one item.")
-        return _redirect_menu(table_id)
+        return _redirect_menu(request, table_id)
 
     with transaction.atomic():
         # table_id and quantities come straight from the guest's browser: a
         # non-numeric id or quantity must produce a friendly error, not a 500.
         try:
-            table = Table.objects.select_for_update().get(pk=table_id)
+            table = Table.objects.select_for_update().get(
+                restaurant=restaurant, pk=table_id
+            )
         except (Table.DoesNotExist, ValueError):
             if is_fetch:
                 return JsonResponse({"ok": False, "error": "table"}, status=404)
             messages.error(request, "Table not found. Please scan the QR code again.")
-            return _redirect_menu(None)
+            return _redirect_menu(request, None)
 
-        has_client_menu = menu_has_client_items(MenuItem.objects.only("tags", "is_available"))
+        has_client_menu = menu_has_client_items(
+            MenuItem.objects.filter(restaurant=restaurant).only("tags", "is_available")
+        )
         menu_items = [
             item
-            for item in MenuItem.objects.filter(pk__in=selected_ids).select_related("category")
+            for item in MenuItem.objects.filter(
+                restaurant=restaurant, pk__in=selected_ids
+            ).select_related("category")
             if menu_item_guest_visible(item, has_client_menu=has_client_menu)
         ]
         order_items = []
@@ -405,12 +437,13 @@ def create_guest_order(request):
             if is_fetch:
                 return JsonResponse({"ok": False, "error": "unavailable"}, status=400)
             messages.error(request, "The selected items are no longer available.")
-            return _redirect_menu(table_id)
+            return _redirect_menu(request, table_id)
 
         # Guest-web orders wait for a waiter to approve them before the
         # kitchen/bar ever see them (source stays guest_web via the model
         # default). A waiter confirms via POST /api/orders/<id>/confirm/.
         order = Order.objects.create(
+            restaurant=restaurant,
             table=table,
             status=Order.Status.AWAITING,
             guest_name=request.POST.get("guest_name", "").strip()[:120],
@@ -439,30 +472,33 @@ def create_guest_order(request):
     if is_fetch:
         return JsonResponse({"ok": True, "order": _guest_order_payload(order)})
     messages.success(request, f"Order #{order.pk} was sent to staff.")
-    return _redirect_menu(table_id)
+    return _redirect_menu(request, table_id)
 
 
 @require_GET
-def guest_order_status(request, order_id):
+def guest_order_status(request, order_id, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
     if order_id not in request.session.get("guest_orders", []):
         raise Http404("Order is not available in this session.")
     order = get_object_or_404(
         Order.objects.select_related("table").prefetch_related("items", "items__menu_item"),
+        restaurant=restaurant,
         pk=order_id,
     )
     return JsonResponse({"ok": True, "order": _guest_order_payload(order)})
 
 
 @require_POST
-def create_attention_signal(request):
+def create_attention_signal(request, restaurant_slug=None):
     """Guest pressed "Call waiter" (or another signal button).
 
     Sets the table into the WAITING status, notifies every staff device over
     the realtime feed and answers JSON when called via fetch() so the guest
     page can show an inline confirmation without a full reload.
     """
+    restaurant = restaurant_for_guest_request(request)
     table_id = request.POST.get("table")
-    table = get_object_or_404(Table, pk=table_id)
+    table = get_object_or_404(Table, restaurant=restaurant, pk=table_id)
     signal_type = request.POST.get("signal_type")
     is_fetch = request.headers.get("X-Requested-With") == "fetch"
 
@@ -474,14 +510,15 @@ def create_attention_signal(request):
         if is_fetch:
             return JsonResponse({"ok": False, "error": "rate limited"}, status=429)
         messages.error(request, "Too many requests. Please wait a minute.")
-        return _redirect_menu(table_id)
+        return _redirect_menu(request, table_id)
     if signal_type not in AttentionSignal.Type.values:
         if is_fetch:
             return JsonResponse({"ok": False, "error": "unknown signal"}, status=400)
         messages.error(request, "Unknown signal type.")
-        return _redirect_menu(table_id)
+        return _redirect_menu(request, table_id)
 
     signal = AttentionSignal.objects.create(
+        restaurant=restaurant,
         table=table,
         signal_type=signal_type,
         reason=request.POST.get("reason", "").strip(),
@@ -495,19 +532,22 @@ def create_attention_signal(request):
             {"ok": True, "table_status": table.status, "signal": signal.pk}
         )
     messages.success(request, "A waiter is on the way.")
-    return _redirect_menu(table_id)
+    return _redirect_menu(request, table_id)
 
 
 @require_POST
-def cancel_attention_signal(request):
+def cancel_attention_signal(request, restaurant_slug=None):
     """Guest pressed "Cancel call" on their own pending signal.
 
     Marks the signal acknowledged (nobody has to walk over anymore) and rolls
     the table badge back, broadcasting to staff devices — the same path a
     waiter's "Acknowledge" action takes, so the two can't diverge.
     """
+    restaurant = restaurant_for_guest_request(request)
     signal_id = request.POST.get("signal")
-    signal = get_object_or_404(AttentionSignal, pk=signal_id)
+    signal = get_object_or_404(
+        AttentionSignal, restaurant=restaurant, pk=signal_id
+    )
     is_fetch = request.headers.get("X-Requested-With") == "fetch"
     if not signal.ack:
         signal.acknowledge(None)
@@ -516,15 +556,16 @@ def cancel_attention_signal(request):
         broadcast_table_event(table)
     if is_fetch:
         return JsonResponse({"ok": True})
-    return _redirect_menu(signal.table_id)
+    return _redirect_menu(request, signal.table_id)
 
 
-def _redirect_menu(table_id):
+def _redirect_menu(request, table_id):
     """Redirect to the table-scoped page when we have a table_id, generic menu otherwise."""
+    restaurant = restaurant_for_guest_request(request)
     try:
-        return redirect("guest_web:menu-for-table", table_id=int(table_id))
+        return redirect(f"/r/{restaurant.slug}/t/{int(table_id)}/")
     except (TypeError, ValueError):
-        return redirect("guest_web:menu")
+        return redirect(f"/r/{restaurant.slug}/")
 
 
 def _menu_visual(category):

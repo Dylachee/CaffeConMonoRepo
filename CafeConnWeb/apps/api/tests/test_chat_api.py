@@ -189,12 +189,20 @@ class TasksApiTests(TestCase):
         self.assertTrue(blocked.json()["detail"])
         self.assertEqual(
             self.client_w.post(f"/api/staff/tasks/{free.pk}/done/", {}, format="json").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client_w.post(f"/api/staff/tasks/{free.pk}/take/", {}, format="json").status_code,
             200,
         )
-        # Manager can complete anything.
+        self.assertEqual(
+            self.client_w.post(f"/api/staff/tasks/{free.pk}/done/", {}, format="json").status_code,
+            200,
+        )
+        # Managers still preserve task ownership; reassignment is explicit.
         self.assertEqual(
             self.client_m.post(f"/api/staff/tasks/{theirs.pk}/done/", {}, format="json").status_code,
-            200,
+            403,
         )
 
         thread = self.client_m.get(f"/api/staff/tasks/{mine.pk}/thread/").json()

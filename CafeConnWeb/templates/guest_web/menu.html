@@ -334,17 +334,17 @@
 </style>
 </head>
 <body
-  data-feed-url="{% url 'guest_web:feed' %}"
-  data-wallet-url="{% url 'guest_web:wallet' %}"
-  data-wallet-claim-url="{% url 'guest_web:wallet-claim' %}"
+  data-feed-url="{{ guest_base }}feed/"
+  data-wallet-url="{{ guest_base }}wallet/"
+  data-wallet-claim-url="{{ guest_base }}wallet/claim/"
   {% if table %}
   data-table="{{ table.pk }}"
   data-table-number="{{ table.number }}"
   data-attention="{{ table.attention }}"
-  data-create-order-url="{% url 'guest_web:create-order' %}"
-  data-create-attention-url="{% url 'guest_web:create-attention' %}"
-  data-cancel-url="{% url 'guest_web:cancel-attention' %}"
-  data-order-status-base="{% url 'guest_web:menu' %}order/"
+  data-create-order-url="{{ guest_base }}order/"
+  data-create-attention-url="{{ guest_base }}attention/"
+  data-cancel-url="{{ guest_base }}attention/cancel/"
+  data-order-status-base="{{ guest_base }}order/"
   {% endif %}
 >
 {% csrf_token %}

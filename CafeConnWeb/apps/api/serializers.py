@@ -15,6 +15,7 @@ from apps.core.models import (
     MenuItem,
     Order,
     OrderItem,
+    Restaurant,
     SocialPost,
     StaffPreference,
     StaffTask,
@@ -24,6 +25,22 @@ from apps.core.models import (
 from apps.core.social_embed import domain_for_display
 
 User = get_user_model()
+
+
+class RestaurantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Restaurant
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "timezone",
+            "currency",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
 
 
 class MenuCategorySerializer(serializers.ModelSerializer):
@@ -43,17 +60,18 @@ class MenuCategorySerializer(serializers.ModelSerializer):
         read_only_fields = ["key", "updated_at"]
 
     def create(self, validated_data):
+        restaurant = validated_data["restaurant"]
         name = validated_data.get("name", "").strip()
         validated_data["name"] = name
         if "sort_order" not in validated_data:
             validated_data["sort_order"] = (
-                MenuCategory.objects.aggregate(max_order=Max("sort_order"))["max_order"]
+                MenuCategory.objects.filter(restaurant=restaurant).aggregate(max_order=Max("sort_order"))["max_order"]
                 or 0
             ) + 1
         base = slugify(name)[:40] or "category"
         key = base
         suffix = 2
-        while MenuCategory.objects.filter(key=key).exists():
+        while MenuCategory.objects.filter(restaurant=restaurant, key=key).exists():
             tail = f"-{suffix}"
             key = f"{base[:40 - len(tail)]}{tail}"
             suffix += 1
@@ -89,6 +107,14 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        restaurant = self.context.get("restaurant")
+        if restaurant is not None:
+            self.fields["category"].queryset = MenuCategory.objects.filter(
+                restaurant=restaurant
+            )
 
     def _tags_for_clients(self, tags):
         tags = list(tags or [])
@@ -156,7 +182,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "id", "username", "email", "first_name", "last_name", "name",
             "role", "phone", "is_on_shift",
             "can_wait", "can_bar", "can_kitchen", "can_manage_menu", "can_content",
-            "can_grant_discount",
+            "can_grant_discount", "can_manage", "can_reports",
+            "shift_areas", "last_shift_areas",
             "capabilities", "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
@@ -188,6 +215,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["unit_price", "line_total"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        restaurant = self.context.get("restaurant")
+        if restaurant is not None:
+            self.fields["menu_item_id"].queryset = MenuItem.objects.filter(
+                restaurant=restaurant, is_available=True
+            )
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -230,6 +265,17 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def validate_status(self, value):
         return Order.LEGACY_STATUS_ALIASES.get(value, value)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        restaurant = self.context.get("restaurant")
+        if restaurant is not None:
+            self.fields["table_id"].queryset = Table.objects.filter(
+                restaurant=restaurant
+            )
+            items = self.fields.get("items")
+            if items is not None and hasattr(items, "child"):
+                items.child.context.update(self.context)
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
@@ -280,6 +326,14 @@ class AttentionSignalSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["ack", "alert_escalated", "acknowledged_by", "acked_at", "created_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        restaurant = self.context.get("restaurant")
+        if restaurant is not None:
+            self.fields["table_id"].queryset = Table.objects.filter(
+                restaurant=restaurant
+            )
 
 
 class SocialPostSerializer(serializers.ModelSerializer):
@@ -456,12 +510,13 @@ class CouponCampaignSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        restaurant = validated_data["restaurant"]
         slug = (validated_data.get("slug") or "").strip()
         if not slug:
             base = slugify(validated_data.get("title", ""))[:50] or "campaign"
             slug = base
             suffix = 2
-            while CouponCampaign.objects.filter(slug=slug).exists():
+            while CouponCampaign.objects.filter(restaurant=restaurant, slug=slug).exists():
                 tail = f"-{suffix}"
                 slug = f"{base[:50 - len(tail)]}{tail}"
                 suffix += 1
@@ -583,6 +638,14 @@ class StaffTaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        restaurant = self.context.get("restaurant")
+        if restaurant is not None:
+            self.fields["assignee"].queryset = Employee.objects.filter(
+                restaurant=restaurant
+            )
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):

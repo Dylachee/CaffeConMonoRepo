@@ -18,10 +18,47 @@ class Station(models.TextChoices):
     BAR = "bar", "Bar"
 
 
+class Restaurant(models.Model):
+    """One isolated restaurant hosted by the CafeConnect platform."""
+
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=60, unique=True)
+    timezone = models.CharField(max_length=64, default="Europe/Rome")
+    currency = models.CharField(max_length=3, default="EUR")
+    legacy_slugs = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "cafe_restaurants"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @classmethod
+    def get_default(cls) -> "Restaurant":
+        restaurant, _ = cls.objects.get_or_create(
+            slug="sissy-bar",
+            defaults={"name": "Caffè & Bistrò Sissi"},
+        )
+        return restaurant
+
+
+def get_default_restaurant_id() -> int:
+    """Compatibility default for legacy commands while they are migrated."""
+    return Restaurant.get_default().pk
+
+
 class MenuCategory(models.Model):
     """One owner-defined menu category with its display color and order."""
 
-    key = models.SlugField(max_length=40, unique=True)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="menu_categories",
+        default=get_default_restaurant_id,
+    )
+    key = models.SlugField(max_length=40)
     name = models.CharField(max_length=80)
     # Hex like #DFAF2B — rendered as-is by the app and the guest web.
     color = models.CharField(max_length=9, default="#DFAF2B")
@@ -33,12 +70,21 @@ class MenuCategory(models.Model):
         db_table = "cafe_menu_categories"
         ordering = ["sort_order", "name"]
         verbose_name_plural = "menu categories"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "key"], name="menu_category_restaurant_key_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
 
 
 class MenuItem(models.Model):
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="menu_items",
+        default=get_default_restaurant_id,
+    )
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -86,7 +132,11 @@ class Table(models.Model):
         CALL = "call", "Call waiter"
         BILL = "bill", "Bill requested"
 
-    number = models.PositiveIntegerField(unique=True)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="tables",
+        default=get_default_restaurant_id,
+    )
+    number = models.PositiveIntegerField()
     label = models.CharField(max_length=80, blank=True)
     status = models.CharField(max_length=32, choices=Status.choices, default=Status.FREE, db_index=True)
     capacity = models.PositiveSmallIntegerField(default=2)
@@ -109,6 +159,11 @@ class Table(models.Model):
     class Meta:
         db_table = "cafe_tables"
         ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "number"], name="table_restaurant_number_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.label or f"Table {self.number}"
@@ -124,10 +179,14 @@ class Employee(models.Model):
         ADMIN = "admin", "Admin"
         SMM = "smm", "SMM"
 
-    user = models.OneToOneField(
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="memberships",
+        default=get_default_restaurant_id,
+    )
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="employee_profile",
+        related_name="restaurant_memberships",
     )
     name = models.CharField(max_length=160)
     role = models.CharField(max_length=32, choices=Role.choices, db_index=True)
@@ -147,12 +206,23 @@ class Employee(models.Model):
     # Coupons: issuing and redeeming guest discounts. No role implies it —
     # a manager toggles it per waiter, exactly like the other grants.
     can_grant_discount = models.BooleanField(default=False)
+    can_manage = models.BooleanField(default=False)
+    can_reports = models.BooleanField(default=False)
+    # Work areas selected for the current shift and the previous selection,
+    # stored per restaurant membership. Values: floor, bar, kitchen.
+    shift_areas = models.JSONField(default=list, blank=True)
+    last_shift_areas = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "cafe_employees"
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "user"], name="employee_restaurant_user_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_role_display()})"
@@ -162,7 +232,7 @@ class Employee(models.Model):
         """Effective capabilities: what this employee may actually do, the
         role's own base plus any manager-granted extras. `manage` (panel /
         analytics / cancel / grant) stays tied to manager/admin."""
-        boss = self.role in (Employee.Role.MANAGER, Employee.Role.ADMIN)
+        boss = self.role in (Employee.Role.MANAGER, Employee.Role.ADMIN) or self.can_manage
         return {
             "wait": boss or self.role == Employee.Role.WAITER or self.can_wait,
             "bar": boss or self.role == Employee.Role.BAR or self.can_bar,
@@ -175,6 +245,7 @@ class Employee(models.Model):
             # Guest-coupon issue/redeem. Campaign CRUD is `content` (SMM's
             # marketing job); touching money at the table needs this grant.
             "discount": boss or self.can_grant_discount,
+            "reports": boss or self.role == Employee.Role.ACCOUNTANT or self.can_reports,
         }
 
 
@@ -213,6 +284,10 @@ class Order(models.Model):
         KITCHEN = Station.KITCHEN, "Kitchen"
         BAR = Station.BAR, "Bar"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="orders",
+        default=get_default_restaurant_id,
+    )
     table = models.ForeignKey(Table, on_delete=models.PROTECT, related_name="orders")
     employee = models.ForeignKey(
         Employee,
@@ -258,6 +333,7 @@ class Order(models.Model):
             # The hot query: active orders (status NOT IN paid/cancelled)
             # ordered by recency — bootstrap, station feed, guest tracking.
             models.Index(fields=["status", "-created_at"], name="order_status_created_idx"),
+            models.Index(fields=["restaurant", "status", "-created_at"], name="order_rest_status_created_idx"),
         ]
 
     def __str__(self) -> str:
@@ -345,6 +421,10 @@ class AttentionSignal(models.Model):
         CALL_WAITER = "call_waiter", "Call waiter"
         BILL_REQUEST = "bill_request", "Bill request"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="attention_signals",
+        default=get_default_restaurant_id,
+    )
     table = models.ForeignKey(Table, on_delete=models.CASCADE, related_name="attention_signals")
     signal_type = models.CharField(max_length=24, choices=Type.choices, db_index=True)
     reason = models.CharField(max_length=255, blank=True)
@@ -382,7 +462,11 @@ class AttentionSignal(models.Model):
 
 
 class StaffPreference(models.Model):
-    user = models.OneToOneField(
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="staff_preferences",
+        default=get_default_restaurant_id,
+    )
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="staff_preferences",
@@ -404,6 +488,9 @@ class StaffPreference(models.Model):
         db_table = "cafe_staff_preferences"
         constraints = [
             models.CheckConstraint(check=models.Q(volume__lte=100), name="staffpref_volume_lte_100"),
+            models.UniqueConstraint(
+                fields=["restaurant", "user"], name="staffpref_restaurant_user_unique"
+            ),
         ]
 
     def __str__(self) -> str:
@@ -424,6 +511,10 @@ class SocialPost(models.Model):
         TWITTER_X = "twitter_x", "X (Twitter)"
         FACEBOOK = "facebook", "Facebook"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="social_posts",
+        default=get_default_restaurant_id,
+    )
     source_url = models.URLField(max_length=500)
     platform = models.CharField(max_length=24, choices=Platform.choices, db_index=True)
     embed_html = models.TextField(blank=True)
@@ -516,7 +607,11 @@ class VenueSettings(models.Model):
         ("color_accent_soft", "--accent-soft"),
     )
 
-    slug = models.SlugField(max_length=40, unique=True, default="default")
+    restaurant = models.OneToOneField(
+        Restaurant, on_delete=models.CASCADE, related_name="settings",
+        default=get_default_restaurant_id,
+    )
+    slug = models.SlugField(max_length=60, unique=True, default="sissy-bar")
 
     name = models.CharField(max_length=120, default="Caffè & Bistrò Sissi")
     tagline = models.CharField(
@@ -586,18 +681,27 @@ class VenueSettings(models.Model):
     _CACHE_TTL = 300  # the save() invalidation is what matters; TTL is a net
 
     @classmethod
-    def _cache_key(cls, slug: str = "default") -> str:
+    def _cache_key(cls, slug: str = "sissy-bar") -> str:
         return f"venue-settings:{slug}"
 
     @classmethod
-    def get_solo(cls, slug: str = "default") -> "VenueSettings":
+    def get_solo(cls, slug: str = "sissy-bar") -> "VenueSettings":
         """The venue's settings, cached. Creates the row with the Sissi
         defaults on first access so a clean DB still renders the approved
         design with zero configuration."""
         cached = cache.get(cls._cache_key(slug))
         if cached is not None:
             return cached
-        instance, _ = cls.objects.get_or_create(slug=slug)
+        if slug == "default":
+            slug = "sissy-bar"
+        restaurant, _ = Restaurant.objects.get_or_create(
+            slug=slug,
+            defaults={"name": "Caffè & Bistrò Sissi" if slug == "sissy-bar" else slug.replace("-", " ").title()},
+        )
+        instance, _ = cls.objects.get_or_create(
+            restaurant=restaurant,
+            defaults={"slug": restaurant.slug, "name": restaurant.name},
+        )
         cache.set(cls._cache_key(slug), instance, cls._CACHE_TTL)
         return instance
 
@@ -740,6 +844,10 @@ class PushSubscription(models.Model):
     re-subscribing simply re-binds its endpoint to the current employee.
     """
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="push_subscriptions",
+        default=get_default_restaurant_id,
+    )
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="push_subscriptions"
     )
@@ -773,6 +881,10 @@ class GuestWallet(models.Model):
     """
 
     token = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="guest_wallets",
+        default=get_default_restaurant_id,
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -811,8 +923,12 @@ class CouponCampaign(models.Model):
         PERCENT = "percent", "Percent"
         FIXED = "fixed", "Fixed amount"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="coupon_campaigns",
+        default=get_default_restaurant_id,
+    )
     # Human slug: marketing links are /menu/?c=<slug>&utm_source=… .
-    slug = models.SlugField(max_length=60, unique=True)
+    slug = models.SlugField(max_length=60)
     title = models.CharField(max_length=120)
     title_it = models.CharField(max_length=120, blank=True)
     description = models.TextField(blank=True)
@@ -839,6 +955,11 @@ class CouponCampaign(models.Model):
     class Meta:
         db_table = "cafe_coupon_campaigns"
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "slug"], name="campaign_restaurant_slug_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.title
@@ -880,6 +1001,10 @@ class IssuedCoupon(models.Model):
         STAFF_QR = "staff_qr", "Staff QR"
         CAMPAIGN_LINK = "campaign_link", "Campaign link"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="issued_coupons",
+        default=get_default_restaurant_id,
+    )
     campaign = models.ForeignKey(
         CouponCampaign, on_delete=models.CASCADE, related_name="coupons"
     )
@@ -960,6 +1085,9 @@ class StaffTask(models.Model):
         WEEKLY = "weekly", "Weekly"
 
     class Status(models.TextChoices):
+        AVAILABLE = "available", "Available"
+        IN_PROGRESS = "in_progress", "In progress"
+        # Wire-compatible alias for rows created before the explicit lifecycle.
         OPEN = "open", "Open"
         DONE = "done", "Done"
         CANCELLED = "cancelled", "Cancelled"
@@ -969,6 +1097,10 @@ class StaffTask(models.Model):
         PLANNER = "planner", "Planner"
         BOT = "bot", "Bot"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="staff_tasks",
+        default=get_default_restaurant_id,
+    )
     title = models.CharField(max_length=200)
     note = models.TextField(blank=True)
     category = models.CharField(
@@ -1043,6 +1175,36 @@ class StaffTask(models.Model):
         return self.recurrence != self.Recurrence.NONE
 
 
+class TaskEvent(models.Model):
+    """Append-only task ownership and lifecycle history."""
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        TAKEN = "taken", "Taken"
+        LEFT = "left", "Left"
+        REASSIGNED = "reassigned", "Reassigned"
+        COMPLETED = "completed", "Completed"
+        REOPENED = "reopened", "Reopened"
+        CANCELLED = "cancelled", "Cancelled"
+
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="task_events",
+        default=get_default_restaurant_id,
+    )
+    task = models.ForeignKey(StaffTask, on_delete=models.CASCADE, related_name="events")
+    actor = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, related_name="task_events",
+        null=True, blank=True,
+    )
+    action = models.CharField(max_length=24, choices=Action.choices, db_index=True)
+    detail = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "cafe_task_events"
+        ordering = ["created_at"]
+
+
 class ChatMessage(models.Model):
     """One append-only message in the staff chat. `author` null = CafeBot.
     `reply_to` makes Telegram-style threads; `task` links a task bubble to
@@ -1059,6 +1221,10 @@ class ChatMessage(models.Model):
         CHECKLIST = "checklist", "Checklist"
         SYSTEM = "system", "System"
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="chat_messages",
+        default=get_default_restaurant_id,
+    )
     channel = models.CharField(max_length=16, choices=Channel.choices, db_index=True)
     author = models.ForeignKey(
         Employee,
@@ -1101,6 +1267,10 @@ class ChatMessage(models.Model):
 class ChatReadMark(models.Model):
     """Per-employee, per-channel high-water mark for unread badges."""
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="chat_read_marks",
+        default=get_default_restaurant_id,
+    )
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="chat_read_marks"
     )
@@ -1124,7 +1294,11 @@ class ChecklistTemplate(models.Model):
     """A recurring checklist (Opening / Closing seeded; manager-editable).
     Post + nudge times live in VenueSettings."""
 
-    key = models.SlugField(max_length=40, unique=True)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="checklist_templates",
+        default=get_default_restaurant_id,
+    )
+    key = models.SlugField(max_length=40)
     title = models.CharField(max_length=120)
     title_it = models.CharField(max_length=120, blank=True)
     task_category = models.CharField(
@@ -1138,6 +1312,11 @@ class ChecklistTemplate(models.Model):
 
     class Meta:
         db_table = "cafe_checklist_templates"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "key"], name="checklist_restaurant_key_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.title
@@ -1163,6 +1342,10 @@ class BotReminder(models.Model):
     """A /remind job: the bot posts [text] into [channel] at [remind_at].
     Reminders ride alert Level 1 only — they never escalate."""
 
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="bot_reminders",
+        default=get_default_restaurant_id,
+    )
     channel = models.CharField(max_length=16, choices=ChatMessage.Channel.choices)
     text = models.CharField(max_length=300)
     remind_at = models.DateTimeField(db_index=True)
@@ -1187,11 +1370,20 @@ class BotJobRun(models.Model):
     doubled run (cron + in-process ticker, or two web processes) posts once.
     The unique constraint IS the lock — the loser of the race hits it."""
 
-    job_key = models.CharField(max_length=120, unique=True)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="bot_job_runs",
+        default=get_default_restaurant_id,
+    )
+    job_key = models.CharField(max_length=120)
     ran_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "cafe_bot_job_runs"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "job_key"], name="botjob_restaurant_key_unique"
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.job_key

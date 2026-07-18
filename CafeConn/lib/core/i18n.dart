@@ -445,8 +445,8 @@ class L {
 
   // ---- content: venue feed ----
   static String get content => t('Content', 'Contenuti');
-  static String get contentSub =>
-      t('Feed & storefront of the guest page', 'Feed e vetrina della pagina ospiti');
+  static String get contentSub => t('Feed & storefront of the guest page',
+      'Feed e vetrina della pagina ospiti');
   static String get feedTab => t('Feed', 'Feed');
   static String get storefrontTab => t('Storefront', 'Vetrina');
   static String get pasteSocialUrl => t(
@@ -464,13 +464,15 @@ class L {
   static String get hideAction => t('Hide from guests', 'Nascondi agli ospiti');
   static String get unhideAction => t('Show to guests', 'Mostra agli ospiti');
   static String get deletePost => t('Delete post', 'Elimina post');
-  static String get deletePostQ => t('Delete this post?', 'Eliminare questo post?');
+  static String get deletePostQ =>
+      t('Delete this post?', 'Eliminare questo post?');
   static String get deletePostWarn => t(
       'The post disappears from the guest feed. The original on the social network is not touched.',
       'Il post sparisce dal feed degli ospiti. L\'originale sul social non viene toccato.');
   static String get copyLink => t('Copy link', 'Copia link');
   static String get linkCopied => t('Link copied', 'Link copiato');
-  static String get postAdded => t('Post added to the feed', 'Post aggiunto al feed');
+  static String get postAdded =>
+      t('Post added to the feed', 'Post aggiunto al feed');
   static String pinnedOfLimit(int n, int limit) =>
       t('$n of $limit pinned', '$n di $limit in evidenza');
 
@@ -538,8 +540,8 @@ class L {
 
   // ---- coupons ----
   static String get coupons => t('Coupons', 'Coupon');
-  static String get couponsSub =>
-      t('Issue, redeem and track guest coupons', 'Emetti, riscatta e monitora i coupon');
+  static String get couponsSub => t('Issue, redeem and track guest coupons',
+      'Emetti, riscatta e monitora i coupon');
   static String get issueTab => t('Issue', 'Emetti');
   static String get redeemTab => t('Redeem', 'Riscatta');
   static String get campaignsTab => t('Campaigns', 'Campagne');
@@ -566,8 +568,8 @@ class L {
       t('Redeem this coupon?', 'Riscattare questo coupon?');
   static String get attachToOrder =>
       t('Apply to an open order', 'Applica a un ordine aperto');
-  static String get noOrderAttach =>
-      t('No order — just mark as used', 'Nessun ordine — segna solo come usato');
+  static String get noOrderAttach => t(
+      'No order — just mark as used', 'Nessun ordine — segna solo come usato');
   static String get redeemAction => t('Redeem', 'Riscatta');
   static String get redeemed => t('Coupon redeemed', 'Coupon riscattato');
   static String get couponStActive => t('Active', 'Attivo');
@@ -583,21 +585,22 @@ class L {
   static String get discountTypeLbl => t('Discount type', 'Tipo di sconto');
   static String get discountPercent => t('Percent (%)', 'Percentuale (%)');
   static String get discountFixed => t('Fixed amount (€)', 'Importo fisso (€)');
-  static String get discountValueLbl => t('Discount value', 'Valore dello sconto');
+  static String get discountValueLbl =>
+      t('Discount value', 'Valore dello sconto');
   static String get perWalletLimitLbl =>
       t('Per-guest limit', 'Limite per ospite');
-  static String get maxIssuesLbl =>
-      t('Max coupons (empty = unlimited)', 'Coupon massimi (vuoto = illimitati)');
+  static String get maxIssuesLbl => t(
+      'Max coupons (empty = unlimited)', 'Coupon massimi (vuoto = illimitati)');
   static String get utmLbl => t('Default UTM tag', 'Tag UTM predefinito');
   static String get campaignActive => t('Active', 'Attiva');
   static String get campaignSaved => t('Campaign saved', 'Campagna salvata');
-  static String issuedRedeemed(int issued, int redeemed) =>
-      t('$issued issued · $redeemed redeemed', '$issued emessi · $redeemed riscattati');
+  static String issuedRedeemed(int issued, int redeemed) => t(
+      '$issued issued · $redeemed redeemed',
+      '$issued emessi · $redeemed riscattati');
   static String get byUtmTitle => t('By source (UTM)', 'Per fonte (UTM)');
   static String get directSource => t('(direct)', '(diretto)');
   static String get discountLine => t('Discount', 'Sconto');
-  static String couponApplied(String code) =>
-      t('coupon $code', 'coupon $code');
+  static String couponApplied(String code) => t('coupon $code', 'coupon $code');
 
   // ---- settings ----
   static String get settings => t('Settings', 'Impostazioni');
@@ -662,45 +665,50 @@ class L {
       "Connettiti all'hub per usare la chat del team.");
   static String get replyAction => t('Reply', 'Rispondi');
   static String get replyingTo => t('Replying to', 'In risposta a');
-  static String viewReplies(int n) =>
-      t(n == 1 ? 'View 1 reply' : 'View $n replies',
-        n == 1 ? 'Vedi 1 risposta' : 'Vedi $n risposte');
+  static String viewReplies(int n) => t(
+      n == 1 ? 'View 1 reply' : 'View $n replies',
+      n == 1 ? 'Vedi 1 risposta' : 'Vedi $n risposte');
   static String get threadTitle => t('Thread', 'Discussione');
   static String get cafeBot => 'CafeBot';
   static String get loadOlder => t('Load older', 'Carica precedenti');
   static String get commandsTitle => t('Commands', 'Comandi');
   static String get cmdTaskHint =>
       t('/task title @name 21:30', '/task titolo @nome 21:30');
-  static String get cmdTaskDesc =>
-      t('Create a task (name & time optional)', 'Crea un compito (nome e orario facoltativi)');
+  static String get cmdTaskDesc => t('Create a task (name & time optional)',
+      'Crea un compito (nome e orario facoltativi)');
   static String get cmdRemindHint =>
       t('/remind 21:30 text', '/remind 21:30 testo');
   static String get cmdRemindDesc =>
       t('The bot reminds at that time', 'Il bot ricorda a quell\'ora');
-  static String get cmdDoneDesc => t(
-      'Reply under a task to complete it', 'Rispondi sotto un compito per completarlo');
+  static String get cmdDoneDesc => t('Reply under a task to complete it',
+      'Rispondi sotto un compito per completarlo');
   static String get cmdOpenDesc =>
       t("List today's open tasks", 'Elenca i compiti aperti di oggi');
-  static String get cmdCloseDesc =>
-      t('Post the closing checklist now', 'Pubblica ora la checklist di chiusura');
+  static String get cmdCloseDesc => t('Post the closing checklist now',
+      'Pubblica ora la checklist di chiusura');
   static String get taskDone => t('Done', 'Fatto');
   static String doneBy(String name) => t('Done · $name', 'Fatto · $name');
-  static String get anyoneOnShift => t('Anyone on shift', 'Chiunque in servizio');
+  static String get anyoneOnShift =>
+      t('Anyone on shift', 'Chiunque in servizio');
   static String dueAtShort(String hhmm) => t('due $hhmm', 'entro $hhmm');
   static String get overdueTag => t('OVERDUE', 'IN RITARDO');
+  static String get takeTask => t('Take', 'Prendi');
+  static String get leaveTask => t('Leave', 'Lascia');
+  static String get completeTask => t('Complete', 'Completa');
+  static String get availableTasks => t('Available', 'Disponibili');
 
   // ---- planner ----
   static String get planner => t('Planner', 'Agenda');
-  static String get plannerSub =>
-      t("The day's tasks — chat and planner share them",
-        'I compiti del giorno — chat e agenda condivisi');
+  static String get plannerSub => t(
+      "The day's tasks — chat and planner share them",
+      'I compiti del giorno — chat e agenda condivisi');
   static String get myTasks => t('My tasks', 'I miei compiti');
   static String get sectionOverdue => t('Overdue', 'In ritardo');
   static String get sectionDone => t('Done', 'Fatti');
-  static String get quickAddHint => t(
-      'Add: title @name 21:30', 'Aggiungi: titolo @nome 21:30');
-  static String get plannerEmpty =>
-      t('Nothing planned for this day', 'Niente in programma per questo giorno');
+  static String get quickAddHint =>
+      t('Add: title @name 21:30', 'Aggiungi: titolo @nome 21:30');
+  static String get plannerEmpty => t(
+      'Nothing planned for this day', 'Niente in programma per questo giorno');
   static String get openThread => t('Open thread', 'Apri discussione');
   static String checklistProgress(String name, int done, int total) =>
       '$name $done/$total';
@@ -722,8 +730,7 @@ class L {
   // ---- alerts / shift ----
   static String get onShift => t('On shift', 'In servizio');
   static String get offShift => t('Off shift', 'Fuori servizio');
-  static String get shiftHint => t(
-      'Alerts fire only while you are on shift.',
+  static String get shiftHint => t('Alerts fire only while you are on shift.',
       'Gli avvisi suonano solo mentre sei in servizio.');
   static String get alertsSection => t('Alerts', 'Avvisi');
   static String get quietMode => t('Quiet mode', 'Modalità silenziosa');
@@ -742,11 +749,11 @@ class L {
       t('Background notifications', 'Notifiche in background');
   static String get pushMatrixBody => t(
       'Android (Chrome): full delivery, even locked. iPhone/iPad: iOS 16.4+ '
-      'AND the app added to the Home Screen; no vibration on iOS. '
-      'Desktop: while the browser runs.',
+          'AND the app added to the Home Screen; no vibration on iOS. '
+          'Desktop: while the browser runs.',
       'Android (Chrome): consegna completa, anche bloccato. iPhone/iPad: '
-      'iOS 16.4+ E app aggiunta alla schermata Home; niente vibrazione su '
-      'iOS. Desktop: col browser aperto.');
+          'iOS 16.4+ E app aggiunta alla schermata Home; niente vibrazione su '
+          'iOS. Desktop: col browser aperto.');
   static String get pushDisabledHint => t(
       'Server push keys are not configured — alerts work only while the app is open.',
       'Chiavi push del server non configurate — gli avvisi funzionano solo con l\'app aperta.');

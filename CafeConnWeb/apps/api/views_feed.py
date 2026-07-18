@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from apps.api.permissions import HasContentCapability
 from apps.api.serializers import SocialPostSerializer
+from apps.api.tenant import employee_for_request, restaurant_for_request
 from apps.core.models import SocialPost, VenueSettings
 from apps.core.social_embed import SocialEmbedError, build_embed, detect_platform
 
@@ -26,51 +27,59 @@ class StaffFeedView(_ContentView):
     first. POST: create a post from a pasted URL."""
 
     def get(self, request):
-        posts = SocialPost.objects.select_related("created_by").all()[:200]
+        restaurant = restaurant_for_request(request)
+        posts = SocialPost.objects.filter(restaurant=restaurant).select_related("created_by")[:200]
         return Response(
             {
                 "posts": SocialPostSerializer(posts, many=True).data,
-                "pinnedLimit": VenueSettings.get_solo().pinned_posts_limit,
+                "pinnedLimit": VenueSettings.get_solo(restaurant.slug).pinned_posts_limit,
             }
         )
 
     def post(self, request):
+        restaurant = restaurant_for_request(request)
         url = (request.data.get("url") or "").strip()
         try:
             platform, normalized = detect_platform(url)
         except SocialEmbedError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
-        existing = SocialPost.objects.filter(source_url=normalized).first()
+        existing = SocialPost.objects.filter(
+            restaurant=restaurant, source_url=normalized
+        ).first()
         if existing is not None:
             return Response(
                 {"detail": "This post is already on the feed."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from apps.api.views import employee_for_user  # local import: avoid cycle
-
         post = SocialPost.objects.create(
+            restaurant=restaurant,
             source_url=normalized,
             platform=platform,
             embed_html=build_embed(platform, normalized),
-            created_by=employee_for_user(request.user),
+            created_by=employee_for_request(request),
         )
         return Response(SocialPostSerializer(post).data, status=status.HTTP_201_CREATED)
 
 
 class StaffFeedDetailView(_ContentView):
     def delete(self, request, pk):
-        post = get_object_or_404(SocialPost, pk=pk)
+        post = get_object_or_404(
+            SocialPost, restaurant=restaurant_for_request(request), pk=pk
+        )
         post.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class StaffFeedPinView(_ContentView):
     def post(self, request, pk):
-        post = get_object_or_404(SocialPost, pk=pk)
-        limit = VenueSettings.get_solo().pinned_posts_limit
-        pinned = SocialPost.objects.filter(is_pinned=True).exclude(pk=post.pk).count()
+        restaurant = restaurant_for_request(request)
+        post = get_object_or_404(SocialPost, restaurant=restaurant, pk=pk)
+        limit = VenueSettings.get_solo(restaurant.slug).pinned_posts_limit
+        pinned = SocialPost.objects.filter(
+            restaurant=restaurant, is_pinned=True
+        ).exclude(pk=post.pk).count()
         if not post.is_pinned and pinned >= limit:
             return Response(
                 {
@@ -87,7 +96,9 @@ class StaffFeedPinView(_ContentView):
 
 class StaffFeedUnpinView(_ContentView):
     def post(self, request, pk):
-        post = get_object_or_404(SocialPost, pk=pk)
+        post = get_object_or_404(
+            SocialPost, restaurant=restaurant_for_request(request), pk=pk
+        )
         post.unpin()
         return Response(SocialPostSerializer(post).data)
 
@@ -96,7 +107,9 @@ class StaffFeedHideView(_ContentView):
     """Toggle a post's guest visibility (hide/unhide)."""
 
     def post(self, request, pk):
-        post = get_object_or_404(SocialPost, pk=pk)
+        post = get_object_or_404(
+            SocialPost, restaurant=restaurant_for_request(request), pk=pk
+        )
         post.is_hidden = not post.is_hidden
         post.save(update_fields=["is_hidden"])
         return Response(SocialPostSerializer(post).data)

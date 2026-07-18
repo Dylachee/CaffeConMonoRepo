@@ -14,6 +14,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils.dart';
 import '../data/cafe_api_client.dart';
+import '../data/api_config.dart';
 import '../data/dtos.dart';
 import '../data/realtime_client.dart';
 import '../models/models.dart';
@@ -57,6 +58,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   String? _lastUser;
   String? _lastPass;
   Box get _box => Hive.box('cafeconnect');
+  String _tenantKey(String key) => '${ApiConfig.restaurantSlug}:$key';
   final List<AppUser> users = [];
   final List<CafeTable> tables = [];
   final List<MenuItem> menu = [];
@@ -95,12 +97,19 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   // ---- Alerts: shift state + escalation ladder ---------------------------
   /// The escalation ladder (L1 chime → L2 repeat → L3 escalate). Owns the
   /// browser glue (tones, vibration, OS banners, push, wake lock).
-  final AlertService alertService = AlertService(platform: createAlertPlatform());
+  final AlertService alertService =
+      AlertService(platform: createAlertPlatform());
   AlertPlatform get alertPlatform => alertService.platform;
 
   /// Employee.is_on_shift for THIS account. Alerts and web pushes only fire
   /// on on-shift devices; persisted so a reload keeps the shift running.
   bool isOnShift = false;
+  List<String> shiftAreas = [];
+  List<String> lastShiftAreas = [];
+
+  RestaurantDto? activeRestaurant;
+  List<RestaurantDto> availableRestaurants = [];
+  bool isPlatformOwner = false;
 
   /// Per-device quiet mode: ladders keep tracking (banners stay), but no
   /// sound/vibration/OS banners.
@@ -127,6 +136,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   double soundVolume = 0.6;
   bool offlineModeSimulated = false;
   String activeUserName = 'Elena Sokolova';
+  int? activeEmployeeId;
 
   void setSetting<Value>(String key, Value value, Function(Value) apply) {
     apply(value);
@@ -150,12 +160,15 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   bool capManage = true;
   bool capContent = true;
   bool capDiscount = true;
+  bool capReports = true;
 
   // A "pure station" worker has no waiter capability — floor actions are
   // hidden for them, exactly as before, but a waiter+bar person now keeps both.
   bool get isStationRole => !capWait;
   bool get canSeeTables => capWait;
   bool get canSeePanel => capManage;
+  bool get canSeeManage =>
+      capManage || capMenu || capContent || capDiscount || capReports;
   bool get canDeliverOrders => capWait;
   bool get canManageMenu => capMenu;
 
@@ -195,9 +208,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
           ? caps['content'] == true
           : (capManage || role == UserRole.smm);
       // Older hubs omit `discount`: only bosses had it implicitly.
-      capDiscount = caps.containsKey('discount')
-          ? caps['discount'] == true
-          : capManage;
+      capDiscount =
+          caps.containsKey('discount') ? caps['discount'] == true : capManage;
+      capReports =
+          caps.containsKey('reports') ? caps['reports'] == true : capManage;
       return;
     }
     // Older hub without capabilities: derive them from the role.
@@ -209,11 +223,12 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     capManage = boss;
     capContent = boss || role == UserRole.smm;
     capDiscount = boss;
+    capReports = boss;
   }
 
   void _resetCapabilities() {
-    capWait = capBar =
-        capKitchen = capMenu = capManage = capContent = capDiscount = true;
+    capWait = capBar = capKitchen =
+        capMenu = capManage = capContent = capDiscount = capReports = true;
   }
 
   void setLanguage(AppLang value) {
@@ -227,6 +242,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     // Wake the socket + pull fresh data whenever the app comes back to the
     // foreground (phone unlocked, tab refocused) — the #1 desync cause.
     WidgetsBinding.instance.addObserver(this);
+    ApiConfig.restaurantSlug =
+        _box.get('restaurantSlug') as String? ?? 'sissy-bar';
 
     // --- Alert ladder configuration (fires only on-shift, outside quiet) ---
     isOnShift = _box.get('isOnShift') as bool? ?? false;
@@ -259,7 +276,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       ..addAll(users);
 
     // --- Menu: load from Hive if present, else seed ---
-    final rawMenu = _box.get('menu') as String?;
+    final rawMenu = _box.get(_tenantKey('menu')) as String? ??
+        (ApiConfig.restaurantSlug == 'sissy-bar'
+            ? _box.get('menu') as String?
+            : null);
     if (rawMenu != null) {
       final list = jsonDecode(rawMenu) as List;
       menu
@@ -273,7 +293,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // --- Tables: load from Hive if present, else seed ---
-    final rawTables = _box.get('tables') as String?;
+    final rawTables = _box.get(_tenantKey('tables')) as String? ??
+        (ApiConfig.restaurantSlug == 'sissy-bar'
+            ? _box.get('tables') as String?
+            : null);
     if (rawTables != null) {
       final list = jsonDecode(rawTables) as List;
       tables
@@ -282,7 +305,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
             list.map((e) => CafeTable.fromJson(e as Map<String, dynamic>)));
       // Restore checks (tableChecks) for each table
       for (final t in tables) {
-        final rawCheck = _box.get('check_${t.id}') as String?;
+        final rawCheck = _box.get(_tenantKey('check_${t.id}')) as String?;
         if (rawCheck != null) {
           final lines = jsonDecode(rawCheck) as List;
           tableChecks[t.id] = lines.map((e) {
@@ -313,7 +336,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       ..clear()
       ..addAll(_api.seedGroups(staff));
     messages.clear();
-    final rawMessages = _box.get('chatMessages') as String?;
+    final rawMessages = _box.get(_tenantKey('chatMessages')) as String?;
     if (rawMessages != null) {
       try {
         final list = jsonDecode(rawMessages) as List;
@@ -325,7 +348,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // --- Offline order queue: restore orders typed while offline ---
-    final rawQueue = _box.get('pendingQueue') as String?;
+    final rawQueue = _box.get(_tenantKey('pendingQueue')) as String?;
     if (rawQueue != null) {
       try {
         final list = jsonDecode(rawQueue) as List;
@@ -386,18 +409,19 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _saveTables() {
-    _box.put('tables', jsonEncode(tables.map((t) => t.toJson()).toList()));
+    _box.put(_tenantKey('tables'),
+        jsonEncode(tables.map((t) => t.toJson()).toList()));
     for (final t in tables) {
       final check = tableChecks[t.id];
       if (check != null) {
-        _box.put(
-            'check_${t.id}', jsonEncode(check.map((l) => l.toJson()).toList()));
+        _box.put(_tenantKey('check_${t.id}'),
+            jsonEncode(check.map((l) => l.toJson()).toList()));
       }
     }
   }
 
-  void _saveMenu() =>
-      _box.put('menu', jsonEncode(menu.map((m) => m.toJson()).toList()));
+  void _saveMenu() => _box.put(
+      _tenantKey('menu'), jsonEncode(menu.map((m) => m.toJson()).toList()));
 
   /// Persist chat history (bounded so Hive doesn't grow without limit).
   static const _maxStoredMessages = 500;
@@ -405,8 +429,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     final recent = messages.length > _maxStoredMessages
         ? messages.sublist(messages.length - _maxStoredMessages)
         : messages;
-    _box.put(
-        'chatMessages', jsonEncode(recent.map((m) => m.toJson()).toList()));
+    _box.put(_tenantKey('chatMessages'),
+        jsonEncode(recent.map((m) => m.toJson()).toList()));
   }
 
   String _nextMessageId() => 'm${DateTime.now().microsecondsSinceEpoch}';
@@ -825,7 +849,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _savePendingQueue() =>
-      _box.put('pendingQueue', jsonEncode(_pendingQueue));
+      _box.put(_tenantKey('pendingQueue'), jsonEncode(_pendingQueue));
 
   /// Server channel for a legacy local chat group (names match 1:1).
   String _channelForGroup(ChatGroup group) => switch (group.type) {
@@ -931,7 +955,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     _pendingQueue.clear();
-    _box.delete('pendingQueue');
+    _box.delete(_tenantKey('pendingQueue'));
     syncSuccess.value = true;
     notifyListeners();
   }
@@ -1159,7 +1183,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   void deleteTable(CafeTable table) {
     tables.remove(table);
     tableChecks.remove(table.id);
-    _box.delete('check_${table.id}'); // don't leak the orphaned check in Hive
+    _box.delete(_tenantKey('check_${table.id}'));
     _saveTables();
     notifyListeners();
   }
@@ -1667,8 +1691,18 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _applyBootstrap(BootstrapDto data) {
+    activeRestaurant = data.restaurant;
+    availableRestaurants = data.availableRestaurants;
+    isPlatformOwner = data.isPlatformOwner;
+    if (data.restaurant != null) {
+      ApiConfig.restaurantSlug = data.restaurant!.slug;
+      _box.put('restaurantSlug', data.restaurant!.slug);
+      currencySymbol =
+          data.restaurant!.currency == 'EUR' ? '€' : data.restaurant!.currency;
+    }
     final user = data.currentUser;
     if (user != null) {
+      activeEmployeeId = int.tryParse(user.employeeId ?? '');
       if (user.role.isNotEmpty) {
         currentRole = roleFromWire(user.role);
         _box.put('currentRole', currentRole.index);
@@ -1680,32 +1714,28 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       }
       // The hub is the source of truth for the shift state.
       isOnShift = user.isOnShift;
+      shiftAreas = user.shiftAreas;
+      lastShiftAreas = user.lastShiftAreas;
       _box.put('isOnShift', isOnShift);
     }
     pushEnabled = data.pushEnabled;
     pushPublicKey = data.pushPublicKey;
-    if (data.menu.isNotEmpty) {
-      menu
-        ..clear()
-        ..addAll(data.menu.map(_menuFromDto));
-      _saveMenu();
-    }
-    if (data.categories.isNotEmpty) {
-      menuCategories
-        ..clear()
-        ..addAll(data.categories.map((category) => CafeCategory(
-              id: category.id,
-              key: category.key,
-              name: category.name,
-              color: CafeCategory.parseHex(category.color, AppColors.famFood),
-            )));
-    }
-    if (data.tables.isNotEmpty) {
-      tables
-        ..clear()
-        ..addAll(data.tables.map(_tableFromDto));
-      _saveTables();
-    }
+    menu
+      ..clear()
+      ..addAll(data.menu.map(_menuFromDto));
+    _saveMenu();
+    menuCategories
+      ..clear()
+      ..addAll(data.categories.map((category) => CafeCategory(
+            id: category.id,
+            key: category.key,
+            name: category.name,
+            color: CafeCategory.parseHex(category.color, AppColors.famFood),
+          )));
+    tables
+      ..clear()
+      ..addAll(data.tables.map(_tableFromDto));
+    _saveTables();
     orders
       ..clear()
       ..addAll(data.orders.map(_orderFromDto));
@@ -1728,6 +1758,12 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// orders — pure station devices stay out of this alert path entirely.
   bool get _alertsApply => capWait;
 
+  bool _isMyTable(CafeTable? table) =>
+      table == null ||
+      table.waiterId == null ||
+      table.waiterId == activeEmployeeId?.toString() ||
+      table.attentionEscalated;
+
   /// Reconcile the ladder with current state: start alerts for every unacked
   /// call/bill and AWAITING order, resolve alerts whose source is gone.
   void _syncAlertsFromState() {
@@ -1737,7 +1773,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       // 'arrived' is informational — only call/bill ring the ladder.
       if (table.attention != null &&
           table.attention != 'arrived' &&
-          table.lastSignalId != null) {
+          table.lastSignalId != null &&
+          _isMyTable(table)) {
         final id = 'attention-${table.lastSignalId}';
         liveIds.add(id);
         alertService.trigger(
@@ -1750,6 +1787,10 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
     for (final order in orders) {
       if (order.status != OrderStatus.awaiting) continue;
+      final table = tables.firstWhereOrNull((t) => t.id == order.tableId);
+      if (table != null && !_isMyTable(table) && !order.alertEscalated) {
+        continue;
+      }
       final id = 'order-${order.id}';
       liveIds.add(id);
       alertService.trigger(
@@ -1799,7 +1840,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   /// The "On shift" toggle: one gesture unlocks audio + notifications, flips
   /// the hub flag, and manages the Web-Push subscription. Returns null on
   /// success or a message for the UI.
-  Future<String?> setOnShift(bool on) async {
+  Future<String?> setOnShift(bool on,
+      {List<String>? areas, bool force = false}) async {
     if (!backendConnected) return L.connectToManage;
     try {
       var osNotificationsGranted = false;
@@ -1808,12 +1850,14 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         // the legal unlock for AudioContext, notifications and vibration.
         osNotificationsGranted = await alertPlatform.unlock();
       }
-      isOnShift = await _remoteApi.setShift(on);
+      final shift = await _remoteApi.setShift(on, areas: areas, force: force);
+      isOnShift = shift.on;
+      shiftAreas = shift.areas;
+      lastShiftAreas = shift.preset;
       _box.put('isOnShift', isOnShift);
       if (on) {
         if (pushEnabled && osNotificationsGranted) {
-          final subscription =
-              await alertPlatform.subscribePush(pushPublicKey);
+          final subscription = await alertPlatform.subscribePush(pushPublicKey);
           if (subscription != null) {
             try {
               await _remoteApi.pushSubscribe(
@@ -1838,6 +1882,41 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
           }
         }
       }
+      notifyListeners();
+      return null;
+    } on ApiException catch (e) {
+      backendError = e.message;
+      notifyListeners();
+      return e.message;
+    }
+  }
+
+  Future<String?> switchRestaurant(RestaurantDto restaurant) async {
+    if (activeRestaurant?.slug == restaurant.slug) return null;
+    ApiConfig.restaurantSlug = restaurant.slug;
+    _box.put('restaurantSlug', restaurant.slug);
+    alertService.silenceAll();
+    chatByChannel.clear();
+    chatUnread.clear();
+    tableChecks.clear();
+    _pendingQueue.clear();
+    tables.clear();
+    menu.clear();
+    menuCategories.clear();
+    orders.clear();
+    archivedOrders.clear();
+    notifyListeners();
+    final token = _remoteApi.token;
+    if (token == null) return L.connectToManage;
+    return await connectWithToken(token) ? null : backendError;
+  }
+
+  Future<String?> createRestaurant(String name, String slug) async {
+    try {
+      final restaurant =
+          await _remoteApi.createRestaurant(name: name, slug: slug);
+      availableRestaurants = [...availableRestaurants, restaurant]
+        ..sort((a, b) => a.name.compareTo(b.name));
       notifyListeners();
       return null;
     } on ApiException catch (e) {
@@ -1907,7 +1986,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
           // banner) on every on-shift floor device. The ladder replaces the
           // old bare heavyImpact buzz.
           if (_alertsApply &&
-              _orderStatusFromName(createdDto.status) == OrderStatus.awaiting) {
+              _orderStatusFromName(createdDto.status) == OrderStatus.awaiting &&
+              _isMyTable(tables.firstWhereOrNull(
+                  (table) => table.id == createdDto.tableId))) {
             alertService.trigger(
               id: 'order-${createdDto.id}',
               kind: AlertKind.order,
@@ -1948,6 +2029,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         _applyAttention(event.attention, acked: false);
         final signal = event.attention;
         if (signal != null && _alertsApply && signal.signalType != 'arrived') {
+          final table = tables.firstWhereOrNull((t) => t.id == signal.tableId);
+          if (table != null && !_isMyTable(table)) break;
           alertService.trigger(
             id: 'attention-${signal.id}',
             kind: signal.signalType == 'bill_request'
@@ -2009,6 +2092,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     table.attention = dto.ack ? null : dto.attention;
     if (table.attention == null) table.lastSignalId = null;
     if (dto.waiter.isNotEmpty) table.waiterName = dto.waiter;
+    table.waiterId = dto.waiterId;
     table.openedAt =
         dto.openedAt == null ? null : DateTime.tryParse(dto.openedAt!);
     if (table.status == TableStatus.free) {
@@ -2546,6 +2630,26 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<String?> takeTask(StaffTaskDto task) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      _applyTaskUpdate(await _remoteApi.takeTask(task.id));
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<String?> leaveTask(StaffTaskDto task, {String note = ''}) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      _applyTaskUpdate(await _remoteApi.leaveTask(task.id, note: note));
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
   /// Pull the manager dashboard analytics. Safe to call from the panel's
   /// initState: no-ops offline, and a missing endpoint (older backend) just
   /// leaves [stats] null so the panel shows its live client-side numbers.
@@ -2764,6 +2868,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       notes: const [],
     );
     table.waiterName = d.waiter.isEmpty ? '—' : d.waiter;
+    table.waiterId = d.waiterId;
     if (d.openedAt != null) table.openedAt = DateTime.tryParse(d.openedAt!);
     // Carry over an unacked guest signal so the badge (and the ability to
     // acknowledge it) survives an app restart.
@@ -2796,6 +2901,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       items: lines,
       discountAmount: d.discountAmount,
       couponCode: d.couponCode,
+      waiterId: d.waiterId,
+      waiterName: d.waiterName,
       status: _orderStatusFromName(d.status),
       // Server timestamp, not "now": otherwise every bootstrap/WS echo reset
       // the kitchen timer of an existing order back to 00:00.

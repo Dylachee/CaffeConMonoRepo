@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.db.models import (
     Avg,
@@ -30,6 +31,12 @@ from apps.api.events import (
     broadcast_table_event,
     notify_order_alert_handled,
 )
+from apps.api.tenant import (
+    RestaurantQuerysetMixin,
+    capabilities_for_request,
+    employee_for_request,
+    restaurant_for_request,
+)
 from apps.core import push as web_push
 from apps.core.services import (
     acknowledge_signal_on_table,
@@ -44,6 +51,7 @@ from apps.api.serializers import (
     MenuItemSerializer,
     OrderItemSerializer,
     OrderSerializer,
+    RestaurantSerializer,
     StaffPreferenceSerializer,
     TableSerializer,
 )
@@ -62,8 +70,11 @@ from apps.core.models import (
     OrderEvent,
     OrderItem,
     PushSubscription,
+    Restaurant,
     StaffPreference,
+    StaffTask,
     Table,
+    VenueSettings,
 )
 
 User = get_user_model()
@@ -76,6 +87,70 @@ class HealthCheckView(APIView):
         return Response({"status": "ok", "service": "CafeConnect API"})
 
 
+class PlatformRestaurantsView(APIView):
+    """Developer-owner control plane for restaurant provisioning."""
+
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Only the platform Owner can list restaurants.")
+        restaurants = Restaurant.objects.annotate(
+            staff_count=Count("memberships"), table_count=Count("tables", distinct=True)
+        )
+        return Response(
+            {
+                "restaurants": [
+                    {
+                        **RestaurantSerializer(item).data,
+                        "staffCount": item.staff_count,
+                        "tableCount": item.table_count,
+                    }
+                    for item in restaurants
+                ]
+            }
+        )
+
+    def post(self, request):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Only the platform Owner can create restaurants.")
+        serializer = RestaurantSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            restaurant = serializer.save()
+            VenueSettings.objects.create(
+                restaurant=restaurant,
+                slug=restaurant.slug,
+                name=restaurant.name,
+            )
+        return Response(
+            RestaurantSerializer(restaurant).data, status=status.HTTP_201_CREATED
+        )
+
+
+class PlatformRestaurantDetailView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def patch(self, request, pk):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Only the platform Owner can edit restaurants.")
+        restaurant = get_object_or_404(Restaurant, pk=pk)
+        old_slug = restaurant.slug
+        serializer = RestaurantSerializer(
+            restaurant, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        restaurant = serializer.save()
+        if restaurant.slug != old_slug:
+            legacy = list(dict.fromkeys([*(restaurant.legacy_slugs or []), old_slug]))
+            restaurant.legacy_slugs = legacy
+            restaurant.save(update_fields=["legacy_slugs", "updated_at"])
+            settings = VenueSettings.objects.get(restaurant=restaurant)
+            settings.slug = restaurant.slug
+            settings.save(update_fields=["slug", "updated_at"])
+        return Response(RestaurantSerializer(restaurant).data)
+
+
 class ThrottledObtainAuthToken(ObtainAuthToken):
     """Login endpoint with a brute-force brake: DRF ships obtain_auth_token
     without any throttle, so passwords could be guessed at wire speed."""
@@ -84,13 +159,16 @@ class ThrottledObtainAuthToken(ObtainAuthToken):
     throttle_scope = "login"
 
 
-def employee_for_user(user):
+def employee_for_user(user, restaurant=None):
+    """Legacy helper for domain code; request handlers must pass a restaurant."""
     if not user or user.is_anonymous:
         return None
-    try:
-        return user.employee_profile
-    except Employee.DoesNotExist:
-        return None
+    queryset = Employee.objects.filter(user=user)
+    if restaurant is not None:
+        queryset = queryset.filter(restaurant=restaurant)
+    else:
+        queryset = queryset.filter(restaurant__slug="sissy-bar")
+    return queryset.first()
 
 
 # Kitchen and bar staff run their station screen only: they may move an order
@@ -100,10 +178,10 @@ STATION_ROLES = {Employee.Role.KITCHEN, Employee.Role.BAR}
 STATION_ALLOWED_ORDER_STATUSES = {Order.Status.NEW, Order.Status.COOKING, Order.Status.READY}
 
 
-def role_for_user(user):
+def role_for_user(user, restaurant=None):
     """Effective staff role: employee profile first, Django staff flag as admin
     fallback, waiter as the most-restricted-but-usable default."""
-    employee = employee_for_user(user)
+    employee = employee_for_user(user, restaurant)
     if employee:
         return employee.role
     if user.is_superuser or user.is_staff:
@@ -111,29 +189,38 @@ def role_for_user(user):
     return Employee.Role.WAITER
 
 
-def log_order_event(order, user, action, detail=""):
+def role_for_request(request):
+    employee = employee_for_request(request)
+    if employee:
+        return employee.role
+    if request.user.is_superuser:
+        return Employee.Role.ADMIN
+    return Employee.Role.WAITER
+
+
+def log_order_event(order, request, action, detail=""):
     """Append one line to an order's audit trail (who did what)."""
     OrderEvent.objects.create(
         order=order,
-        actor=employee_for_user(user),
+        actor=employee_for_request(request),
         action=action,
         detail=detail[:255],
     )
 
 
-def caps_for_user(user):
+def caps_for_user(user, restaurant=None):
     """Effective capabilities for a user: the role's base plus any extras a
     manager granted. Drives every permission gate below so a waiter who was
     given `bar` can work the bar and a bartender given `wait` can work tables.
 
     No employee profile: a Django superuser/staff account gets everything; a
     bare token falls back to a plain waiter."""
-    employee = employee_for_user(user)
+    employee = employee_for_user(user, restaurant)
     if employee:
         return employee.capabilities
     if user and (user.is_superuser or user.is_staff):
-        return {"wait": True, "bar": True, "kitchen": True, "menu": True, "manage": True, "content": True, "discount": True}
-    return {"wait": True, "bar": False, "kitchen": False, "menu": False, "manage": False, "content": False, "discount": False}
+        return {"wait": True, "bar": True, "kitchen": True, "menu": True, "manage": True, "content": True, "discount": True, "reports": True}
+    return {"wait": False, "bar": False, "kitchen": False, "menu": False, "manage": False, "content": False, "discount": False, "reports": False}
 
 
 def flutter_table_status(status_value: str) -> str:
@@ -200,6 +287,7 @@ def serialize_for_flutter_table(table: Table) -> dict:
         "guestCount": table.guest_count,
         "status": flutter_table_status(table.status),
         "colorTag": table.color_tag,
+        "waiterId": str(table.waiter_id) if table.waiter_id else None,
         "waiter": table.waiter.name if table.waiter else "",
         "openedAt": table.opened_at.isoformat() if table.opened_at else None,
         "notes": [],
@@ -218,6 +306,8 @@ def serialize_for_flutter_order(order: Order) -> dict:
         "tableId": str(order.table_id),
         "status": flutter_order_status(order.status),
         "station": order.station_scope,
+        "waiterId": str(order.employee_id) if order.employee_id else None,
+        "waiterName": order.employee.name if order.employee else "",
         "createdAt": order.created_at.isoformat(),
         "acceptedAt": order.accepted_at.isoformat() if order.accepted_at else None,
         "updatedAt": order.updated_at.isoformat(),
@@ -250,9 +340,13 @@ class StaffBootstrapView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        preferences, _ = StaffPreference.objects.get_or_create(user=request.user)
+        restaurant = restaurant_for_request(request)
+        preferences, _ = StaffPreference.objects.get_or_create(
+            user=request.user, restaurant=restaurant
+        )
         orders = (
-            Order.objects.select_related("table", "coupon")
+            Order.objects.filter(restaurant=restaurant)
+            .select_related("table", "coupon", "employee")
             .prefetch_related("items", "items__menu_item")
             .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
             .order_by("-created_at")[:100]
@@ -260,35 +354,56 @@ class StaffBootstrapView(APIView):
         # Recently-archived orders (a freed table's paid visits) so the app's
         # per-table history survives a reload/resync. The app caps it per table.
         history = (
-            Order.objects.select_related("table", "coupon")
+            Order.objects.filter(restaurant=restaurant)
+            .select_related("table", "coupon", "employee")
             .prefetch_related("items", "items__menu_item")
             .filter(status=Order.Status.PAID)
             .order_by("-created_at")[:80]
         )
-        tables_qs = Table.objects.select_related("waiter").prefetch_related(
+        tables_qs = Table.objects.filter(restaurant=restaurant).select_related("waiter").prefetch_related(
             Prefetch(
                 "attention_signals",
-                queryset=AttentionSignal.objects.filter(ack=False).order_by("-created_at"),
+                queryset=AttentionSignal.objects.filter(
+                    restaurant=restaurant, ack=False
+                ).order_by("-created_at"),
                 to_attr="unacked_signals",
             ),
             Prefetch(
                 "orders",
-                queryset=Order.objects.exclude(
+                queryset=Order.objects.filter(restaurant=restaurant).exclude(
                     status__in=[Order.Status.PAID, Order.Status.CANCELLED]
                 ).order_by("-created_at"),
                 to_attr="active_orders",
             ),
         )
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
+        restaurants = Restaurant.objects.filter(is_active=True)
+        if not request.user.is_superuser:
+            restaurants = restaurants.filter(memberships__user=request.user).distinct()
         return Response(
             {
+                "restaurant": {
+                    "id": str(restaurant.pk),
+                    "name": restaurant.name,
+                    "slug": restaurant.slug,
+                    "timezone": restaurant.timezone,
+                    "currency": restaurant.currency,
+                },
+                "availableRestaurants": [
+                    {"id": str(item.pk), "name": item.name, "slug": item.slug}
+                    for item in restaurants
+                ],
+                "isPlatformOwner": request.user.is_superuser,
                 "currentUser": {
                     "id": str(request.user.id),
+                    "employeeId": str(employee.pk) if employee else None,
                     "username": request.user.username,
                     "name": employee.name if employee else request.user.get_full_name(),
-                    "role": role_for_user(request.user),
-                    "capabilities": caps_for_user(request.user),
+                    "role": role_for_request(request),
+                    "capabilities": capabilities_for_request(request),
                     "isOnShift": employee.is_on_shift if employee else False,
+                    "shiftAreas": employee.shift_areas if employee else [],
+                    "lastShiftAreas": employee.last_shift_areas if employee else [],
                 },
                 # Web Push feature flag + the applicationServerKey the browser
                 # needs for pushManager.subscribe(). Disabled = keys not in env.
@@ -299,16 +414,16 @@ class StaffBootstrapView(APIView):
                 "tables": [serialize_for_flutter_table(table) for table in tables_qs],
                 "menu": [
                     serialize_for_flutter_menu(item)
-                    for item in MenuItem.objects.all()
+                    for item in MenuItem.objects.filter(restaurant=restaurant)
                     if "archived" not in (item.tags or [])
                 ],
                 "categories": MenuCategorySerializer(
-                    MenuCategory.objects.all(), many=True
+                    MenuCategory.objects.filter(restaurant=restaurant), many=True
                 ).data,
                 "orders": [serialize_for_flutter_order(order) for order in orders],
                 "history": [serialize_for_flutter_order(order) for order in history],
                 "preferences": StaffPreferenceSerializer(preferences).data,
-                "websocketPath": "/ws/staff/?token=<token>",
+                "websocketPath": f"/ws/restaurants/{restaurant.slug}/staff/?token=<token>",
             }
         )
 
@@ -329,8 +444,9 @@ class StaffStatsView(APIView):
     _MONEY = DecimalField(max_digits=12, decimal_places=2)
 
     def get(self, request):
-        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+        if not capabilities_for_request(request)["reports"]:
             raise PermissionDenied("Only a manager or admin can view analytics.")
+        restaurant = restaurant_for_request(request)
 
         now = timezone.localtime()
         today = now.date()
@@ -339,7 +455,9 @@ class StaffStatsView(APIView):
 
         def revenue_on(day):
             value = (
-                OrderItem.objects.filter(order__created_at__date=day)
+                OrderItem.objects.filter(
+                    order__restaurant=restaurant, order__created_at__date=day
+                )
                 .exclude(order__status=Order.Status.CANCELLED)
                 .aggregate(total=Sum(line_total))["total"]
             )
@@ -347,7 +465,7 @@ class StaffStatsView(APIView):
 
         def served_tables_on(day):
             return (
-                Order.objects.filter(created_at__date=day)
+                Order.objects.filter(restaurant=restaurant, created_at__date=day)
                 .exclude(status=Order.Status.CANCELLED)
                 .values("table")
                 .distinct()
@@ -357,7 +475,7 @@ class StaffStatsView(APIView):
         revenue_today = revenue_on(today)
         revenue_yesterday = revenue_on(yesterday)
         orders_today = (
-            Order.objects.filter(created_at__date=today)
+            Order.objects.filter(restaurant=restaurant, created_at__date=today)
             .exclude(status=Order.Status.CANCELLED)
             .count()
         )
@@ -371,7 +489,9 @@ class StaffStatsView(APIView):
         # Revenue by hour (0..23), today.
         by_hour = [0.0] * 24
         rows = (
-            OrderItem.objects.filter(order__created_at__date=today)
+            OrderItem.objects.filter(
+                order__restaurant=restaurant, order__created_at__date=today
+            )
             .exclude(order__status=Order.Status.CANCELLED)
             .annotate(hour=ExtractHour("order__created_at"))
             .values("hour")
@@ -383,7 +503,7 @@ class StaffStatsView(APIView):
 
         # Average prep time: how long ready items took (updated_at - created_at).
         prep = OrderItem.objects.filter(
-            order__created_at__date=today, ready=True
+            order__restaurant=restaurant, order__created_at__date=today, ready=True
         ).aggregate(
             avg=Avg(
                 ExpressionWrapper(
@@ -396,22 +516,24 @@ class StaffStatsView(APIView):
         # Orders still open longer than 20 minutes = running late.
         late_threshold = now - timedelta(minutes=20)
         delayed = (
-            Order.objects.exclude(
+            Order.objects.filter(restaurant=restaurant).exclude(
                 status__in=[Order.Status.PAID, Order.Status.CANCELLED]
             )
             .filter(created_at__lt=late_threshold)
             .count()
         )
 
-        total_tables = Table.objects.count()
-        active_tables = Table.objects.exclude(status=Table.Status.FREE).count()
+        total_tables = Table.objects.filter(restaurant=restaurant).count()
+        active_tables = Table.objects.filter(restaurant=restaurant).exclude(
+            status=Table.Status.FREE
+        ).count()
 
         # Per-waiter breakdown for today: orders + tables from the Order rows,
         # revenue from their items. Keyed by the order's employee (the waiter
         # who placed or approved it); unattributed orders are skipped.
         waiter_stats = {}
         for row in (
-            Order.objects.filter(created_at__date=today)
+            Order.objects.filter(restaurant=restaurant, created_at__date=today)
             .exclude(status=Order.Status.CANCELLED)
             .values("employee", "employee__name")
             .annotate(orders=Count("id"), tables=Count("table", distinct=True))
@@ -427,7 +549,9 @@ class StaffStatsView(APIView):
                 "revenue": 0.0,
             }
         for row in (
-            OrderItem.objects.filter(order__created_at__date=today)
+            OrderItem.objects.filter(
+                order__restaurant=restaurant, order__created_at__date=today
+            )
             .exclude(order__status=Order.Status.CANCELLED)
             .values("order__employee")
             .annotate(revenue=Sum(line_total))
@@ -447,7 +571,9 @@ class StaffStatsView(APIView):
         # What's actually selling today — top positions by quantity, so the
         # manager sees at a glance what to push and what to prep.
         top_items = list(
-            OrderItem.objects.filter(order__created_at__date=today)
+            OrderItem.objects.filter(
+                order__restaurant=restaurant, order__created_at__date=today
+            )
             .exclude(order__status=Order.Status.CANCELLED)
             .values("menu_item__name", "menu_item__category__name")
             .annotate(
@@ -497,11 +623,13 @@ class StaffOrderHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+        if not capabilities_for_request(request)["reports"]:
             raise PermissionDenied("Only a manager or admin can view order history.")
+        restaurant = restaurant_for_request(request)
 
         orders = (
-            Order.objects.select_related("table", "employee")
+            Order.objects.filter(restaurant=restaurant)
+            .select_related("table", "employee")
             .prefetch_related("items", "items__menu_item")
             .order_by("-created_at")
         )
@@ -549,12 +677,13 @@ class StaffTableHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        restaurant = restaurant_for_request(request)
         table_id = request.query_params.get("table")
         if not table_id:
             return Response({"detail": "table is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         recent = (
-            Order.objects.filter(table_id=table_id)
+            Order.objects.filter(restaurant=restaurant, table_id=table_id)
             .exclude(status=Order.Status.CANCELLED)
             .select_related("table")
             .prefetch_related("items", "items__menu_item")
@@ -583,7 +712,7 @@ class StaffTableHistoryView(APIView):
         )
 
 
-class MenuCategoryViewSet(viewsets.ModelViewSet):
+class MenuCategoryViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     """The owner's menu categories (name + color + order). Any staff can read
     them; renaming/recoloring is a manager/admin action."""
 
@@ -594,12 +723,12 @@ class MenuCategoryViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def _require_manage(self):
-        if not caps_for_user(self.request.user)["manage"]:
+        if not capabilities_for_request(self.request)["manage"]:
             raise PermissionDenied("Only a manager or admin can edit menu categories.")
 
     def perform_create(self, serializer):
         self._require_manage()
-        serializer.save()
+        serializer.save(restaurant=self.get_restaurant())
 
     def perform_update(self, serializer):
         self._require_manage()
@@ -614,7 +743,7 @@ class MenuCategoryViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class MenuItemViewSet(viewsets.ModelViewSet):
+class MenuItemViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     queryset = MenuItem.objects.select_related("category").order_by("-is_available", "name")
     serializer_class = MenuItemSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
@@ -625,7 +754,7 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     def _public_menu_has_client_items(self):
         if not hasattr(self, "_has_public_client_menu"):
             self._has_public_client_menu = menu_has_client_items(
-                MenuItem.objects.only("tags", "is_available")
+                self.get_queryset().only("tags", "is_available")
             )
         return self._has_public_client_menu
 
@@ -678,12 +807,12 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     def _require_menu_cap(self):
         # Changing the menu (e.g. the in/out-of-stock toggle) is a granted
         # capability now, not a free-for-all for anyone with a token.
-        if not caps_for_user(self.request.user)["menu"]:
+        if not capabilities_for_request(self.request)["menu"]:
             raise PermissionDenied("You need the menu capability to change menu items.")
 
     def perform_create(self, serializer):
         self._require_menu_cap()
-        serializer.save()
+        serializer.save(restaurant=self.get_restaurant())
 
     def perform_update(self, serializer):
         self._require_menu_cap()
@@ -702,7 +831,7 @@ class MenuItemViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class TableViewSet(viewsets.ModelViewSet):
+class TableViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     queryset = Table.objects.all()
     serializer_class = TableSerializer
     # Staff-only, reads included: the guest page is fully server-rendered and
@@ -716,7 +845,7 @@ class TableViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Tables are the floor's domain: someone without the waiter capability
         # (a pure station worker) must not be able to clear or re-status one.
-        if not caps_for_user(self.request.user)["wait"]:
+        if not capabilities_for_request(self.request)["wait"]:
             raise PermissionDenied("You need the waiter capability to change tables.")
         table = serializer.save()
         if table.status == Table.Status.FREE:
@@ -726,8 +855,44 @@ class TableViewSet(viewsets.ModelViewSet):
             table.save(update_fields=["opened_at", "updated_at"])
         broadcast_table_event(table)
 
+    @decorators.action(detail=True, methods=["post"], url_path="claim")
+    def claim(self, request, pk=None):
+        if not capabilities_for_request(request)["wait"]:
+            raise PermissionDenied("You need the Floor capability to claim a table.")
+        table = self.get_object()
+        employee = employee_for_request(request)
+        if table.waiter_id not in (None, employee.pk if employee else None):
+            return Response(
+                {"detail": f"{table} is already assigned to {table.waiter.name}."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        table.waiter = employee
+        table.save(update_fields=["waiter", "updated_at"])
+        broadcast_table_event(table)
+        return Response(TableSerializer(table).data)
 
-class OrderViewSet(viewsets.ModelViewSet):
+    @decorators.action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, pk=None):
+        if not capabilities_for_request(request)["manage"]:
+            raise PermissionDenied("Only a manager can assign tables.")
+        table = self.get_object()
+        employee_id = request.data.get("employee")
+        employee = None
+        if employee_id is not None:
+            employee = get_object_or_404(
+                Employee,
+                restaurant=self.get_restaurant(),
+                pk=employee_id,
+            )
+            if not employee.capabilities["wait"]:
+                raise ValidationError("The employee needs the Floor capability.")
+        table.waiter = employee
+        table.save(update_fields=["waiter", "updated_at"])
+        broadcast_table_event(table)
+        return Response(TableSerializer(table).data)
+
+
+class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     queryset = (
         Order.objects.select_related("table", "employee", "employee__user", "coupon")
         .prefetch_related("items", "items__menu_item")
@@ -740,8 +905,14 @@ class OrderViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "updated_at", "status"]
 
     def perform_create(self, serializer):
-        employee = employee_for_user(self.request.user)
-        order = serializer.save(employee=employee, source=Order.Source.STAFF_APP)
+        if not capabilities_for_request(self.request)["wait"]:
+            raise PermissionDenied("You need the Floor capability to create an order.")
+        employee = employee_for_request(self.request)
+        order = serializer.save(
+            restaurant=self.get_restaurant(),
+            employee=employee,
+            source=Order.Source.STAFF_APP,
+        )
         # A waiter placed the order himself — the table is simply occupied
         # (WAITING is reserved for "guests are waiting for a waiter"), and it
         # becomes *his* table so analytics attribute it to him.
@@ -750,14 +921,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         if employee is not None and order.table.waiter_id is None:
             order.table.waiter = employee
         order.table.save(update_fields=["status", "opened_at", "waiter", "updated_at"])
-        log_order_event(order, self.request.user, OrderEvent.Action.CREATED)
+        log_order_event(order, self.request, OrderEvent.Action.CREATED)
         broadcast_order_event("created", order)
         broadcast_table_event(order.table)
 
     def perform_update(self, serializer):
         new_status = serializer.validated_data.get("status")
         if new_status is not None:
-            caps = caps_for_user(self.request.user)
+            caps = capabilities_for_request(self.request)
             # A pure station worker (no waiter capability) may only move an
             # order through the cooking pipeline — completing (= delivery) is
             # the waiter's call.
@@ -774,7 +945,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 order.items.filter(station__in=stations).update(ready=True, updated_at=timezone.now())
                 order = sync_order_status_from_items(order)
                 log_order_event(
-                    order, self.request.user, OrderEvent.Action.ITEM_READY,
+                    order, self.request, OrderEvent.Action.ITEM_READY,
                     "/".join(stations),
                 )
                 broadcast_order_event("updated", order)
@@ -786,7 +957,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = serializer.save()
         if new_status is not None:
             log_order_event(
-                order, self.request.user, OrderEvent.Action.STATUS,
+                order, self.request, OrderEvent.Action.STATUS,
                 flutter_order_status(order.status),
             )
         broadcast_order_event("updated", order)
@@ -796,6 +967,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         station = request.query_params.get("station")
         if station not in {"kitchen", "bar"}:
             return Response({"detail": "station must be kitchen or bar"}, status=status.HTTP_400_BAD_REQUEST)
+        if not capabilities_for_request(request)[station]:
+            raise PermissionDenied(f"You need the {station.title()} capability.")
 
         orders = (
             self.get_queryset()
@@ -817,12 +990,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         """Waiter/manager approves a pending guest order: it enters the
         kitchen/bar pipeline (awaiting → new) and the stations see it for the
         first time. Stations themselves can't confirm."""
-        if not caps_for_user(request.user)["wait"]:
+        if not capabilities_for_request(request)["wait"]:
             raise PermissionDenied("You need the waiter capability to confirm an order.")
         order = self.get_object()
         if order.status != Order.Status.AWAITING:
             raise PermissionDenied("Only a pending order can be confirmed.")
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
         order.status = Order.Status.NEW
         # Prep timer starts now — when the waiter accepts — not when the guest
         # placed the order.
@@ -842,7 +1015,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             table_fields.append("waiter")
         table.save(update_fields=table_fields)
 
-        log_order_event(order, request.user, OrderEvent.Action.CONFIRMED)
+        log_order_event(order, request, OrderEvent.Action.CONFIRMED)
         broadcast_order_event("updated", order)
         broadcast_table_event(table)
         # The alert is handled — background devices close their OS banner.
@@ -853,7 +1026,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         """Waiter/manager declines a pending guest order (wrong/duplicate): it
         is cancelled and never reaches the kitchen/bar."""
-        if not caps_for_user(request.user)["wait"]:
+        if not capabilities_for_request(request)["wait"]:
             raise PermissionDenied("You need the waiter capability to reject an order.")
         order = self.get_object()
         if order.status != Order.Status.AWAITING:
@@ -873,7 +1046,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             table.status = Table.Status.OCCUPIED
             table.save(update_fields=["status", "updated_at"])
 
-        log_order_event(order, request.user, OrderEvent.Action.REJECTED)
+        log_order_event(order, request, OrderEvent.Action.REJECTED)
         broadcast_order_event("updated", order)
         broadcast_table_event(order.table)
         notify_order_alert_handled(order)
@@ -913,7 +1086,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
 
-class OrderItemViewSet(viewsets.ModelViewSet):
+class OrderItemViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
+    restaurant_field = "order__restaurant"
+    create_restaurant_field = None
     queryset = OrderItem.objects.select_related("order", "menu_item").all()
     serializer_class = OrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -927,10 +1102,14 @@ class OrderItemViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="mark-ready")
     def mark_ready(self, request, pk=None):
         item = self.get_object()
+        if not capabilities_for_request(request).get(item.station, False):
+            raise PermissionDenied(
+                f"You need the {item.station.title()} capability to mark this item ready."
+            )
         item.ready = True
         item.save(update_fields=["ready", "updated_at"])
         sync_order_status_from_items(item.order)
-        log_order_event(item.order, request.user, OrderEvent.Action.ITEM_READY, item.menu_item.name)
+        log_order_event(item.order, request, OrderEvent.Action.ITEM_READY, item.menu_item.name)
         broadcast_order_event("updated", item.order)
         return Response(OrderItemSerializer(item).data)
 
@@ -938,7 +1117,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
     def toggle_done(self, request, pk=None):
         # "done" = delivered to the guest — that's the waiter's confirmation,
         # not something a pure station worker flips (and un-flips) from the pass.
-        if not caps_for_user(request.user)["wait"]:
+        if not capabilities_for_request(request)["wait"]:
             raise PermissionDenied("You need the waiter capability to mark an item as delivered.")
         item = self.get_object()
         item.done = not item.done
@@ -948,7 +1127,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         sync_order_status_from_items(item.order)
         log_order_event(
             item.order,
-            request.user,
+            request,
             OrderEvent.Action.ITEM_DELIVERED if item.done else OrderEvent.Action.ITEM_UNDELIVERED,
             item.menu_item.name,
         )
@@ -956,7 +1135,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
         return Response(OrderItemSerializer(item).data)
 
 
-class AttentionSignalViewSet(viewsets.ModelViewSet):
+class AttentionSignalViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     queryset = AttentionSignal.objects.select_related("table", "acknowledged_by", "acknowledged_by__user").all()
     serializer_class = AttentionSignalSerializer
     filterset_fields = ["signal_type", "ack", "table"]
@@ -977,7 +1156,7 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        signal = serializer.save()
+        signal = serializer.save(restaurant=self.get_restaurant())
         table = apply_signal_to_table(signal, signal.table)
         broadcast_attention_event("created", signal)
         broadcast_table_event(table)
@@ -985,7 +1164,7 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=["post"], url_path="ack")
     def ack(self, request, pk=None):
         signal = self.get_object()
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
         signal.acknowledge(employee)
         table = acknowledge_signal_on_table(signal.table)
         broadcast_attention_event("acked", signal)
@@ -1010,7 +1189,7 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
         return Response(AttentionSignalSerializer(signal).data)
 
 
-class EmployeeViewSet(viewsets.ModelViewSet):
+class EmployeeViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     queryset = Employee.objects.select_related("user").all()
     serializer_class = EmployeeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -1020,7 +1199,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        if not caps_for_user(request.user)["manage"]:
+        if not capabilities_for_request(request)["manage"]:
             raise PermissionDenied("Only a manager or admin can manage staff.")
 
     def _guard_owner_target(self, employee):
@@ -1033,11 +1212,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
 
     def perform_update(self, serializer):
-        self._guard_owner_target(self.get_object())
+        target = self.get_object()
+        self._guard_owner_target(target)
         # A manager may re-role staff between floor/station/manager, but
         # cannot mint admins from the app.
         if serializer.validated_data.get("role") == Employee.Role.ADMIN:
             raise PermissionDenied("The admin role is granted from the system admin.")
+        actor = employee_for_request(self.request)
+        next_role = serializer.validated_data.get("role", target.role)
+        next_can_manage = serializer.validated_data.get(
+            "can_manage", target.can_manage
+        )
+        if (
+            actor is not None
+            and actor.pk == target.pk
+            and next_role not in {Employee.Role.MANAGER, Employee.Role.ADMIN}
+            and not next_can_manage
+        ):
+            raise PermissionDenied(
+                "Another manager or the Owner must remove your management access."
+            )
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -1093,11 +1287,13 @@ class StaffAccountCreateView(APIView):
         Employee.Role.BAR,
         Employee.Role.MANAGER,
         Employee.Role.SMM,
+        Employee.Role.ACCOUNTANT,
     }
 
     def post(self, request):
-        if role_for_user(request.user) not in {Employee.Role.MANAGER, Employee.Role.ADMIN}:
+        if not capabilities_for_request(request)["manage"]:
             raise PermissionDenied("Only a manager or admin can create accounts.")
+        restaurant = restaurant_for_request(request)
 
         username = (request.data.get("username") or "").strip()
         password = request.data.get("password") or ""
@@ -1131,7 +1327,11 @@ class StaffAccountCreateView(APIView):
                 is_staff=(role == Employee.Role.MANAGER),
             )
             employee = Employee.objects.create(
-                user=user, name=name, role=role, is_on_shift=False
+                restaurant=restaurant,
+                user=user,
+                name=name,
+                role=role,
+                is_on_shift=False,
             )
         return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
 
@@ -1144,15 +1344,81 @@ class StaffShiftView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
         if employee is None:
             return Response(
                 {"detail": "This account has no staff profile."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        employee.is_on_shift = bool(request.data.get("on"))
-        employee.save(update_fields=["is_on_shift", "updated_at"])
-        return Response({"on": employee.is_on_shift})
+        wants_on = bool(request.data.get("on"))
+        capabilities = capabilities_for_request(request)
+        allowed_areas = {
+            area
+            for area, capability in (
+                ("floor", "wait"),
+                ("bar", "bar"),
+                ("kitchen", "kitchen"),
+            )
+            if capabilities[capability]
+        }
+        if wants_on and not allowed_areas:
+            raise PermissionDenied(
+                "A shift requires the Floor, Bar, or Kitchen capability."
+            )
+
+        if wants_on:
+            requested = request.data.get("areas")
+            if requested is None:
+                requested = employee.last_shift_areas or (["floor"] if "floor" in allowed_areas else [])
+            if not isinstance(requested, list):
+                return Response(
+                    {"detail": "areas must be a list."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            areas = [area for area in requested if area in allowed_areas]
+            if not areas:
+                areas = [next(iter(sorted(allowed_areas)))]
+            employee.is_on_shift = True
+            employee.shift_areas = areas
+            employee.last_shift_areas = areas
+        else:
+            active_tables = Table.objects.filter(
+                restaurant=employee.restaurant, waiter=employee
+            ).exclude(status=Table.Status.FREE).count()
+            active_tasks = employee.tasks_assigned.filter(
+                status__in=[StaffTask.Status.OPEN, StaffTask.Status.IN_PROGRESS]
+            ).count()
+            unhandled_calls = AttentionSignal.objects.filter(
+                restaurant=employee.restaurant,
+                table__waiter=employee,
+                ack=False,
+            ).count()
+            handoff = {
+                "tables": active_tables,
+                "tasks": active_tasks,
+                "calls": unhandled_calls,
+            }
+            if any(handoff.values()) and not bool(request.data.get("force")):
+                return Response(
+                    {"detail": "Hand off active work before ending the shift.", "handoff": handoff},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if any(handoff.values()) and not capabilities["manage"]:
+                raise PermissionDenied("Only a manager can force an active shift to end.")
+            employee.is_on_shift = False
+            employee.shift_areas = []
+        employee.save(
+            update_fields=[
+                "is_on_shift", "shift_areas", "last_shift_areas", "updated_at"
+            ]
+        )
+        return Response(
+            {
+                "on": employee.is_on_shift,
+                "areas": employee.shift_areas,
+                "preset": employee.last_shift_areas,
+            }
+        )
 
 
 class StaffPushSubscriptionView(APIView):
@@ -1163,7 +1429,7 @@ class StaffPushSubscriptionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
         if employee is None:
             return Response(
                 {"detail": "This account has no staff profile."},
@@ -1181,6 +1447,7 @@ class StaffPushSubscriptionView(APIView):
         _, created = PushSubscription.objects.update_or_create(
             endpoint=endpoint,
             defaults={
+                "restaurant": employee.restaurant,
                 "employee": employee,
                 "p256dh": p256dh,
                 "auth": auth,
@@ -1193,14 +1460,14 @@ class StaffPushSubscriptionView(APIView):
         )
 
     def delete(self, request):
-        employee = employee_for_user(request.user)
+        employee = employee_for_request(request)
         endpoint = (request.data.get("endpoint") or "").strip()
         if not endpoint:
             return Response(
                 {"detail": "endpoint is required."}, status=status.HTTP_400_BAD_REQUEST
             )
         queryset = PushSubscription.objects.filter(endpoint=endpoint)
-        if employee is not None and not caps_for_user(request.user)["manage"]:
+        if employee is not None and not capabilities_for_request(request)["manage"]:
             queryset = queryset.filter(employee=employee)
         queryset.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -1210,11 +1477,15 @@ class StaffPreferenceView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        preferences, _ = StaffPreference.objects.get_or_create(user=request.user)
+        preferences, _ = StaffPreference.objects.get_or_create(
+            user=request.user, restaurant=restaurant_for_request(request)
+        )
         return Response(StaffPreferenceSerializer(preferences).data)
 
     def patch(self, request):
-        preferences, _ = StaffPreference.objects.get_or_create(user=request.user)
+        preferences, _ = StaffPreference.objects.get_or_create(
+            user=request.user, restaurant=restaurant_for_request(request)
+        )
         serializer = StaffPreferenceSerializer(preferences, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()

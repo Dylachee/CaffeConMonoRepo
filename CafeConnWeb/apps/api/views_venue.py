@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from apps.api.permissions import HasContentCapability
 from apps.api.serializers import VenueSettingsSerializer
+from apps.api.tenant import restaurant_for_request
 from apps.core.media_storage import ImageValidationError, process_uploaded_image
 from apps.core.models import VenueSettings
 from apps.core.theme_presets import THEME_PRESETS
@@ -37,7 +38,7 @@ class _ContentView(APIView):
 
 class StaffVenueView(_ContentView):
     def get(self, request):
-        settings = VenueSettings.get_solo()
+        settings = VenueSettings.get_solo(restaurant_for_request(request).slug)
         return Response(
             {
                 "venue": VenueSettingsSerializer(settings).data,
@@ -46,7 +47,7 @@ class StaffVenueView(_ContentView):
         )
 
     def patch(self, request):
-        settings = VenueSettings.get_solo()
+        settings = VenueSettings.get_solo(restaurant_for_request(request).slug)
         serializer = VenueSettingsSerializer(settings, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()  # save() drops the guest-page cache
@@ -72,7 +73,7 @@ class StaffVenueImageView(_ContentView):
         except ImageValidationError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
-        settings = VenueSettings.get_solo()
+        settings = VenueSettings.get_solo(restaurant_for_request(request).slug)
         field = getattr(settings, self.kind)
         if field:
             field.delete(save=False)  # drop the replaced file via the storage layer
@@ -81,7 +82,7 @@ class StaffVenueImageView(_ContentView):
         return Response({"venue": VenueSettingsSerializer(settings).data})
 
     def delete(self, request):
-        settings = VenueSettings.get_solo()
+        settings = VenueSettings.get_solo(restaurant_for_request(request).slug)
         field = getattr(settings, self.kind)
         if field:
             field.delete(save=False)
@@ -94,7 +95,8 @@ class StaffVenuePreviewView(_ContentView):
     """Create a short-lived draft-theme token for /menu/?preview=<token>."""
 
     def post(self, request):
-        settings = VenueSettings.get_solo()
+        restaurant = restaurant_for_request(request)
+        settings = VenueSettings.get_solo(restaurant.slug)
         serializer = VenueSettingsSerializer(settings, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -104,7 +106,7 @@ class StaffVenuePreviewView(_ContentView):
         return Response(
             {
                 "token": token,
-                "url": f"/menu/?preview={token}",
+                "url": f"/r/{restaurant.slug}/?preview={token}",
                 "expiresIn": PREVIEW_TTL_SECONDS,
             }
         )

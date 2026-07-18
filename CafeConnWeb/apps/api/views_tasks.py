@@ -17,22 +17,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.serializers import ChatMessageSerializer, StaffTaskSerializer
+from apps.api.tenant import (
+    capabilities_for_request,
+    employee_for_request,
+    restaurant_for_request,
+)
 from apps.core import chatbot
 from apps.core.chat_commands import CommandError, EmployeeRef, parse_command
 from apps.core.chatbot import TaskPermissionError
-from apps.core.models import ChatMessage, Employee, StaffTask
+from apps.core.models import ChatMessage, Employee, StaffTask, TaskEvent
 
 
 def _employee_or_none(request):
-    from apps.api.views import employee_for_user
-
-    return employee_for_user(request.user)
+    return employee_for_request(request)
 
 
 def _caps(request):
-    from apps.api.views import caps_for_user
-
-    return caps_for_user(request.user)
+    return capabilities_for_request(request)
 
 
 class StaffTasksView(APIView):
@@ -43,6 +44,8 @@ class StaffTasksView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        restaurant = restaurant_for_request(request)
+        employee = _employee_or_none(request)
         date_text = request.query_params.get("date", "")
         try:
             day = (
@@ -60,12 +63,17 @@ class StaffTasksView(APIView):
         day_end = day_start + datetime.timedelta(days=1)
 
         instances = StaffTask.objects.filter(
+            restaurant=restaurant,
             recurrence=StaffTask.Recurrence.NONE
         ).select_related("assignee", "created_by", "done_by", "template_item__template")
         tasks = instances.filter(
             # Open and relevant to this day: due on it, overdue before it,
             # or dueless (created on/before the day).
-            status=StaffTask.Status.OPEN,
+            status__in=[
+                StaffTask.Status.AVAILABLE,
+                StaffTask.Status.IN_PROGRESS,
+                StaffTask.Status.OPEN,
+            ],
             created_at__lt=day_end,
         ).exclude(due_at__gte=day_end) | instances.filter(
             status=StaffTask.Status.DONE,
@@ -79,13 +87,24 @@ class StaffTasksView(APIView):
         if _caps(request)["manage"]:
             rules = StaffTaskSerializer(
                 StaffTask.objects.exclude(recurrence=StaffTask.Recurrence.NONE)
+                .filter(restaurant=restaurant)
                 .select_related("assignee", "created_by", "done_by")
                 .order_by("id"),
                 many=True,
             ).data
-        return Response({"date": day.isoformat(), "tasks": payload, "rules": rules})
+        return Response(
+            {
+                "date": day.isoformat(),
+                "tasks": payload,
+                "mine": [item for item in payload if employee and item.get("assignee") == employee.pk],
+                "available": [item for item in payload if not item.get("assignee")],
+                "done": [item for item in payload if item.get("status") == StaffTask.Status.DONE],
+                "rules": rules,
+            }
+        )
 
     def post(self, request):
+        restaurant = restaurant_for_request(request)
         employee = _employee_or_none(request)
         if employee is None:
             return Response(
@@ -100,7 +119,7 @@ class StaffTasksView(APIView):
             text = raw_input if raw_input.startswith("/") else f"/task {raw_input}"
             employees = [
                 EmployeeRef(id=e.pk, name=e.name, username=e.user.username)
-                for e in Employee.objects.select_related("user").all()
+                for e in Employee.objects.filter(restaurant=restaurant).select_related("user")
             ]
             try:
                 parsed = parse_command(
@@ -116,7 +135,9 @@ class StaffTasksView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             assignee = (
-                Employee.objects.filter(pk=parsed.assignee.id).first()
+                Employee.objects.filter(
+                    restaurant=restaurant, pk=parsed.assignee.id
+                ).first()
                 if parsed.assignee
                 else None
             )
@@ -140,7 +161,9 @@ class StaffTasksView(APIView):
             )
 
         # Structured create (the manager's full form, incl. recurrence rules).
-        serializer = StaffTaskSerializer(data=request.data)
+        serializer = StaffTaskSerializer(
+            data=request.data, context={"restaurant": restaurant}
+        )
         serializer.is_valid(raise_exception=True)
         assignee = serializer.validated_data.get("assignee")
         if not manage:
@@ -155,9 +178,21 @@ class StaffTasksView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
         task = serializer.save(
+            restaurant=restaurant,
             created_by=employee,
             assignee=assignee if (assignee is not None or manage) else employee,
+            status=(
+                StaffTask.Status.IN_PROGRESS
+                if (assignee is not None or not manage)
+                else StaffTask.Status.AVAILABLE
+            ),
             source=StaffTask.Source.PLANNER,
+        )
+        TaskEvent.objects.create(
+            restaurant=restaurant,
+            task=task,
+            actor=employee,
+            action=TaskEvent.Action.CREATED,
         )
         if not task.is_recurring_rule:
             chatbot.post_task_bubble(task, author=employee)
@@ -175,8 +210,14 @@ class StaffTaskDetailView(APIView):
                 {"detail": "Only a manager can edit tasks."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        task = get_object_or_404(StaffTask, pk=pk)
-        serializer = StaffTaskSerializer(task, data=request.data, partial=True)
+        restaurant = restaurant_for_request(request)
+        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
+        serializer = StaffTaskSerializer(
+            task,
+            data=request.data,
+            partial=True,
+            context={"restaurant": restaurant},
+        )
         serializer.is_valid(raise_exception=True)
         task = serializer.save()
         from apps.api.events import broadcast_task_event
@@ -190,9 +231,16 @@ class StaffTaskDetailView(APIView):
                 {"detail": "Only a manager can cancel tasks."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        task = get_object_or_404(StaffTask, pk=pk)
+        restaurant = restaurant_for_request(request)
+        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
         task.status = StaffTask.Status.CANCELLED
         task.save(update_fields=["status", "updated_at"])
+        TaskEvent.objects.create(
+            restaurant=restaurant,
+            task=task,
+            actor=_employee_or_none(request),
+            action=TaskEvent.Action.CANCELLED,
+        )
         from apps.api.events import broadcast_task_event
 
         broadcast_task_event("updated", task)
@@ -212,7 +260,9 @@ class StaffTaskDoneView(APIView):
                 {"detail": "This account has no staff profile."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        task = get_object_or_404(StaffTask, pk=pk)
+        task = get_object_or_404(
+            StaffTask, restaurant=restaurant_for_request(request), pk=pk
+        )
         wants_done = bool(request.data.get("done", True))
         try:
             if wants_done:
@@ -233,6 +283,76 @@ class StaffTaskDoneView(APIView):
         return Response({"task": StaffTaskSerializer(task).data})
 
 
+class StaffTaskTakeView(APIView):
+    """Claim an available task before working on it."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        employee = _employee_or_none(request)
+        if employee is None:
+            return Response(
+                {"detail": "This account has no staff profile."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        restaurant = restaurant_for_request(request)
+        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
+        if task.assignee_id not in (None, employee.pk):
+            return Response(
+                {"detail": "This task was already taken."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if task.status not in {StaffTask.Status.AVAILABLE, StaffTask.Status.OPEN}:
+            return Response(
+                {"detail": "Only an available task can be taken."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        task.assignee = employee
+        task.status = StaffTask.Status.IN_PROGRESS
+        task.save(update_fields=["assignee", "status", "updated_at"])
+        TaskEvent.objects.create(
+            restaurant=restaurant,
+            task=task,
+            actor=employee,
+            action=TaskEvent.Action.TAKEN,
+        )
+        from apps.api.events import broadcast_task_event
+
+        broadcast_task_event("updated", task)
+        return Response({"task": StaffTaskSerializer(task).data})
+
+
+class StaffTaskLeaveView(APIView):
+    """Return the signed-in employee's task to the available pool."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        employee = _employee_or_none(request)
+        restaurant = restaurant_for_request(request)
+        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
+        if employee is None or task.assignee_id != employee.pk:
+            return Response(
+                {"detail": "Only the assigned employee can leave this task."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        note = (request.data.get("note") or "").strip()[:255]
+        task.assignee = None
+        task.status = StaffTask.Status.AVAILABLE
+        task.save(update_fields=["assignee", "status", "updated_at"])
+        TaskEvent.objects.create(
+            restaurant=restaurant,
+            task=task,
+            actor=employee,
+            action=TaskEvent.Action.LEFT,
+            detail=note,
+        )
+        from apps.api.events import broadcast_task_event
+
+        broadcast_task_event("updated", task)
+        return Response({"task": StaffTaskSerializer(task).data})
+
+
 class StaffTaskThreadView(APIView):
     """The task's chat thread (its bubble + replies) — what the planner opens
     when the owner taps a task."""
@@ -240,12 +360,13 @@ class StaffTaskThreadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
-        task = get_object_or_404(StaffTask, pk=pk)
+        restaurant = restaurant_for_request(request)
+        task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
         bubble = task.messages.order_by("id").first()
         if bubble is None:
             return Response({"message": None, "replies": []})
         replies = (
-            ChatMessage.objects.filter(reply_to=bubble)
+            ChatMessage.objects.filter(restaurant=restaurant, reply_to=bubble)
             .select_related("author", "task")
             .order_by("id")
         )
