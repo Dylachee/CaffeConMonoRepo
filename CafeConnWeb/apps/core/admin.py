@@ -1,7 +1,22 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, OrderItem, StaffPreference, Table
+from apps.core.models import (
+    AttentionSignal,
+    CouponCampaign,
+    Employee,
+    GuestWallet,
+    IssuedCoupon,
+    MenuCategory,
+    MenuItem,
+    Order,
+    OrderItem,
+    PushSubscription,
+    SocialPost,
+    StaffPreference,
+    Table,
+    VenueSettings,
+)
 
 
 @admin.register(MenuCategory)
@@ -156,3 +171,59 @@ class StaffPreferenceAdmin(admin.ModelAdmin):
     list_display = ("user", "theme", "text_size", "high_contrast", "updated_at")
     list_filter = ("theme", "text_size", "high_contrast")
     search_fields = ("user__username", "user__email")
+
+
+@admin.register(SocialPost)
+class SocialPostAdmin(admin.ModelAdmin):
+    list_display = ("id", "platform", "source_url", "is_pinned", "is_hidden", "created_by", "created_at")
+    list_filter = ("platform", "is_pinned", "is_hidden")
+    search_fields = ("source_url",)
+    readonly_fields = ("embed_html", "created_at", "pinned_at")
+
+
+@admin.register(VenueSettings)
+class VenueSettingsAdmin(admin.ModelAdmin):
+    """Back-office escape hatch; day-to-day edits go through the staff app's
+    Storefront editor."""
+
+    list_display = ("slug", "name", "pinned_posts_limit", "updated_at")
+    readonly_fields = ("updated_at",)
+
+
+@admin.register(CouponCampaign)
+class CouponCampaignAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "slug",
+        "discount_type",
+        "discount_value",
+        "is_active",
+        "valid_from",
+        "valid_until",
+        "per_wallet_limit",
+        "max_total_issues",
+    )
+    list_filter = ("is_active", "discount_type")
+    search_fields = ("title", "slug", "source_utm")
+    prepopulated_fields = {"slug": ("title",)}
+
+
+@admin.register(IssuedCoupon)
+class IssuedCouponAdmin(admin.ModelAdmin):
+    list_display = ("code", "campaign", "status", "issued_via", "utm_source", "redeemed_by", "redeemed_at", "created_at")
+    list_filter = ("status", "issued_via", "campaign")
+    search_fields = ("code", "utm_source")
+    readonly_fields = ("code", "wallet", "campaign", "redeemed_at", "created_at")
+
+
+@admin.register(GuestWallet)
+class GuestWalletAdmin(admin.ModelAdmin):
+    list_display = ("token", "user", "created_at", "last_seen_at")
+    readonly_fields = ("token", "created_at", "last_seen_at")
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("employee", "endpoint", "user_agent", "created_at")
+    search_fields = ("employee__name", "endpoint")
+    readonly_fields = ("endpoint", "p256dh", "auth", "created_at")

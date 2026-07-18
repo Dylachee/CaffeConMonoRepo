@@ -24,7 +24,13 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
+from apps.api.events import (
+    broadcast_attention_event,
+    broadcast_order_event,
+    broadcast_table_event,
+    notify_order_alert_handled,
+)
+from apps.core import push as web_push
 from apps.core.services import (
     acknowledge_signal_on_table,
     apply_signal_to_table,
@@ -43,10 +49,22 @@ from apps.api.serializers import (
 )
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.menu_visibility import (
+    menu_has_client_items,
     menu_item_archived,
     menu_item_guest_visible,
 )
-from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, OrderEvent, OrderItem, StaffPreference, Table
+from apps.core.models import (
+    AttentionSignal,
+    Employee,
+    MenuCategory,
+    MenuItem,
+    Order,
+    OrderEvent,
+    OrderItem,
+    PushSubscription,
+    StaffPreference,
+    Table,
+)
 
 User = get_user_model()
 
@@ -114,8 +132,8 @@ def caps_for_user(user):
     if employee:
         return employee.capabilities
     if user and (user.is_superuser or user.is_staff):
-        return {"wait": True, "bar": True, "kitchen": True, "menu": True, "manage": True}
-    return {"wait": True, "bar": False, "kitchen": False, "menu": False, "manage": False}
+        return {"wait": True, "bar": True, "kitchen": True, "menu": True, "manage": True, "content": True, "discount": True}
+    return {"wait": True, "bar": False, "kitchen": False, "menu": False, "manage": False, "content": False, "discount": False}
 
 
 def flutter_table_status(status_value: str) -> str:
@@ -189,6 +207,7 @@ def serialize_for_flutter_table(table: Table) -> dict:
         "attention": table.attention or None,
         "attentionReason": table.attention_reason,
         "attentionSignalId": str(unacked[0].id) if unacked else None,
+        "attentionEscalated": unacked[0].alert_escalated if unacked else False,
         "ack": table.attention_acknowledged,
     }
 
@@ -203,6 +222,13 @@ def serialize_for_flutter_order(order: Order) -> dict:
         "acceptedAt": order.accepted_at.isoformat() if order.accepted_at else None,
         "updatedAt": order.updated_at.isoformat(),
         "note": order.notes,
+        # Coupon snapshot (0 / '' when no coupon) — the app shows a
+        # "− discount (coupon CODE)" line in the check.
+        "discountAmount": float(order.discount_amount or 0),
+        "couponCode": order.coupon.code if order.coupon_id else "",
+        # Alert ladder L3: some device saw this AWAITING order unhandled for
+        # 60s — every on-shift device highlights it.
+        "alertEscalated": order.alert_escalated,
         "items": [
             {
                 "id": str(item.id),
@@ -226,7 +252,7 @@ class StaffBootstrapView(APIView):
     def get(self, request):
         preferences, _ = StaffPreference.objects.get_or_create(user=request.user)
         orders = (
-            Order.objects.select_related("table")
+            Order.objects.select_related("table", "coupon")
             .prefetch_related("items", "items__menu_item")
             .exclude(status__in=[Order.Status.PAID, Order.Status.CANCELLED])
             .order_by("-created_at")[:100]
@@ -234,7 +260,7 @@ class StaffBootstrapView(APIView):
         # Recently-archived orders (a freed table's paid visits) so the app's
         # per-table history survives a reload/resync. The app caps it per table.
         history = (
-            Order.objects.select_related("table")
+            Order.objects.select_related("table", "coupon")
             .prefetch_related("items", "items__menu_item")
             .filter(status=Order.Status.PAID)
             .order_by("-created_at")[:80]
@@ -253,14 +279,22 @@ class StaffBootstrapView(APIView):
                 to_attr="active_orders",
             ),
         )
+        employee = employee_for_user(request.user)
         return Response(
             {
                 "currentUser": {
                     "id": str(request.user.id),
                     "username": request.user.username,
-                    "name": employee_for_user(request.user).name if employee_for_user(request.user) else request.user.get_full_name(),
+                    "name": employee.name if employee else request.user.get_full_name(),
                     "role": role_for_user(request.user),
                     "capabilities": caps_for_user(request.user),
+                    "isOnShift": employee.is_on_shift if employee else False,
+                },
+                # Web Push feature flag + the applicationServerKey the browser
+                # needs for pushManager.subscribe(). Disabled = keys not in env.
+                "push": {
+                    "enabled": web_push.push_configured(),
+                    "publicKey": web_push.vapid_public_key(),
                 },
                 "tables": [serialize_for_flutter_table(table) for table in tables_qs],
                 "menu": [
@@ -588,12 +622,22 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description", "category__name"]
     ordering_fields = ["name", "category__name", "price", "updated_at"]
 
+    def _public_menu_has_client_items(self):
+        if not hasattr(self, "_has_public_client_menu"):
+            self._has_public_client_menu = menu_has_client_items(
+                MenuItem.objects.only("tags", "is_available")
+            )
+        return self._has_public_client_menu
+
     def _visible_to_request(self, item):
         if menu_item_archived(item):
             return False
         if self.request.user and self.request.user.is_authenticated:
             return True
-        return menu_item_guest_visible(item)
+        return menu_item_guest_visible(
+            item,
+            has_client_menu=self._public_menu_has_client_items(),
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = [
@@ -685,7 +729,7 @@ class TableViewSet(viewsets.ModelViewSet):
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = (
-        Order.objects.select_related("table", "employee", "employee__user")
+        Order.objects.select_related("table", "employee", "employee__user", "coupon")
         .prefetch_related("items", "items__menu_item")
         .all()
     )
@@ -801,6 +845,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         log_order_event(order, request.user, OrderEvent.Action.CONFIRMED)
         broadcast_order_event("updated", order)
         broadcast_table_event(table)
+        # The alert is handled — background devices close their OS banner.
+        notify_order_alert_handled(order)
         return Response(OrderSerializer(order).data)
 
     @decorators.action(detail=True, methods=["post"], url_path="reject")
@@ -814,9 +860,39 @@ class OrderViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only a pending order can be rejected.")
         order.status = Order.Status.CANCELLED
         order.save(update_fields=["status", "updated_at"])
+
+        # The guest submission put the table into WAITING; with the order gone
+        # nothing is pending anymore, so mirror confirm and settle the table
+        # back to OCCUPIED. Skip when an attention badge (call/bill) is active:
+        # that signal owns the WAITING state until a waiter acknowledges it.
+        table = order.table
+        if (
+            table.status == Table.Status.WAITING
+            and table.attention == Table.Attention.NONE
+        ):
+            table.status = Table.Status.OCCUPIED
+            table.save(update_fields=["status", "updated_at"])
+
         log_order_event(order, request.user, OrderEvent.Action.REJECTED)
         broadcast_order_event("updated", order)
         broadcast_table_event(order.table)
+        notify_order_alert_handled(order)
+        return Response(OrderSerializer(order).data)
+
+    @decorators.action(detail=True, methods=["post"], url_path="escalate")
+    def escalate(self, request, pk=None):
+        """Alert ladder L3 for a guest order stuck in AWAITING. Idempotent;
+        an order that already left AWAITING can't be escalated."""
+        order = self.get_object()
+        if order.status != Order.Status.AWAITING:
+            return Response(
+                {"detail": "This order was already handled."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not order.alert_escalated:
+            order.alert_escalated = True
+            order.save(update_fields=["alert_escalated", "updated_at"])
+            broadcast_order_event("escalated", order)
         return Response(OrderSerializer(order).data)
 
     @decorators.action(detail=True, methods=["get"], url_path="events")
@@ -916,6 +992,23 @@ class AttentionSignalViewSet(viewsets.ModelViewSet):
         broadcast_table_event(table)
         return Response(AttentionSignalSerializer(signal).data)
 
+    @decorators.action(detail=True, methods=["post"], url_path="escalate")
+    def escalate(self, request, pk=None):
+        """Alert ladder L3: a device saw this signal go unhandled for 60s.
+        Idempotent — only the first caller flags and broadcasts; a signal
+        already acked can't be escalated (the alert lifecycle is over)."""
+        signal = self.get_object()
+        if signal.ack:
+            return Response(
+                {"detail": "This signal was already handled."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not signal.alert_escalated:
+            signal.alert_escalated = True
+            signal.save(update_fields=["alert_escalated"])
+            broadcast_attention_event("escalated", signal)
+        return Response(AttentionSignalSerializer(signal).data)
+
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.select_related("user").all()
@@ -999,6 +1092,7 @@ class StaffAccountCreateView(APIView):
         Employee.Role.KITCHEN,
         Employee.Role.BAR,
         Employee.Role.MANAGER,
+        Employee.Role.SMM,
     }
 
     def post(self, request):
@@ -1040,6 +1134,76 @@ class StaffAccountCreateView(APIView):
                 user=user, name=name, role=role, is_on_shift=False
             )
         return Response(EmployeeSerializer(employee).data, status=status.HTTP_201_CREATED)
+
+
+class StaffShiftView(APIView):
+    """Self-service shift toggle. The app's "On shift" switch binds here —
+    the same tap that unlocks audio/notification permissions client-side.
+    Alerts and web pushes only ever target on-shift employees."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        employee = employee_for_user(request.user)
+        if employee is None:
+            return Response(
+                {"detail": "This account has no staff profile."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        employee.is_on_shift = bool(request.data.get("on"))
+        employee.save(update_fields=["is_on_shift", "updated_at"])
+        return Response({"on": employee.is_on_shift})
+
+
+class StaffPushSubscriptionView(APIView):
+    """Web-Push subscription lifecycle, bound to the signed-in employee.
+    POST upserts (a browser re-subscribing re-binds its unique endpoint);
+    DELETE removes this device's subscription on shift-off."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        employee = employee_for_user(request.user)
+        if employee is None:
+            return Response(
+                {"detail": "This account has no staff profile."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        endpoint = (request.data.get("endpoint") or "").strip()
+        keys = request.data.get("keys") or {}
+        p256dh = (keys.get("p256dh") or request.data.get("p256dh") or "").strip()
+        auth = (keys.get("auth") or request.data.get("auth") or "").strip()
+        if not endpoint or not p256dh or not auth:
+            return Response(
+                {"detail": "endpoint, p256dh and auth are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        _, created = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={
+                "employee": employee,
+                "p256dh": p256dh,
+                "auth": auth,
+                "user_agent": (request.META.get("HTTP_USER_AGENT") or "")[:255],
+            },
+        )
+        return Response(
+            {"ok": True, "created": created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        employee = employee_for_user(request.user)
+        endpoint = (request.data.get("endpoint") or "").strip()
+        if not endpoint:
+            return Response(
+                {"detail": "endpoint is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        queryset = PushSubscription.objects.filter(endpoint=endpoint)
+        if employee is not None and not caps_for_user(request.user)["manage"]:
+            queryset = queryset.filter(employee=employee)
+        queryset.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class StaffPreferenceView(APIView):

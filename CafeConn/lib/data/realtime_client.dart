@@ -10,9 +10,15 @@ enum RealtimeEventType {
   connectionReady,
   orderCreated,
   orderUpdated,
+  // Alert ladder L3: some on-shift device saw the event go unhandled for 60s.
+  orderEscalated,
   tableUpdated,
   attentionCreated,
   attentionAcked,
+  attentionEscalated,
+  chatMessage,
+  chatUpdated,
+  taskUpdated,
   unknown,
 }
 
@@ -22,9 +28,16 @@ class RealtimeEvent {
   final OrderDto? order;
   final TableDto? table;
   final AttentionDto? attention;
+  final ChatMessageDto? chatMessage;
+  final StaffTaskDto? task;
   final Map<String, dynamic> raw;
   const RealtimeEvent(this.type,
-      {this.order, this.table, this.attention, this.raw = const {}});
+      {this.order,
+      this.table,
+      this.attention,
+      this.chatMessage,
+      this.task,
+      this.raw = const {}});
 }
 
 /// Subscribes to the staff realtime feed (`ws://host/ws/staff/?token=...`).
@@ -99,11 +112,14 @@ class StaffRealtimeClient {
         return RealtimeEvent(RealtimeEventType.connectionReady, raw: map);
       case 'order.created':
       case 'order.updated':
+      case 'order.escalated':
         final order = map['order'];
         return RealtimeEvent(
-          event == 'order.created'
-              ? RealtimeEventType.orderCreated
-              : RealtimeEventType.orderUpdated,
+          switch (event) {
+            'order.created' => RealtimeEventType.orderCreated,
+            'order.escalated' => RealtimeEventType.orderEscalated,
+            _ => RealtimeEventType.orderUpdated,
+          },
           order: order is Map
               ? OrderDto.fromDrf(order.cast<String, dynamic>())
               : null,
@@ -120,13 +136,37 @@ class StaffRealtimeClient {
         );
       case 'attention.created':
       case 'attention.acked':
+      case 'attention.escalated':
         final signal = map['signal'];
         return RealtimeEvent(
-          event == 'attention.created'
-              ? RealtimeEventType.attentionCreated
-              : RealtimeEventType.attentionAcked,
+          switch (event) {
+            'attention.created' => RealtimeEventType.attentionCreated,
+            'attention.escalated' => RealtimeEventType.attentionEscalated,
+            _ => RealtimeEventType.attentionAcked,
+          },
           attention: signal is Map
               ? AttentionDto.fromDrf(signal.cast<String, dynamic>())
+              : null,
+          raw: map,
+        );
+      case 'chat.message':
+      case 'chat.updated':
+        final message = map['message'];
+        return RealtimeEvent(
+          event == 'chat.message'
+              ? RealtimeEventType.chatMessage
+              : RealtimeEventType.chatUpdated,
+          chatMessage: message is Map
+              ? ChatMessageDto.fromJson(message.cast<String, dynamic>())
+              : null,
+          raw: map,
+        );
+      case 'task.updated':
+        final task = map['task'];
+        return RealtimeEvent(
+          RealtimeEventType.taskUpdated,
+          task: task is Map
+              ? StaffTaskDto.fromJson(task.cast<String, dynamic>())
               : null,
           raw: map,
         );

@@ -8,9 +8,11 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunSQL(
+            # CURRENT_TIMESTAMP (== NOW() on Postgres) so the suite can also
+            # run the chain on SQLite; identical behavior on the real DB.
             sql=[
-                "UPDATE cafe_order_items SET created_at = NOW() WHERE created_at IS NULL",
-                "UPDATE cafe_order_items SET updated_at = NOW() WHERE updated_at IS NULL",
+                "UPDATE cafe_order_items SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL",
+                "UPDATE cafe_order_items SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL",
             ],
             reverse_sql=migrations.RunSQL.noop,
         ),

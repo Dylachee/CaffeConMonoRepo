@@ -37,6 +37,7 @@ class L {
   static String get roleWaiter => t('Waiter', 'Cameriere');
   static String get roleCook => t('Cook', 'Cuoco');
   static String get roleBartender => t('Bartender', 'Barista');
+  static String get roleSmm => t('SMM / Content', 'SMM / Contenuti');
 
   // ---- order statuses (staff wording) ----
   static String get osAwaiting => t('Awaiting approval', 'Da approvare');
@@ -388,6 +389,10 @@ class L {
   static String get capBar => t('Bar station', 'Postazione bar');
   static String get capKitchen => t('Kitchen station', 'Postazione cucina');
   static String get capMenu => t('Manage menu', 'Gestisci menu');
+  static String get capContent =>
+      t('Content (feed & storefront)', 'Contenuti (feed e vetrina)');
+  static String get capDiscount =>
+      t('Coupons (issue & redeem)', 'Coupon (emetti e riscatta)');
   static String get includedWithRole => t('role', 'ruolo');
   static String get fullAccess => t('Full access', 'Accesso completo');
   static String get connectToManage => t(
@@ -437,6 +442,162 @@ class L {
       t('Fill in all fields.', 'Compila tutti i campi.');
   static String get edit => t('Edit', 'Modifica');
   static String get bill => t('Bill', 'Conto');
+
+  // ---- content: venue feed ----
+  static String get content => t('Content', 'Contenuti');
+  static String get contentSub =>
+      t('Feed & storefront of the guest page', 'Feed e vetrina della pagina ospiti');
+  static String get feedTab => t('Feed', 'Feed');
+  static String get storefrontTab => t('Storefront', 'Vetrina');
+  static String get pasteSocialUrl => t(
+      'Paste a post link (Instagram, Threads, X, Facebook)',
+      'Incolla il link di un post (Instagram, Threads, X, Facebook)');
+  static String get addPost => t('Add post', 'Aggiungi post');
+  static String get feedEmptyTitle => t('No posts yet', 'Ancora nessun post');
+  static String get feedEmptySub => t(
+      'Paste a link above — guests see the feed on the menu page.',
+      'Incolla un link qui sopra — gli ospiti vedono il feed nella pagina menu.');
+  static String get pinnedLabel => t('Pinned', 'In evidenza');
+  static String get hiddenLabel => t('Hidden', 'Nascosto');
+  static String get pinAction => t('Pin', 'Fissa');
+  static String get unpinAction => t('Unpin', 'Sblocca');
+  static String get hideAction => t('Hide from guests', 'Nascondi agli ospiti');
+  static String get unhideAction => t('Show to guests', 'Mostra agli ospiti');
+  static String get deletePost => t('Delete post', 'Elimina post');
+  static String get deletePostQ => t('Delete this post?', 'Eliminare questo post?');
+  static String get deletePostWarn => t(
+      'The post disappears from the guest feed. The original on the social network is not touched.',
+      'Il post sparisce dal feed degli ospiti. L\'originale sul social non viene toccato.');
+  static String get copyLink => t('Copy link', 'Copia link');
+  static String get linkCopied => t('Link copied', 'Link copiato');
+  static String get postAdded => t('Post added to the feed', 'Post aggiunto al feed');
+  static String pinnedOfLimit(int n, int limit) =>
+      t('$n of $limit pinned', '$n di $limit in evidenza');
+
+  // ---- content: storefront editor ----
+  static String get storefrontTitle => t('Storefront', 'Vetrina');
+  static String get storefrontSub => t(
+      'How the guest page looks — texts, colors, layout',
+      'Come appare la pagina ospiti — testi, colori, layout');
+  static String get themePresets => t('Theme presets', 'Temi pronti');
+  static String get paletteSection => t('Palette', 'Palette');
+  static String get generateFromAccent =>
+      t('Generate from accent', 'Genera dall\'accento');
+  static String get contrastWarning => t(
+      'Low text/background contrast (below WCAG AA). Guests may struggle to read.',
+      'Contrasto testo/sfondo basso (sotto WCAG AA). Gli ospiti potrebbero far fatica a leggere.');
+  static String get livePreview => t('Live preview', 'Anteprima live');
+  static String get venueTexts => t('Venue texts', 'Testi del locale');
+  static String get venueNameLbl => t('Venue name', 'Nome del locale');
+  static String get taglineEn => t('Tagline (EN)', 'Slogan (EN)');
+  static String get taglineIt => t('Tagline (IT)', 'Slogan (IT)');
+  static String get aboutEn => t('About (EN)', 'Chi siamo (EN)');
+  static String get aboutIt => t('About (IT)', 'Chi siamo (IT)');
+  static String get addressLbl => t('Address', 'Indirizzo');
+  static String get addressEn => t('Address (EN)', 'Indirizzo (EN)');
+  static String get addressItLbl => t('Address (IT)', 'Indirizzo (IT)');
+  static String get hoursEn => t('Hours (EN)', 'Orari (EN)');
+  static String get hoursIt => t('Hours (IT)', 'Orari (IT)');
+  static String get mapsUrlLbl => t('Google Maps link', 'Link Google Maps');
+  static String get badgesSection => t('Badges', 'Badge');
+  static String badgeN(int n) => t('Badge $n', 'Badge $n');
+  static String get badgeEnHint => t('English label', 'Testo inglese');
+  static String get badgeItHint => t('Italian label', 'Testo italiano');
+  static String get addBadge => t('+ badge', '+ badge');
+  static String get blocksSection => t('Storefront blocks', 'Blocchi vetrina');
+  static String get blocksHint => t(
+      'Drag to reorder; switch off to hide from guests.',
+      'Trascina per riordinare; spegni per nascondere agli ospiti.');
+  static String blockName(String key) => switch (key) {
+        'cover' => t('Cover photo', 'Foto copertina'),
+        'facts' => t('Address & hours', 'Indirizzo e orari'),
+        'badges' => t('Badges', 'Badge'),
+        'cta' => t('Menu & service buttons', 'Pulsanti menu e servizio'),
+        'popular' => t('Popular picks', 'Popolari'),
+        'about' => t('About us', 'Chi siamo'),
+        _ => key,
+      };
+  static String get imagesSection => t('Logo & cover', 'Logo e copertina');
+  static String get uploadLogo => t('Upload logo', 'Carica logo');
+  static String get uploadCover => t('Upload cover', 'Carica copertina');
+  static String get removeImage => t('Remove', 'Rimuovi');
+  static String get pinnedLimitLbl =>
+      t('Pinned posts limit', 'Limite post in evidenza');
+  static String get saveStorefront => t('Save storefront', 'Salva vetrina');
+  static String get storefrontSaved => t('Storefront saved', 'Vetrina salvata');
+  static String get colorBg => t('Background', 'Sfondo');
+  static String get colorCard => t('Cards', 'Schede');
+  static String get colorInk => t('Text', 'Testo');
+  static String get colorMut => t('Secondary text', 'Testo secondario');
+  static String get colorLine => t('Lines', 'Linee');
+  static String get colorAccent => t('Accent', 'Accento');
+  static String get colorAccentDeep => t('Accent · deep', 'Accento · scuro');
+  static String get colorAccentSoft => t('Accent · soft', 'Accento · chiaro');
+  static String get invalidHex =>
+      t('Use #RRGGBB, e.g. #C8821E', 'Usa #RRGGBB, es. #C8821E');
+
+  // ---- coupons ----
+  static String get coupons => t('Coupons', 'Coupon');
+  static String get couponsSub =>
+      t('Issue, redeem and track guest coupons', 'Emetti, riscatta e monitora i coupon');
+  static String get issueTab => t('Issue', 'Emetti');
+  static String get redeemTab => t('Redeem', 'Riscatta');
+  static String get campaignsTab => t('Campaigns', 'Campagne');
+  static String get issuePickCampaign =>
+      t('Pick a campaign to issue', 'Scegli una campagna da emettere');
+  static String get showQrToGuest => t(
+      'Let the guest scan this QR with their phone camera',
+      'Fai inquadrare questo QR con la fotocamera del telefono');
+  static String get claimQrExpires =>
+      t('The QR is valid for 6 hours', 'Il QR è valido per 6 ore');
+  static String get noCampaigns =>
+      t('No active campaigns', 'Nessuna campagna attiva');
+  static String get noCampaignsSub => t(
+      'Campaigns are created in the Campaigns tab (Content role).',
+      'Le campagne si creano nella scheda Campagne (ruolo Contenuti).');
+  static String get scanCouponQr =>
+      t("Scan the guest's coupon QR", 'Inquadra il QR del coupon');
+  static String get scannerUnavailable => t(
+      'Camera unavailable — enter the code below.',
+      'Fotocamera non disponibile — inserisci il codice qui sotto.');
+  static String get couponCode => t('Coupon code', 'Codice coupon');
+  static String get findCoupon => t('Find coupon', 'Cerca coupon');
+  static String get redeemConfirmTitle =>
+      t('Redeem this coupon?', 'Riscattare questo coupon?');
+  static String get attachToOrder =>
+      t('Apply to an open order', 'Applica a un ordine aperto');
+  static String get noOrderAttach =>
+      t('No order — just mark as used', 'Nessun ordine — segna solo come usato');
+  static String get redeemAction => t('Redeem', 'Riscatta');
+  static String get redeemed => t('Coupon redeemed', 'Coupon riscattato');
+  static String get couponStActive => t('Active', 'Attivo');
+  static String get couponStRedeemed => t('Used', 'Utilizzato');
+  static String get couponStExpired => t('Expired', 'Scaduto');
+  static String get couponStVoid => t('Void', 'Annullato');
+  static String get newCampaign => t('New campaign', 'Nuova campagna');
+  static String get editCampaign => t('Edit campaign', 'Modifica campagna');
+  static String get campaignTitleEn => t('Title (EN)', 'Titolo (EN)');
+  static String get campaignTitleIt => t('Title (IT)', 'Titolo (IT)');
+  static String get campaignDescEn => t('Conditions (EN)', 'Condizioni (EN)');
+  static String get campaignDescIt => t('Conditions (IT)', 'Condizioni (IT)');
+  static String get discountTypeLbl => t('Discount type', 'Tipo di sconto');
+  static String get discountPercent => t('Percent (%)', 'Percentuale (%)');
+  static String get discountFixed => t('Fixed amount (€)', 'Importo fisso (€)');
+  static String get discountValueLbl => t('Discount value', 'Valore dello sconto');
+  static String get perWalletLimitLbl =>
+      t('Per-guest limit', 'Limite per ospite');
+  static String get maxIssuesLbl =>
+      t('Max coupons (empty = unlimited)', 'Coupon massimi (vuoto = illimitati)');
+  static String get utmLbl => t('Default UTM tag', 'Tag UTM predefinito');
+  static String get campaignActive => t('Active', 'Attiva');
+  static String get campaignSaved => t('Campaign saved', 'Campagna salvata');
+  static String issuedRedeemed(int issued, int redeemed) =>
+      t('$issued issued · $redeemed redeemed', '$issued emessi · $redeemed riscattati');
+  static String get byUtmTitle => t('By source (UTM)', 'Per fonte (UTM)');
+  static String get directSource => t('(direct)', '(diretto)');
+  static String get discountLine => t('Discount', 'Sconto');
+  static String couponApplied(String code) =>
+      t('coupon $code', 'coupon $code');
 
   // ---- settings ----
   static String get settings => t('Settings', 'Impostazioni');
@@ -491,6 +652,104 @@ class L {
   static String get reset => t('Reset', 'Ripristina');
   static String get aboutApp => t('About app', "Info sull'app");
   static String get version => t('Version', 'Versione');
+
+  // ---- server chat / threads / tasks ----
+  static String get chGeneral => t('General', 'Generale');
+  static String get chKitchen => t('Kitchen', 'Cucina');
+  static String get chBar => t('Bar', 'Bar');
+  static String get chatConnectHint => t(
+      'Connect to the hub to use the team chat.',
+      "Connettiti all'hub per usare la chat del team.");
+  static String get replyAction => t('Reply', 'Rispondi');
+  static String get replyingTo => t('Replying to', 'In risposta a');
+  static String viewReplies(int n) =>
+      t(n == 1 ? 'View 1 reply' : 'View $n replies',
+        n == 1 ? 'Vedi 1 risposta' : 'Vedi $n risposte');
+  static String get threadTitle => t('Thread', 'Discussione');
+  static String get cafeBot => 'CafeBot';
+  static String get loadOlder => t('Load older', 'Carica precedenti');
+  static String get commandsTitle => t('Commands', 'Comandi');
+  static String get cmdTaskHint =>
+      t('/task title @name 21:30', '/task titolo @nome 21:30');
+  static String get cmdTaskDesc =>
+      t('Create a task (name & time optional)', 'Crea un compito (nome e orario facoltativi)');
+  static String get cmdRemindHint =>
+      t('/remind 21:30 text', '/remind 21:30 testo');
+  static String get cmdRemindDesc =>
+      t('The bot reminds at that time', 'Il bot ricorda a quell\'ora');
+  static String get cmdDoneDesc => t(
+      'Reply under a task to complete it', 'Rispondi sotto un compito per completarlo');
+  static String get cmdOpenDesc =>
+      t("List today's open tasks", 'Elenca i compiti aperti di oggi');
+  static String get cmdCloseDesc =>
+      t('Post the closing checklist now', 'Pubblica ora la checklist di chiusura');
+  static String get taskDone => t('Done', 'Fatto');
+  static String doneBy(String name) => t('Done · $name', 'Fatto · $name');
+  static String get anyoneOnShift => t('Anyone on shift', 'Chiunque in servizio');
+  static String dueAtShort(String hhmm) => t('due $hhmm', 'entro $hhmm');
+  static String get overdueTag => t('OVERDUE', 'IN RITARDO');
+
+  // ---- planner ----
+  static String get planner => t('Planner', 'Agenda');
+  static String get plannerSub =>
+      t("The day's tasks — chat and planner share them",
+        'I compiti del giorno — chat e agenda condivisi');
+  static String get myTasks => t('My tasks', 'I miei compiti');
+  static String get sectionOverdue => t('Overdue', 'In ritardo');
+  static String get sectionDone => t('Done', 'Fatti');
+  static String get quickAddHint => t(
+      'Add: title @name 21:30', 'Aggiungi: titolo @nome 21:30');
+  static String get plannerEmpty =>
+      t('Nothing planned for this day', 'Niente in programma per questo giorno');
+  static String get openThread => t('Open thread', 'Apri discussione');
+  static String checklistProgress(String name, int done, int total) =>
+      '$name $done/$total';
+  static String get catOpening => t('Opening', 'Apertura');
+  static String get catClosing => t('Closing', 'Chiusura');
+  static String get catCleaning => t('Cleaning', 'Pulizie');
+  static String get catInventory => t('Inventory', 'Inventario');
+  static String get catService => t('Service', 'Servizio');
+  static String get catOther => t('Other', 'Altro');
+  static String taskCategoryLabel(String wire) => switch (wire) {
+        'opening' => catOpening,
+        'closing' => catClosing,
+        'cleaning' => catCleaning,
+        'inventory' => catInventory,
+        'service' => catService,
+        _ => catOther,
+      };
+
+  // ---- alerts / shift ----
+  static String get onShift => t('On shift', 'In servizio');
+  static String get offShift => t('Off shift', 'Fuori servizio');
+  static String get shiftHint => t(
+      'Alerts fire only while you are on shift.',
+      'Gli avvisi suonano solo mentre sei in servizio.');
+  static String get alertsSection => t('Alerts', 'Avvisi');
+  static String get quietMode => t('Quiet mode', 'Modalità silenziosa');
+  static String get quietModeHint => t(
+      'Banners stay, sounds and vibration stop on this device.',
+      'I banner restano, suoni e vibrazione si fermano su questo dispositivo.');
+  static String get alertVolume => t('Alert volume', 'Volume avvisi');
+  static String get accept => t('Accept', 'Prendo io');
+  static String get escalatedTag => t('UNANSWERED', 'SENZA RISPOSTA');
+  static String get stationMode => t('Station mode', 'Modalità postazione');
+  static String get stationModeHint => t(
+      'Dark idle clock for a counter tablet; glows on alerts.',
+      'Orologio scuro per il tablet al banco; si illumina sugli avvisi.');
+  static String get tapToOpen => t('Tap to open', 'Tocca per aprire');
+  static String get pushMatrixTitle =>
+      t('Background notifications', 'Notifiche in background');
+  static String get pushMatrixBody => t(
+      'Android (Chrome): full delivery, even locked. iPhone/iPad: iOS 16.4+ '
+      'AND the app added to the Home Screen; no vibration on iOS. '
+      'Desktop: while the browser runs.',
+      'Android (Chrome): consegna completa, anche bloccato. iPhone/iPad: '
+      'iOS 16.4+ E app aggiunta alla schermata Home; niente vibrazione su '
+      'iOS. Desktop: col browser aperto.');
+  static String get pushDisabledHint => t(
+      'Server push keys are not configured — alerts work only while the app is open.',
+      'Chiavi push del server non configurate — gli avvisi funzionano solo con l\'app aperta.');
 
   // ---- misc / shared ----
   static String get offlineBanner => t('Offline · orders will be saved locally',

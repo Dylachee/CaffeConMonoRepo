@@ -42,5 +42,20 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Staff push worker — registered on the narrower "push-scope/" scope so
+    // it coexists with (and never replaces) Flutter's own service worker,
+    // which flutter_bootstrap.js registers for the app shell. The Dart side
+    // finds this registration by scope for pushManager.subscribe().
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker
+          .register('push_sw.js', { scope: 'push-scope/' })
+          .catch(function (error) {
+            console.warn('push worker registration failed', error);
+          });
+      });
+    }
+  </script>
 </body>
 </html>

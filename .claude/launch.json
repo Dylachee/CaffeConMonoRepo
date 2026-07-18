@@ -6,6 +6,19 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8137", "--directory", "CafeConnectDesighn/finance"],
       "port": 8137
+    },
+    {
+      "name": "cafeconnect-hub-sqlite",
+      "runtimeExecutable": "CafeConnWeb/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "CafeConnWeb/manage.py",
+        "runserver",
+        "8123",
+        "--settings=backend_core.test_settings",
+        "--noreload"
+      ],
+      "port": 8123,
+      "autoPort": false
     }
   ]
 }

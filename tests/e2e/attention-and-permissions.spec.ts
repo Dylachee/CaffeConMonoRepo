@@ -34,6 +34,12 @@ test.describe('attention, service, roles, and permissions', () => {
       const bootstrap = await apiGet(request, refs.tokens.waiter, '/api/staff/bootstrap/');
       return bootstrap.tables.find((table: any) => Number(table.number) === 902);
     }).toMatchObject({ status: 'waiting', attention: 'bill' });
+
+    // Clean up: the pending/idle blocks are server-rendered from table state,
+    // so a signal left behind hides the service buttons for the next project
+    // (mobile passes, desktop then times out on an invisible signal-bill).
+    await page.getByTestId('cancel-signal').click();
+    await expect(page.getByTestId('signal-idle')).toBeVisible();
   });
 
   test('role permissions protect staff actions', async ({ request }) => {

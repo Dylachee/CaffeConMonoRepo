@@ -46,6 +46,14 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
     final totalItems = orderItems.length;
     final total = orderItems.fold(0.0, (sum, l) => sum + l.total) +
         drafts.fold(0.0, (sum, l) => sum + l.total);
+    // Coupon snapshots from the hub (redeemed against this visit's orders).
+    final discountTotal =
+        tableOrders.fold(0.0, (sum, o) => sum + o.discountAmount);
+    final couponCodes = tableOrders
+        .where((o) => o.couponCode.isNotEmpty)
+        .map((o) => o.couponCode)
+        .join(', ');
+    final totalDue = (total - discountTotal) > 0 ? total - discountTotal : 0.0;
 
     return AppScaffold(
       child: Column(
@@ -178,11 +186,30 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                 ],
                 if (totalItems > 0 || drafts.isNotEmpty) ...[
                   const Divider(height: 32),
+                  if (discountTotal > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            couponCodes.isEmpty
+                                ? L.discountLine
+                                : '${L.discountLine} (${L.couponApplied(couponCodes)})',
+                            style: T.bodySemi.copyWith(color: AppTheme.success),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text('−${discountTotal.rub}',
+                            style: T.bodySemi.copyWith(color: AppTheme.success)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(L.total, style: T.h2),
-                      Text(total.rub,
+                      Text(totalDue.rub,
                           style: T.h2.copyWith(color: AppTheme.cta)),
                     ],
                   ),

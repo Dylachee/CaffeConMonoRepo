@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/chat/chat.dart';
 import 'screens/orders/order_composer.dart';
+import 'screens/planner/planner.dart';
 import 'screens/settings/settings.dart';
 import 'screens/shell/main_shell.dart';
+import 'screens/station/station_mode.dart';
 import 'screens/tables/table_details.dart';
 import 'screens/tables/table_history.dart';
 import 'state/cafe_state.dart';
@@ -65,6 +67,9 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
             builder: (_, __) => const WaiterOrderScreen()),
         GoRoute(path: '/chat', builder: (_, __) => const StaffChatScreen()),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
+        GoRoute(
+            path: '/station', builder: (_, __) => const StationModeScreen()),
+        GoRoute(path: '/planner', builder: (_, __) => const PlannerScreen()),
       ],
     );
   }

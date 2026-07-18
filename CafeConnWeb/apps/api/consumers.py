@@ -25,3 +25,7 @@ class StaffConsumer(AsyncJsonWebsocketConsumer):
 
     async def table_event(self, event):
         await self.send_json(event["payload"])
+
+    async def chat_event(self, event):
+        # Chat messages, task bubbles and task status changes.
+        await self.send_json(event["payload"])
