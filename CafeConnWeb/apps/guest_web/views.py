@@ -243,7 +243,9 @@ def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
     # Prefer the explicit printed/client menu. If a dirty DB has no client tags
     # at all, fall back to all available non-archived items instead of rendering
     # an empty guest page.
-    menu_items = guest_visible_menu_items(menu_items)
+    # Guests should never browse an item that cannot be ordered. Staff still
+    # retain the complete list in their own app for availability management.
+    menu_items = [item for item in guest_visible_menu_items(menu_items) if item.is_available]
     # menu_items is ordered by (category, name), so grouping is a single pass.
     sections = []
     sections_by_name = {}
@@ -307,17 +309,17 @@ def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
             sections_by_name[display_category] = section
         section["items"].append(item)
     for section in sections:
-        section["items"].sort(
-            key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower())
-        )
-    visible_items.sort(key=lambda i: (not i.is_available, (i.name_it or i.name_en or i.name).lower()))
+        section["items"].sort(key=lambda i: (i.name_it or i.name_en or i.name).lower())
+    visible_items.sort(key=lambda i: (i.name_it or i.name_en or i.name).lower())
     sections.sort(key=lambda s: (_guest_category_rank(s["name"]), s["name_it"]))
     # Featured rail: owner-promoted items first (is_promoted — the GUEST
     # popularity flag, deliberately separate from the staff 'popular' tag so
     # the owner can push a product to guests without touching the waiter
     # shelf), then the curated name list, then anything to reach 4+.
+    # A featured rail without genuine food photography is worse than no rail:
+    # do not manufacture images with gradients or emoji placeholders.
     featured_items = [
-        item for item in visible_items if item.is_available and item.is_promoted
+        item for item in visible_items if item.is_promoted and item.image_url
     ]
     seen = {item.pk for item in featured_items}
     for name in POPULAR_ITEM_NAMES:
@@ -325,20 +327,14 @@ def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
             (
                 item
                 for item in visible_items
-                if item.is_available and item.name == name and item.pk not in seen
+                if item.name == name and item.image_url and item.pk not in seen
             ),
             None,
         )
         if match is not None:
             featured_items.append(match)
             seen.add(match.pk)
-    if len(featured_items) < 4:
-        featured_items.extend(
-            item
-            for item in visible_items
-            if item.is_available and item.pk not in seen
-        )
-    featured_items = featured_items[:6]
+    featured_items = featured_items[:4]
 
     venue = _venue_for_request(request)
     blocks = venue.blocks()

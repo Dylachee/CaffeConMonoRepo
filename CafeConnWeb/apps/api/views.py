@@ -1223,8 +1223,24 @@ class OrderItemViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     ordering_fields = ["created_at", "updated_at"]
 
     def perform_update(self, serializer):
+        if (
+            serializer.instance.order.coupon_id
+            and {"menu_item", "quantity"}.intersection(serializer.validated_data)
+        ):
+            raise PermissionDenied(
+                "This bill has a coupon applied. A manager must remove and reapply it before changing items."
+            )
         item = serializer.save()
         broadcast_order_event("updated", item.order)
+
+    def perform_destroy(self, instance):
+        if instance.order.coupon_id:
+            raise PermissionDenied(
+                "This bill has a coupon applied. A manager must remove and reapply it before changing items."
+            )
+        order = instance.order
+        instance.delete()
+        broadcast_order_event("updated", order)
 
     @decorators.action(detail=True, methods=["post"], url_path="mark-ready")
     def mark_ready(self, request, pk=None):

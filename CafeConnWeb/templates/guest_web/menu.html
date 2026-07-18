@@ -331,6 +331,26 @@
     .dish-name{font-size:15px}
     .page-title{font-size:31px}
   }
+  /* Guest storefront: an editorial masthead and a small number of clear
+     choices. This deliberately avoids the old "admin card" visual stack. */
+  .topbar{background:rgba(247,244,238,.88);border-bottom:1px solid var(--line-a72)}
+  .brand{font-size:15px;letter-spacing:-.45px}.brand span{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cover{height:244px;margin:-54px -18px 0;background-position:center 44%}
+  .cover:after{height:132px;background:linear-gradient(transparent,rgba(24,22,17,.74))}
+  .profile-head{margin-top:-98px;padding:0;background:transparent;border:0;box-shadow:none;color:#fff}
+  .profile-head.no-cover{margin-top:10px;color:var(--ink)}
+  .venue-top{align-items:flex-end;gap:11px}.logo{width:52px;height:52px;border-radius:15px;border:1px solid rgba(255,255,255,.44);box-shadow:0 12px 28px -16px #000}
+  .title-row h1{font-size:clamp(30px,8vw,42px);letter-spacing:-1.7px;text-shadow:0 1px 14px rgba(0,0,0,.35)}
+  .tagline{color:rgba(255,255,255,.84);font-size:15px}.profile-head.no-cover .tagline{color:var(--mut)}
+  .rating{margin-top:17px;grid-template-columns:1fr;gap:7px}.fact-pill{min-height:36px;background:rgba(255,255,255,.91);border:0;border-radius:11px;font-size:12px;color:var(--ink-a72);max-width:max-content}
+  .badges{margin-top:10px}.badge{background:rgba(255,255,255,.88);border-radius:999px;color:var(--accent-deep)}
+  .hero-actions{margin-top:16px;display:grid;grid-template-columns:1.35fr 1fr}.hero-actions .primary{height:52px;border-radius:13px;box-shadow:0 12px 26px -14px rgba(0,0,0,.7)}
+  .hero-actions .secondary{height:52px;border-radius:13px;border:0;background:rgba(255,255,255,.94);font-weight:900;color:var(--ink);display:flex;align-items:center;justify-content:center;gap:8px}
+  .section-title{margin-top:30px}.section-title h2{font-size:23px;letter-spacing:-.7px}.rail{gap:14px}.feature{flex-basis:220px;padding:8px;border-radius:14px}.photo{height:142px;border-radius:10px}.about{border-radius:14px;padding:18px;background:var(--surface-hi);box-shadow:none}
+  .menu-lead{max-width:30rem}.allergen-note{margin-top:12px;padding:10px 12px;border-left:3px solid var(--accent);background:var(--accent-a10);color:var(--ink-a72);font-size:12px;line-height:1.42;border-radius:0 10px 10px 0}
+  .bottom-nav{padding-left:8px;padding-right:8px}.nav-in{gap:4px}.tab{height:50px;border-radius:12px}.checkout{height:50px;border-radius:12px}
+  .detail-section h3::after{content:" · confirm with staff";font-weight:600;color:var(--mut);font-size:11px}
+  @media(min-width:760px){.screen{padding-left:28px;padding-right:28px}.cover{margin-left:-28px;margin-right:-28px}.profile-head{margin-left:4px}.rail{margin-left:-28px;margin-right:-28px;padding-left:28px;padding-right:28px}}
 </style>
 </head>
 <body
@@ -372,7 +392,7 @@
   <div class="topbar-in">
     <div class="brand">
       <div class="brand-icon" aria-hidden="true"><img src="{% static 'images/cafeconnect-logo.png' %}" alt=""></div>
-      <span>CafeConnect</span>
+      <span>{{ venue.name }}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <div class="lang-toggle" aria-label="Language">
@@ -417,7 +437,7 @@
       {% elif block == 'cta' %}
       <div class="hero-actions">
         <button class="primary flex" type="button" data-go="menu" data-testid="hero-menu"><svg class="ic"><use href="#ic-menu"/></svg><span data-i18n="view_menu">View menu</span></button>
-        <button class="icon-btn" type="button" data-go="service" aria-label="Service" data-testid="hero-service"><svg class="ic"><use href="#ic-bell"/></svg></button>
+        <button class="secondary" type="button" data-go="service" data-testid="hero-service"><svg class="ic" style="width:18px;height:18px"><use href="#ic-bell"/></svg><span data-i18n="call_waiter">Call staff</span></button>
       </div>
       {% endif %}
       {% endfor %}
@@ -425,7 +445,7 @@
 
     {% for block in body_blocks %}
     {% if block == 'popular' %}
-    <div class="section-title">
+    {% if featured_items %}<div class="section-title">
       <h2 data-i18n="daily_special">Popular picks</h2>
       <span class="muted" data-i18n="chef_pick">from the menu</span>
     </div>
@@ -438,10 +458,8 @@
             <div class="feature-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</div>
             <div class="price">{{ item.price_str }} €</div>
           </button>
-      {% empty %}
-        <p class="muted" data-i18n="daily_empty">Popular items will appear here soon.</p>
       {% endfor %}
-    </div>
+    </div>{% endif %}
     {% elif block == 'about' %}
     <section class="about">
       <h2 data-i18n="about">About us</h2>
@@ -459,6 +477,7 @@
     </div>
     <p class="sub">{{ venue.name }} · <span data-i18n="tap_details">tap an item for details</span></p>
     <p class="menu-lead" data-i18n-text data-en="Coffee, drinks, snacks and kitchen plates are grouped for faster ordering." data-it="Caffetteria, drink, snack e cucina sono divisi per ordinare più facilmente.">Coffee, drinks, snacks and kitchen plates are grouped for faster ordering.</p>
+    <p class="allergen-note" data-i18n-text data-en="Allergen information is indicative. Please confirm ingredients and cross-contact with the staff before ordering." data-it="Le informazioni sugli allergeni sono indicative. Prima di ordinare, conferma ingredienti e possibili contaminazioni con lo staff.">Le informazioni sugli allergeni sono indicative. Prima di ordinare, conferma ingredienti e possibili contaminazioni con lo staff.</p>
     <div class="search">
       <span aria-hidden="true">⌕</span>
       <input id="menu-search" type="search" placeholder="Search menu" data-placeholder-en="Search menu" data-placeholder-it="Cerca nel menu" autocomplete="off">
@@ -476,7 +495,7 @@
       <section class="menu-cat" data-cat-section data-category="{{ section.name }}">
         <h3 class="cat-head" style="--cat:{{ section.color }}"><span data-i18n-text data-en="{{ section.name_en }}" data-it="{{ section.name_it }}">{{ section.name_en }}</span><span class="cat-count">{{ section.items|length }}</span></h3>
         {% for item in section.items %}
-        <article class="dish text-only{% if not item.is_available %} off{% endif %}" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
+        <article class="dish text-only" data-card data-id="{{ item.pk }}" data-category="{{ item.menu_category }}" data-name="{{ item.name_en|lower }} {{ item.name_it|lower }} {{ item.description_en|lower }} {{ item.description_it|lower }} {{ item.composition|lower }}">
           <button type="button" class="dish-hit" data-detail="{{ item.pk }}" aria-label="{{ item.name_en }}">
             <h2 class="dish-name" data-i18n-text data-en="{{ item.name_en }}" data-it="{{ item.name_it }}">{{ item.name_en }}</h2>
             {% if item.description_en %}<p class="dish-desc" data-i18n-text data-en="{{ item.description_en }}" data-it="{{ item.description_it }}">{{ item.description_en }}</p>{% endif %}
@@ -489,11 +508,7 @@
           <div class="dish-bottom">
             {% if item.is_promoted %}<span class="promo-star" aria-label="popular">★</span>{% endif %}
             <span class="price">{{ item.price_str }} €</span>
-            {% if item.is_available %}
-              <button class="add" type="button" data-add="{{ item.pk }}" aria-label="Add {{ item.name_en }}">+</button>
-            {% else %}
-              <span class="unavail-tag" data-i18n="unavailable">unavailable</span>
-            {% endif %}
+            <button class="add" type="button" data-add="{{ item.pk }}" aria-label="Add {{ item.name_en }}">+</button>
           </div>
         </article>
         {% endfor %}
@@ -590,7 +605,6 @@
   <div class="nav-in">
     <button class="tab active" type="button" data-go="profile" data-testid="nav-profile"><span><svg class="ic"><use href="#ic-home"/></svg></span><span data-i18n="profile">Profile</span></button>
     <button class="tab" type="button" data-go="menu" data-testid="nav-menu"><span><svg class="ic"><use href="#ic-menu"/></svg></span><span data-i18n="menu">Menu</span></button>
-    <button class="tab" type="button" data-go="feed" data-testid="nav-feed"><span><svg class="ic"><use href="#ic-feed"/></svg></span><span data-i18n="feed">Feed</span></button>
     <button class="tab" type="button" data-go="wallet" data-testid="nav-wallet"><span><svg class="ic"><use href="#ic-wallet"/></svg></span><span data-i18n="wallet">Coupons</span></button>
     <button class="tab" type="button" data-go="service" data-testid="nav-service"><span><svg class="ic"><use href="#ic-bell"/></svg></span><span data-i18n="service">Service</span></button>
     {% if table %}
@@ -1511,12 +1525,16 @@
     var walletParam = params.get("wallet");
     if (!claimToken && !campaignSlug && !walletParam) return;
 
-    // The params are one-shot: strip them so a reload doesn't re-claim.
+    if (walletParam === "1") { go("wallet"); return; }
+    if (walletParam === "invalid") { toast(tr("wallet_link_invalid")); return; }
+
+    // Marketing URLs must land on a decision, never silently mint a coupon
+    // merely because the page was opened (for example by a link preview).
+    if (!window.confirm("Add this coupon to your wallet?")) return;
+    // The params are one-shot only after the guest explicitly confirms.
     if (window.history && history.replaceState) {
       history.replaceState(null, "", window.location.pathname);
     }
-    if (walletParam === "1") { go("wallet"); return; }
-    if (walletParam === "invalid") { toast(tr("wallet_link_invalid")); return; }
 
     var fd = new FormData();
     fd.append("csrfmiddlewaretoken", csrfToken);

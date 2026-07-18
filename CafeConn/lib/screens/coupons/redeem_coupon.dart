@@ -44,15 +44,14 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(message), backgroundColor: AppTheme.danger));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppTheme.danger));
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_lookingUp) return;
-    final raw = capture.barcodes.isEmpty
-        ? null
-        : capture.barcodes.first.rawValue;
+    final raw =
+        capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
     if (raw == null || raw.isEmpty) return;
     await _lookUp(token: raw);
   }
@@ -61,7 +60,8 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
     if (_lookingUp) return;
     setState(() => _lookingUp = true);
     final state = context.read<CafeState>();
-    final (preview, error) = await state.couponPreview(token: token, code: code);
+    final (preview, error) =
+        await state.couponPreview(token: token, code: code);
     if (!mounted) return;
     setState(() => _lookingUp = false);
     if (error != null || preview == null) {
@@ -75,10 +75,10 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
       {String? token, String? code}) async {
     final state = context.read<CafeState>();
     // Open (not yet paid/cancelled) orders the coupon could attach to.
-    final openOrders = state.orders
-        .where((o) => o.status != OrderStatus.awaiting)
-        .toList();
-    String? selectedOrderId;
+    final openOrders =
+        state.orders.where((o) => o.status != OrderStatus.awaiting).toList();
+    String? selectedOrderId =
+        openOrders.isNotEmpty ? openOrders.first.id : null;
     var busy = false;
 
     await showModalBottomSheet(
@@ -125,7 +125,8 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                               Text(coupon.displayTitle,
                                   style: T.h3, maxLines: 2),
                               const SizedBox(height: 3),
-                              Text('${coupon.code} · ${_statusLabel(preview.displayStatus)}',
+                              Text(
+                                  '${coupon.code} · ${_statusLabel(preview.displayStatus)}',
                                   style: T.small),
                             ]),
                       ),
@@ -135,30 +136,33 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                     const SizedBox(height: 14),
                     Text(L.attachToOrder, style: T.smallSemi),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<String?>(
+                    DropdownButtonFormField<String>(
                       initialValue: selectedOrderId,
                       items: [
-                        DropdownMenuItem<String?>(
-                            value: null, child: Text(L.noOrderAttach)),
                         ...openOrders.map((order) {
                           final table = state.tables
                               .where((t) => t.id == order.tableId)
                               .firstOrNull;
                           final label =
                               '${L.tableN(table?.number ?? '?')} · ${order.total.toStringAsFixed(2)} €';
-                          return DropdownMenuItem<String?>(
+                          return DropdownMenuItem<String>(
                               value: order.id, child: Text(label));
                         }),
                       ],
                       onChanged: (value) => set(() => selectedOrderId = value),
                     ),
+                  ] else if (active) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                        'Open an order first — coupons must be attached to a bill.',
+                        style: T.small.copyWith(color: AppTheme.danger)),
                   ],
                   const SizedBox(height: 18),
                   PrimaryButton(
                     label: L.redeemAction,
                     icon: Icons.check_circle_outline,
-                    enabled: active && !busy,
-                    onTap: !active || busy
+                    enabled: active && !busy && selectedOrderId != null,
+                    onTap: !active || busy || selectedOrderId == null
                         ? null
                         : () async {
                             set(() => busy = true);
@@ -177,11 +181,10 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                             }
                             Navigator.pop(sheetContext);
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        '${L.redeemed} · ${redeemed.code}'),
-                                    backgroundColor: AppTheme.success));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content:
+                                    Text('${L.redeemed} · ${redeemed.code}'),
+                                backgroundColor: AppTheme.success));
                           },
                   ),
                   const SizedBox(height: 8),

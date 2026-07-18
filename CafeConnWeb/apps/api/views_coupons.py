@@ -53,6 +53,9 @@ class StaffCampaignsView(APIView):
 
     def post(self, request):
         restaurant = restaurant_for_request(request)
+        employee = employee_for_request(request)
+        if employee is None or not employee.is_on_shift:
+            return Response({"detail": "Start your shift before issuing a coupon."}, status=status.HTTP_403_FORBIDDEN)
         serializer = CouponCampaignSerializer(
             data=request.data, context={"restaurant": restaurant}
         )
@@ -121,7 +124,7 @@ class StaffCouponIssueView(APIView):
                 {"detail": "This campaign is not currently claimable."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        token = coupons.make_claim_token(campaign, employee_for_request(request))
+        token = coupons.make_claim_token(campaign, employee)
         return Response(
             {
                 "token": token,
@@ -178,9 +181,7 @@ class StaffCouponPreviewView(APIView):
             order = get_object_or_404(
                 Order, restaurant=restaurant_for_request(request), pk=order_id
             )
-            payload["discountPreview"] = str(
-                coupons.compute_discount(coupon.campaign, order.total)
-            )
+            payload["discountPreview"] = str(coupons.compute_coupon_discount(coupon, order.total))
             payload["orderTotal"] = str(order.total)
         return Response(payload)
 
@@ -196,16 +197,19 @@ class StaffCouponRedeemView(APIView):
         except CouponError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
-        order = None
         order_id = request.data.get("order_id")
-        if order_id:
-            order = get_object_or_404(
-                Order, restaurant=restaurant_for_request(request), pk=order_id
-            )
+        if not order_id:
+            return Response({"detail": "Choose an open order before redeeming this coupon."}, status=status.HTTP_400_BAD_REQUEST)
+        employee = employee_for_request(request)
+        if employee is None or not employee.is_on_shift:
+            return Response({"detail": "Start your shift before redeeming a coupon."}, status=status.HTTP_403_FORBIDDEN)
+        order = get_object_or_404(
+            Order, restaurant=restaurant_for_request(request), pk=order_id
+        )
 
         try:
             coupon = coupons.redeem_coupon(
-                coupon.pk, redeemed_by=employee_for_request(request), order=order
+                coupon.pk, redeemed_by=employee, order=order
             )
         except CouponError as error:
             return Response({"detail": str(error)}, status=status.HTTP_409_CONFLICT)

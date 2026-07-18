@@ -47,20 +47,19 @@ def _attach_wallet_cookie(response: HttpResponse, wallet: GuestWallet) -> HttpRe
 
 
 def _coupon_payload(coupon: IssuedCoupon) -> dict:
-    campaign = coupon.campaign
     display = coupons.display_status(coupon)
     payload = {
         "id": coupon.pk,
         "code": coupon.code,
         "status": display,
-        "title": campaign.title,
-        "titleIt": campaign.title_it or campaign.title,
-        "description": campaign.description,
-        "descriptionIt": campaign.description_it or campaign.description,
-        "discountType": campaign.discount_type,
-        "discountValue": float(campaign.discount_value),
-        "validFrom": campaign.valid_from.isoformat() if campaign.valid_from else None,
-        "validUntil": campaign.valid_until.isoformat() if campaign.valid_until else None,
+        "title": coupon.title_snapshot or coupon.campaign.title,
+        "titleIt": coupon.title_it_snapshot or coupon.title_snapshot or coupon.campaign.title_it or coupon.campaign.title,
+        "description": coupon.description_snapshot or coupon.campaign.description,
+        "descriptionIt": coupon.description_it_snapshot or coupon.description_snapshot or coupon.campaign.description_it or coupon.campaign.description,
+        "discountType": coupon.discount_type_snapshot or coupon.campaign.discount_type,
+        "discountValue": float(coupon.discount_value_snapshot if coupon.discount_value_snapshot is not None else coupon.campaign.discount_value),
+        "validFrom": (coupon.valid_from_snapshot or coupon.campaign.valid_from).isoformat() if (coupon.valid_from_snapshot or coupon.campaign.valid_from) else None,
+        "validUntil": (coupon.valid_until_snapshot or coupon.campaign.valid_until).isoformat() if (coupon.valid_until_snapshot or coupon.campaign.valid_until) else None,
         "issuedVia": coupon.issued_via,
         "redeemedAt": coupon.redeemed_at.isoformat() if coupon.redeemed_at else None,
         "createdAt": coupon.created_at.isoformat(),

@@ -1039,6 +1039,17 @@ class IssuedCoupon(models.Model):
     campaign = models.ForeignKey(
         CouponCampaign, on_delete=models.CASCADE, related_name="coupons"
     )
+    # Guest-facing campaign terms are frozen at claim time. Editing or
+    # deactivating a campaign therefore only affects future claims, never a
+    # coupon already in a guest's wallet.
+    title_snapshot = models.CharField(max_length=120, blank=True)
+    title_it_snapshot = models.CharField(max_length=120, blank=True)
+    description_snapshot = models.TextField(blank=True)
+    description_it_snapshot = models.TextField(blank=True)
+    discount_type_snapshot = models.CharField(max_length=16, blank=True)
+    discount_value_snapshot = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    valid_from_snapshot = models.DateTimeField(null=True, blank=True)
+    valid_until_snapshot = models.DateTimeField(null=True, blank=True)
     wallet = models.ForeignKey(
         GuestWallet, on_delete=models.CASCADE, related_name="coupons"
     )

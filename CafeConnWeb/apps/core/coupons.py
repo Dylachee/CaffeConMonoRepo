@@ -146,9 +146,8 @@ def claim_coupon(
 ) -> tuple[IssuedCoupon, bool]:
     """Put one coupon of `campaign` into `wallet`. Returns (coupon, created).
 
-    Idempotent per wallet: once the wallet holds `per_wallet_limit` coupons of
-    the campaign, re-claiming returns the newest one instead of failing — so
-    re-opening a claim link never scares a guest with an error.
+    Idempotent per wallet: one wallet receives one claim per campaign. A
+    marketing link can be re-opened safely, but cannot mint duplicates.
     """
     if wallet.restaurant_id != campaign.restaurant_id:
         raise CouponError("This wallet belongs to another restaurant.")
@@ -165,7 +164,7 @@ def claim_coupon(
             .exclude(status=IssuedCoupon.Status.VOID)
             .order_by("-created_at")
         )
-        if len(existing) >= campaign.per_wallet_limit:
+        if existing:
             return existing[0], False
 
         if campaign.max_total_issues is not None:
@@ -192,6 +191,14 @@ def claim_coupon(
             issued_via=issued_via,
             issued_by=issued_by,
             utm_source=utm_source[:64],
+            title_snapshot=campaign.title,
+            title_it_snapshot=campaign.title_it,
+            description_snapshot=campaign.description,
+            description_it_snapshot=campaign.description_it,
+            discount_type_snapshot=campaign.discount_type,
+            discount_value_snapshot=campaign.discount_value,
+            valid_from_snapshot=campaign.valid_from,
+            valid_until_snapshot=campaign.valid_until,
         )
         return coupon, True
 
@@ -216,6 +223,19 @@ def compute_discount(campaign: CouponCampaign, order_total: Decimal) -> Decimal:
     return amount.quantize(_CENT)
 
 
+def compute_coupon_discount(coupon: IssuedCoupon, order_total: Decimal) -> Decimal:
+    """Use frozen commercial terms when available; legacy rows fall back."""
+    if coupon.discount_type_snapshot and coupon.discount_value_snapshot is not None:
+        if order_total is None or order_total <= 0:
+            return Decimal("0.00")
+        if coupon.discount_type_snapshot == CouponCampaign.DiscountType.PERCENT:
+            amount = order_total * coupon.discount_value_snapshot / Decimal("100")
+        else:
+            amount = coupon.discount_value_snapshot
+        return max(Decimal("0.00"), min(amount, order_total)).quantize(_CENT)
+    return compute_discount(coupon.campaign, order_total)
+
+
 # --- redemption --------------------------------------------------------------
 
 
@@ -234,6 +254,8 @@ def redeem_coupon(
     where FOR UPDATE is a no-op (SQLite in tests) exactly one caller wins and
     the other gets a clear "already used" error.
     """
+    if order is None:
+        raise CouponError("Choose an open order before redeeming this coupon.")
     # Expiry pre-check OUTSIDE the transaction: the lazy EXPIRED mark must
     # survive the CouponError below (inside atomic it would be rolled back
     # together with everything else).
@@ -241,7 +263,8 @@ def redeem_coupon(
         pre = IssuedCoupon.objects.select_related("campaign").get(pk=coupon_id)
     except IssuedCoupon.DoesNotExist:
         raise CouponError("This coupon does not exist.")
-    if pre.status == IssuedCoupon.Status.ACTIVE and pre.campaign.window_state() == "expired":
+    expires_at = pre.valid_until_snapshot or pre.campaign.valid_until
+    if pre.status == IssuedCoupon.Status.ACTIVE and expires_at and timezone.now() > expires_at:
         IssuedCoupon.objects.filter(
             pk=coupon_id, status=IssuedCoupon.Status.ACTIVE
         ).update(status=IssuedCoupon.Status.EXPIRED, updated_at=timezone.now())
@@ -261,14 +284,13 @@ def redeem_coupon(
         if coupon.status == IssuedCoupon.Status.EXPIRED:
             raise CouponError("This coupon has expired.")
 
-        if order is not None:
-            order = Order.objects.select_for_update().get(pk=order.pk)
-            if order.restaurant_id != coupon.restaurant_id:
-                raise CouponError("This coupon belongs to another restaurant.")
-            if order.status in (Order.Status.PAID, Order.Status.CANCELLED):
-                raise CouponError("This order is closed — the coupon cannot be applied to it.")
-            if order.coupon_id is not None and order.coupon_id != coupon.pk:
-                raise CouponError("This order already has a coupon applied.")
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if order.restaurant_id != coupon.restaurant_id:
+            raise CouponError("This coupon belongs to another restaurant.")
+        if order.status in (Order.Status.PAID, Order.Status.CANCELLED):
+            raise CouponError("This order is closed — the coupon cannot be applied to it.")
+        if order.coupon_id is not None and order.coupon_id != coupon.pk:
+            raise CouponError("This order already has a coupon applied.")
 
         now = timezone.now()
         won = IssuedCoupon.objects.filter(
@@ -284,10 +306,9 @@ def redeem_coupon(
             raise CouponError("This coupon has already been used.")
         coupon.refresh_from_db()
 
-        if order is not None:
-            order.coupon = coupon
-            order.discount_amount = compute_discount(coupon.campaign, order.total)
-            order.save(update_fields=["coupon", "discount_amount", "updated_at"])
+        order.coupon = coupon
+        order.discount_amount = compute_coupon_discount(coupon, order.total)
+        order.save(update_fields=["coupon", "discount_amount", "updated_at"])
         return coupon
 
 
@@ -384,7 +405,8 @@ def display_status(coupon: IssuedCoupon) -> str:
     campaign reads 'expired' without waiting for a lazy DB update."""
     if (
         coupon.status == IssuedCoupon.Status.ACTIVE
-        and coupon.campaign.window_state() == "expired"
+        and (coupon.valid_until_snapshot or coupon.campaign.valid_until)
+        and timezone.now() > (coupon.valid_until_snapshot or coupon.campaign.valid_until)
     ):
         return IssuedCoupon.Status.EXPIRED
     return coupon.status

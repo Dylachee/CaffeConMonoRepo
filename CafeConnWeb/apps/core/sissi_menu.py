@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from apps.core.menu_content import ALLERGEN_REVIEW_TAG, menu_content
+
 CLIENT_MENU_TAG = "client"
 MANUAL_CHECK_TAG = "manual_check"
 SEASONAL_TAG = "seasonal"
@@ -451,12 +453,14 @@ def catalog_items():
             seen.add(key)
 
             tags = [CLIENT_MENU_TAG, *extra_tags]
-            description = ""
-            composition = ""
+            content = menu_content(name, category)
+            description = content["description"]
+            composition = content["composition"]
             if name in GELATO_MODIFIER_ITEMS:
                 tags.append("modifier:gelato_gusti")
                 description = f"Gusti: {gusti}"
                 composition = description
+            tags.append(ALLERGEN_REVIEW_TAG)
 
             yield {
                 "name": name,
@@ -468,7 +472,7 @@ def catalog_items():
                 "station": station,
                 "tags": tags,
                 "composition": composition,
-                "allergens": [],
+                "allergens": content["allergens"],
                 "is_available": True,
                 "is_promoted": False,
                 "preparation_minutes": 12 if station == "kitchen" else 5,
