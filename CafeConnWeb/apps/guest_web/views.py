@@ -16,6 +16,7 @@ from apps.api.views_venue import preview_cache_key
 from apps.core.menu_i18n import category_labels, menu_item_labels
 from apps.core.menu_visibility import (
     guest_visible_menu_items,
+    menu_has_client_items,
     menu_item_guest_visible,
 )
 from apps.core.models import AttentionSignal, MenuItem, Order, OrderItem, Table, VenueSettings
@@ -377,10 +378,11 @@ def create_guest_order(request):
             messages.error(request, "Table not found. Please scan the QR code again.")
             return _redirect_menu(None)
 
+        has_client_menu = menu_has_client_items(MenuItem.objects.only("tags", "is_available"))
         menu_items = [
             item
             for item in MenuItem.objects.filter(pk__in=selected_ids).select_related("category")
-            if menu_item_guest_visible(item)
+            if menu_item_guest_visible(item, has_client_menu=has_client_menu)
         ]
         order_items = []
         for item in menu_items:

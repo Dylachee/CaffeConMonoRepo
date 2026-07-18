@@ -49,6 +49,7 @@ from apps.api.serializers import (
 )
 from apps.core.menu_i18n import menu_item_labels
 from apps.core.menu_visibility import (
+    menu_has_client_items,
     menu_item_archived,
     menu_item_guest_visible,
 )
@@ -621,12 +622,22 @@ class MenuItemViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "description", "category__name"]
     ordering_fields = ["name", "category__name", "price", "updated_at"]
 
+    def _public_menu_has_client_items(self):
+        if not hasattr(self, "_has_public_client_menu"):
+            self._has_public_client_menu = menu_has_client_items(
+                MenuItem.objects.only("tags", "is_available")
+            )
+        return self._has_public_client_menu
+
     def _visible_to_request(self, item):
         if menu_item_archived(item):
             return False
         if self.request.user and self.request.user.is_authenticated:
             return True
-        return menu_item_guest_visible(item)
+        return menu_item_guest_visible(
+            item,
+            has_client_menu=self._public_menu_has_client_items(),
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = [
@@ -849,6 +860,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only a pending order can be rejected.")
         order.status = Order.Status.CANCELLED
         order.save(update_fields=["status", "updated_at"])
+
+        # The guest submission put the table into WAITING; with the order gone
+        # nothing is pending anymore, so mirror confirm and settle the table
+        # back to OCCUPIED. Skip when an attention badge (call/bill) is active:
+        # that signal owns the WAITING state until a waiter acknowledges it.
+        table = order.table
+        if (
+            table.status == Table.Status.WAITING
+            and table.attention == Table.Attention.NONE
+        ):
+            table.status = Table.Status.OCCUPIED
+            table.save(update_fields=["status", "updated_at"])
+
         log_order_event(order, request.user, OrderEvent.Action.REJECTED)
         broadcast_order_event("updated", order)
         broadcast_table_event(order.table)

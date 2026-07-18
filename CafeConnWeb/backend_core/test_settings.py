@@ -19,6 +19,17 @@ DATABASES = {
     }
 }
 
+# The e2e suite logs in four users per spec from one IP; the production
+# brute-force brake (login 10/min) trips a few specs in and 429s the rest of
+# the run. Keep the throttle machinery wired, just not binding.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "1000/min",
+        "attention-create": "1000/min",
+    },
+}
+
 # Tests must not depend on cross-test cache state.
 CACHES = {
     "default": {

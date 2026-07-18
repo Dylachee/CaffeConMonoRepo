@@ -25,7 +25,9 @@ test.describe('guest menu flow', () => {
     await expect(menuScreen.getByText('E2E Kitchen Item')).toBeHidden();
 
     await page.getByRole('button', { name: 'Tutto' }).click();
-    await page.getByLabel('E2E Kitchen Item').click();
+    // exact: the quick-add "+" button is labeled "Add E2E Kitchen Item" and
+    // would also match a substring lookup.
+    await page.getByLabel('E2E Kitchen Item', { exact: true }).click();
     await expect(page.getByTestId('detail')).toBeVisible();
     await expect(page.getByTestId('detail-name')).toContainText('E2E Kitchen Item');
     await page.getByTestId('detail-add').click();
