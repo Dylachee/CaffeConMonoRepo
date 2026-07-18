@@ -71,6 +71,24 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
             path: '/station', builder: (_, __) => const StationModeScreen()),
         GoRoute(path: '/planner', builder: (_, __) => const PlannerScreen()),
       ],
+      redirect: (context, routeState) {
+        if (_cafeState.backendConnecting) return null;
+        final location = routeState.matchedLocation;
+        final needsFloor = {
+          '/table-details',
+          '/table-history',
+          '/waiter-menu',
+        }.contains(location);
+        if (needsFloor && (!_cafeState.canSeeTables || !_cafeState.isOnShift)) {
+          return '/tables';
+        }
+        if (location == '/station' &&
+            (!(_cafeState.capBar || _cafeState.capKitchen) ||
+                !_cafeState.isOnShift)) {
+          return '/tables';
+        }
+        return null;
+      },
     );
   }
 
@@ -96,11 +114,16 @@ class _CafeConnectAppState extends State<CafeConnectApp> {
           // and the swipe-back gesture respond to the cursor, not just touch.
           scrollBehavior: const _AppScrollBehavior(),
           routerConfig: _router,
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: TextScaler.linear(state.textScale)),
-            child: child!,
-          ),
+          builder: (context, child) {
+            final media = MediaQuery.of(context);
+            final systemScale = media.textScaler.scale(1);
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(systemScale * state.textScale),
+              ),
+              child: child!,
+            );
+          },
         ),
       ),
     );

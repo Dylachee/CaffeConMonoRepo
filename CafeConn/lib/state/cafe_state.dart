@@ -2443,7 +2443,12 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   // The chat screens read ONLY this server state when connected; the legacy
   // local chat models remain for the offline demo shell.
 
-  static const chatChannels = ['general', 'kitchen', 'bar'];
+  List<String> get chatChannels => [
+        'general',
+        if (capWait) 'floor',
+        if (capKitchen) 'kitchen',
+        if (capBar) 'bar',
+      ];
   final Map<String, List<ChatMessageDto>> chatByChannel = {};
   final Map<String, int?> _chatCursors = {};
   final Map<String, bool> chatHasMore = {};

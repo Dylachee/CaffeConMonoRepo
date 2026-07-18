@@ -85,59 +85,67 @@ class _AppButtonState extends State<AppButton> {
                     : AppTheme.surfaceAlt);
     final fg = primary || dark ? Colors.white : AppTheme.ink;
 
-    return GestureDetector(
-      onTapDown: (_) => setState(() => down = true),
-      onTapCancel: () => setState(() => down = false),
-      onTapUp: (_) => setState(() => down = false),
-      onTap: widget.onPressed == null
-          ? null
-          : () {
-              HapticFeedback.lightImpact();
-              widget.onPressed!();
-            },
-      child: AnimatedScale(
-        duration: 200.ms,
-        curve: Curves.elasticOut,
-        scale: down ? .97 : 1,
-        child: AnimatedContainer(
-          duration: 200.ms,
-          height: 50,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: ghost
-                    ? Colors.transparent
-                    : (primary || dark ? bg : AppTheme.separator)),
-            boxShadow: primary && !down
-                ? [
-                    const BoxShadow(
-                        color: Color(0x1F2B2418),
-                        blurRadius: 22,
-                        spreadRadius: -14,
-                        offset: Offset(0, 10))
-                  ]
-                : null,
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      button: true,
+      enabled: widget.onPressed != null,
+      label: widget.label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onHighlightChanged: (value) => setState(() => down = value),
+          onTap: widget.onPressed == null
+              ? null
+              : () {
+                  HapticFeedback.lightImpact();
+                  widget.onPressed!();
+                },
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedScale(
+            duration: reduceMotion ? Duration.zero : 150.ms,
+            curve: Curves.easeOut,
+            scale: down ? .96 : 1,
+            child: AnimatedContainer(
+              duration: 200.ms,
+              height: 50,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: ghost
+                        ? Colors.transparent
+                        : (primary || dark ? bg : AppTheme.separator)),
+                boxShadow: primary && !down
+                    ? [
+                        const BoxShadow(
+                            color: Color(0x1F2B2418),
+                            blurRadius: 22,
+                            spreadRadius: -14,
+                            offset: Offset(0, 10))
+                      ]
+                    : null,
+              ),
+              child: widget.loading
+                  ? const CupertinoActivityIndicator(color: Colors.white)
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (widget.icon != null) ...[
+                          Icon(widget.icon, color: fg, size: 19),
+                          const SizedBox(width: 8)
+                        ],
+                        Flexible(
+                            child: Text(widget.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: T.bodySemi
+                                    .copyWith(color: fg, fontSize: 16))),
+                      ],
+                    ),
+            ),
           ),
-          child: widget.loading
-              ? const CupertinoActivityIndicator(color: Colors.white)
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (widget.icon != null) ...[
-                      Icon(widget.icon, color: fg, size: 19),
-                      const SizedBox(width: 8)
-                    ],
-                    Flexible(
-                        child: Text(widget.label,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                T.bodySemi.copyWith(color: fg, fontSize: 16))),
-                  ],
-                ),
         ),
       ),
     );
@@ -294,18 +302,22 @@ class AppCard extends StatelessWidget {
             : null,
       ),
       child: child,
-    )
-        .animate(delay: Duration(milliseconds: index * 40))
-        .fadeIn(duration: 260.ms)
-        .slideY(begin: .08, end: 0);
+    );
 
     if (onTap == null) return box;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap!();
-      },
-      child: box,
+    return Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap!();
+          },
+          child: box,
+        ),
+      ),
     );
   }
 }

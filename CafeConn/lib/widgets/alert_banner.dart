@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -10,10 +9,10 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../state/cafe_state.dart';
 
-/// Compact footer action for starting/ending a shift. Managers choose the
-/// areas they are covering; their previous selection is prefilled next time.
+/// Compact one-tap footer action for starting or ending a shift.
 class ShiftFooterControl extends StatefulWidget {
-  const ShiftFooterControl({super.key});
+  const ShiftFooterControl({super.key, this.compact = false});
+  final bool compact;
   @override
   State<ShiftFooterControl> createState() => _ShiftFooterControlState();
 }
@@ -21,79 +20,11 @@ class ShiftFooterControl extends StatefulWidget {
 class _ShiftFooterControlState extends State<ShiftFooterControl> {
   bool _busy = false;
 
-  Future<List<String>?> _pickAreas(CafeState state) async {
-    final choices = <(String, String, IconData)>[
-      if (state.capWait) ('floor', L.tables, Icons.table_restaurant_outlined),
-      if (state.capBar) ('bar', L.bar, Icons.local_bar_outlined),
-      if (state.capKitchen) ('kitchen', L.kitchen, Icons.soup_kitchen_outlined),
-    ];
-    if (choices.length == 1) return [choices.first.$1];
-    final selected = <String>{
-      ...(state.lastShiftAreas.isNotEmpty
-          ? state.lastShiftAreas
-          : choices.map((choice) => choice.$1)),
-    }..removeWhere((area) => !choices.any((choice) => choice.$1 == area));
-    return showModalBottomSheet<List<String>>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(L.t('Where are you working?', 'Dove lavori?'),
-                    style: T.h2),
-              ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  L.t('Your previous selection is remembered.',
-                      'La selezione precedente viene ricordata.'),
-                  style: T.small.copyWith(color: AppTheme.ink2),
-                ),
-              ),
-              const SizedBox(height: 12),
-              for (final choice in choices)
-                CheckboxListTile(
-                  value: selected.contains(choice.$1),
-                  onChanged: (value) => setSheetState(() {
-                    value == true
-                        ? selected.add(choice.$1)
-                        : selected.remove(choice.$1);
-                  }),
-                  secondary: Icon(choice.$3, color: AppTheme.ink2),
-                  title: Text(choice.$2, style: T.bodySemi),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.trailing,
-                ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton(
-                  onPressed: selected.isEmpty
-                      ? null
-                      : () => Navigator.pop(sheetContext, selected.toList()),
-                  child: Text(L.onShift),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _toggle(bool on) async {
     if (_busy) return;
     final state = context.read<CafeState>();
-    final areas = on ? await _pickAreas(state) : null;
-    if (on && areas == null) return;
     setState(() => _busy = true);
-    final error = await state.setOnShift(on, areas: areas);
+    final error = await state.setOnShift(on);
     if (!mounted) return;
     setState(() => _busy = false);
     if (error != null) {
@@ -115,8 +46,9 @@ class _ShiftFooterControlState extends State<ShiftFooterControl> {
             : null,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 44, minWidth: 104),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          constraints:
+              BoxConstraints(minHeight: 44, minWidth: widget.compact ? 44 : 78),
+          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 10 : 11),
           decoration: BoxDecoration(
             color: state.isOnShift
                 ? AppColors.ok.withValues(alpha: 0.10)
@@ -133,26 +65,27 @@ class _ShiftFooterControlState extends State<ShiftFooterControl> {
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 9),
-            Text(
-              state.isOnShift ? L.onShift : L.offShift,
-              style: T.smallSemi.copyWith(
-                  color: state.isOnShift ? AppColors.ok : AppTheme.ink2),
-            ),
-            const SizedBox(width: 8),
+            if (!widget.compact) ...[
+              const SizedBox(width: 8),
+              Text(
+                state.isOnShift ? L.t('On', 'On') : L.t('Off', 'Off'),
+                style: T.smallSemi.copyWith(
+                    color: state.isOnShift ? AppColors.ok : AppTheme.ink2),
+              ),
+            ],
             if (_busy)
-              const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-            else
-              const Icon(Icons.expand_less_rounded, size: 18),
+              const Padding(
+                  padding: EdgeInsets.only(left: 7),
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
           ]),
         ),
       ),
     );
 
-    if (pulsing) {
+    if (pulsing && !MediaQuery.disableAnimationsOf(context)) {
       // L2 accent pulse: a calm ~1 Hz breathing tint — never a strobe.
       bar = bar
           .animate(onPlay: (controller) => controller.repeat(reverse: true))

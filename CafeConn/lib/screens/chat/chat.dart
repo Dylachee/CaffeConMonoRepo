@@ -16,12 +16,14 @@ import '../../widgets/app_widgets.dart';
 /// History and unread badges survive reloads; delivery rides the staff WS.
 
 String channelLabel(String channel) => switch (channel) {
+      'floor' => L.t('Floor', 'Sala'),
       'kitchen' => L.chKitchen,
       'bar' => L.chBar,
       _ => L.chGeneral,
     };
 
 Color channelColor(String channel) => switch (channel) {
+      'floor' => AppColors.ok,
       'kitchen' => AppTheme.warning,
       'bar' => AppTheme.bar,
       _ => AppTheme.ink3,
@@ -166,9 +168,9 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
         else
           Expanded(
             child: ListView.builder(
-              itemCount: CafeState.chatChannels.length,
+              itemCount: state.chatChannels.length,
               itemBuilder: (_, i) {
-                final channel = CafeState.chatChannels[i];
+                final channel = state.chatChannels[i];
                 final unread = state.chatUnread[channel] ?? 0;
                 final last = state.chatMessages(channel).firstOrNull;
                 return AppCard(
