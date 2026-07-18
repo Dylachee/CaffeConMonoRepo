@@ -40,11 +40,22 @@ class _ContentScreenState extends State<ContentScreen>
       bottomNav: null,
       child: Column(
         children: [
-          Header(title: L.content, subtitle: L.contentSub, actions: [
-            IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => GoRouter.of(context).push('/settings')),
-          ]),
+          Header(
+              title: L.content,
+              subtitle: L.contentSub,
+              leading: Navigator.canPop(context)
+                  ? IconButton(
+                      tooltip:
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    )
+                  : null,
+              actions: [
+                IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => GoRouter.of(context).push('/settings')),
+              ]),
           SizedBox(
             height: 38,
             child: TabBar(

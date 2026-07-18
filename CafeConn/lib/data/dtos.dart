@@ -627,6 +627,12 @@ class RestaurantDto {
   final String slug;
   final String timezone;
   final String currency;
+  final int staffCount;
+  final int tableCount;
+  final double todaySales;
+  final int activeTables;
+  final int openCalls;
+  final int onShiftStaff;
 
   const RestaurantDto({
     required this.id,
@@ -634,6 +640,12 @@ class RestaurantDto {
     required this.slug,
     this.timezone = 'Europe/Rome',
     this.currency = 'EUR',
+    this.staffCount = 0,
+    this.tableCount = 0,
+    this.todaySales = 0,
+    this.activeTables = 0,
+    this.openCalls = 0,
+    this.onShiftStaff = 0,
   });
 
   factory RestaurantDto.fromJson(Map<String, dynamic> j) => RestaurantDto(
@@ -642,6 +654,12 @@ class RestaurantDto {
         slug: _asString(j['slug'], 'sissy-bar'),
         timezone: _asString(j['timezone'], 'Europe/Rome'),
         currency: _asString(j['currency'], 'EUR'),
+        staffCount: _asInt(j['staffCount']),
+        tableCount: _asInt(j['tableCount']),
+        todaySales: _asDouble(j['todaySales']),
+        activeTables: _asInt(j['activeTables']),
+        openCalls: _asInt(j['openCalls']),
+        onShiftStaff: _asInt(j['onShiftStaff']),
       );
 }
 

@@ -1,15 +1,17 @@
 import mimetypes
+from io import BytesIO
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.db import transaction
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 import copy
+import segno
 
 from apps.api.events import broadcast_attention_event, broadcast_order_event, broadcast_table_event
 from apps.api.views_venue import preview_cache_key
@@ -164,9 +166,32 @@ def restaurant_for_guest_request(request) -> Restaurant:
     match = getattr(request, "resolver_match", None)
     slug = match.kwargs.get("restaurant_slug") if match else None
     slug = slug or "sissy-bar"
-    restaurant = get_object_or_404(Restaurant, slug=slug, is_active=True)
+    restaurant = Restaurant.objects.filter(slug=slug, is_active=True).first()
+    if restaurant is None:
+        restaurant = next(
+            (
+                item
+                for item in Restaurant.objects.filter(is_active=True)
+                if slug in (item.legacy_slugs or [])
+            ),
+            None,
+        )
+    if restaurant is None:
+        raise Http404("Restaurant not found.")
     request.restaurant = restaurant
     return restaurant
+
+
+@require_GET
+def restaurant_chooser(request, path=""):
+    """Legacy and root links never guess a restaurant; the guest chooses."""
+    suffix = (path or "").lstrip("/")
+    restaurants = Restaurant.objects.filter(is_active=True).order_by("name")
+    return render(
+        request,
+        "guest_web/restaurant_chooser.html",
+        {"restaurants": restaurants, "suffix": suffix},
+    )
 
 
 def _venue_for_request(request) -> VenueSettings:
@@ -187,6 +212,11 @@ def _venue_for_request(request) -> VenueSettings:
 def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
     """Guest QR page: storefront, menu, cart checkout and service signals."""
     restaurant = restaurant_for_guest_request(request)
+    if restaurant_slug and restaurant_slug != restaurant.slug:
+        target = request.get_full_path().replace(
+            f"/r/{restaurant_slug}/", f"/r/{restaurant.slug}/", 1
+        )
+        return redirect(target)
     menu_items = MenuItem.objects.filter(restaurant=restaurant).select_related("category").order_by(
         "category__sort_order", "category__name", "-is_available", "name"
     )
@@ -195,9 +225,14 @@ def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
     #   /menu/n/<number>/ — the printed table number. QR codes should use this
     #     one: it survives reseeding/recreating the DB, a pk does not.
     if table_number is not None:
-        table = get_object_or_404(
-            Table, restaurant=restaurant, number=table_number
-        )
+        table = Table.objects.filter(
+            restaurant=restaurant, number=table_number
+        ).first()
+        if table is None:
+            messages.warning(
+                request,
+                "This table is not available. Please scan the QR code on your table.",
+            )
     else:
         table = (
             get_object_or_404(Table, restaurant=restaurant, pk=table_id)
@@ -328,6 +363,41 @@ def menu_page(request, table_id=None, table_number=None, restaurant_slug=None):
             "venue_blocks": block_visible,
             "head_blocks": head_blocks,
             "body_blocks": body_blocks,
+        },
+    )
+
+
+def _table_qr_url(request, restaurant, table_number):
+    return request.build_absolute_uri(f"/r/{restaurant.slug}/n/{table_number}/")
+
+
+@require_GET
+def table_qr_svg(request, table_number, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
+    get_object_or_404(Table, restaurant=restaurant, number=table_number)
+    output = BytesIO()
+    segno.make(_table_qr_url(request, restaurant, table_number), error="m").save(
+        output, kind="svg", scale=8, border=3
+    )
+    response = HttpResponse(output.getvalue(), content_type="image/svg+xml")
+    if request.GET.get("download") == "1":
+        response["Content-Disposition"] = (
+            f'attachment; filename="{restaurant.slug}-table-{table_number}.svg"'
+        )
+    return response
+
+
+@require_GET
+def table_qr_print(request, table_number, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
+    table = get_object_or_404(Table, restaurant=restaurant, number=table_number)
+    return render(
+        request,
+        "guest_web/table_qr_print.html",
+        {
+            "restaurant": restaurant,
+            "table": table,
+            "guest_url": _table_qr_url(request, restaurant, table_number),
         },
     )
 

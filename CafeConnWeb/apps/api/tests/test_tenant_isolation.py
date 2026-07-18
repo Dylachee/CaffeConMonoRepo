@@ -65,3 +65,9 @@ class RestaurantIsolationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         slugs = {item["slug"] for item in response.json()["restaurants"]}
         self.assertTrue({"alpha", "beta"}.issubset(slugs))
+        row = next(item for item in response.json()["restaurants"] if item["slug"] == "alpha")
+        self.assertEqual(row["tableCount"], 1)
+        self.assertIn("todaySales", row)
+        self.assertIn("activeTables", row)
+        self.assertIn("openCalls", row)
+        self.assertIn("onShiftStaff", row)

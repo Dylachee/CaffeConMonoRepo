@@ -674,29 +674,35 @@ class AttentionBanner extends StatelessWidget {
 
 class Header extends StatelessWidget {
   const Header(
-      {super.key, required this.title, this.subtitle, this.actions = const []});
+      {super.key,
+      required this.title,
+      this.subtitle,
+      this.leading,
+      this.actions = const []});
   final String title;
   final String? subtitle;
+  final Widget? leading;
   final List<Widget> actions;
   @override
   Widget build(BuildContext context) => Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 16),
       child: Row(children: [
-        Container(
-          width: 42,
-          height: 42,
-          margin: const EdgeInsets.only(right: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.separator),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Image.asset(
-            'assets/images/cafeconnect-logo.png',
-            fit: BoxFit.cover,
-          ),
-        ),
+        leading ??
+            Container(
+              width: 42,
+              height: 42,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.separator),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/images/cafeconnect-logo.png',
+                fit: BoxFit.cover,
+              ),
+            ),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

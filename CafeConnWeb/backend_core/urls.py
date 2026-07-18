@@ -1,20 +1,15 @@
 from django.conf import settings
 from django.contrib import admin
-from django.shortcuts import redirect
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 from django.views.static import serve as media_serve
 
-from apps.guest_web.views import staff_app
-
-
-def home_redirect(request):
-    return redirect("guest_web:menu")
+from apps.guest_web.views import restaurant_chooser, staff_app
 
 
 urlpatterns = [
-    path("", home_redirect, name="home"),
-    path("menu/", include("apps.guest_web.urls")),
+    path("", restaurant_chooser, name="home"),
+    re_path(r"^menu(?:/(?P<path>.*))?$", restaurant_chooser, name="legacy-menu"),
     path(
         "r/<slug:restaurant_slug>/",
         include("apps.guest_web.urls", namespace="restaurant_guest"),

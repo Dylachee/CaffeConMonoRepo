@@ -26,6 +26,8 @@ dependencies:
   provider: ^6.1.2
   # Coupon issue: rendering the signed claim link as a QR (pure Dart).
   qr_flutter: ^4.1.0
+  # Public guest links and printable/downloadable table QR pages.
+  url_launcher: ^6.3.2
   # Networking to the CafeConnect Django hub (REST + WebSocket realtime).
   http: ^1.2.0
   web_socket_channel: ^3.0.0

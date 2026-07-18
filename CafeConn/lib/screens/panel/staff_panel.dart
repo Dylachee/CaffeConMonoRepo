@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme/app_colors.dart';
@@ -12,6 +14,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils.dart';
 import '../../data/dtos.dart';
+import '../../data/api_config.dart';
 import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
@@ -53,6 +56,7 @@ class StaffPanelScreen extends StatelessWidget {
           ],
           Expanded(
             child: ListView(children: [
+              if (state.isPlatformOwner) const _OwnerPortfolio(),
               if (state.capReports || state.capManage)
                 _ManageGroup(
                   title: L.t('Today', 'Oggi'),
@@ -128,6 +132,18 @@ class StaffPanelScreen extends StatelessWidget {
                 _ManageGroup(
                   title: L.t('Public presence', 'Presenza pubblica'),
                   items: [
+                    _ManageItem(
+                        L.t('Guest page', 'Pagina ospiti'),
+                        L.t('Open, copy or show the restaurant QR',
+                            'Apri, copia o mostra il QR del ristorante'),
+                        Icons.link_rounded,
+                        () => open(const _PublicPresenceScreen())),
+                    _ManageItem(
+                        L.t('Table links', 'Link dei tavoli'),
+                        L.t('Open, copy, download and print table QRs',
+                            'Apri, copia, scarica e stampa i QR'),
+                        Icons.qr_code_2_rounded,
+                        () => open(const _TableLinksScreen())),
                     _ManageItem(
                         L.content,
                         L.contentSub,
@@ -290,16 +306,247 @@ class _ManagePage extends StatelessWidget {
         child: Column(children: [
           Header(
             title: title,
-            actions: [
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-              ),
-            ],
+            leading: IconButton(
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            actions: const [],
           ),
           Expanded(child: child),
         ]),
       );
+}
+
+String _publicUrl(String suffix) {
+  final base = Uri.parse(ApiConfig.baseUrl);
+  return base.resolve(suffix).toString();
+}
+
+Future<void> _openExternal(String url) => launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
+
+void _copyLink(BuildContext context, String url) {
+  Clipboard.setData(ClipboardData(text: url));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(L.t('Link copied', 'Link copiato'))),
+  );
+}
+
+Future<void> _showQr(BuildContext context, String title, String url) =>
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 260,
+          height: 300,
+          child: Column(children: [
+            Expanded(
+              child: QrImageView(
+                data: url,
+                backgroundColor: Colors.white,
+                padding: const EdgeInsets.all(14),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SelectableText(url, textAlign: TextAlign.center, style: T.small),
+          ]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => _copyLink(dialogContext, url),
+            child: Text(L.t('Copy link', 'Copia link')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(L.t('Done', 'Fine')),
+          ),
+        ],
+      ),
+    );
+
+class _PublicPresenceScreen extends StatelessWidget {
+  const _PublicPresenceScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final restaurant = state.activeRestaurant;
+    final url =
+        _publicUrl('/r/${restaurant?.slug ?? ApiConfig.restaurantSlug}/');
+    return AppScaffold(
+      bottomNav: null,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Header(
+          title: L.t('Guest page', 'Pagina ospiti'),
+          subtitle: restaurant?.name,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+        ),
+        AppCard(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(L.t('Public restaurant link', 'Link pubblico del ristorante'),
+                style: T.bodySemi),
+            const SizedBox(height: 8),
+            SelectableText(url, style: T.small.copyWith(color: AppTheme.ink2)),
+            const SizedBox(height: 16),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed: () => _openExternal(url),
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: Text(L.t('Open', 'Apri')),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _copyLink(context, url),
+                icon: const Icon(Icons.copy_rounded),
+                label: Text(L.t('Copy', 'Copia')),
+              ),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    _showQr(context, restaurant?.name ?? 'CafeConnect', url),
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: const Text('QR'),
+              ),
+            ]),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _TableLinksScreen extends StatelessWidget {
+  const _TableLinksScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final slug = state.activeRestaurant?.slug ?? ApiConfig.restaurantSlug;
+    return AppScaffold(
+      bottomNav: null,
+      child: Column(children: [
+        Header(
+          title: L.t('Table links', 'Link dei tavoli'),
+          subtitle: state.activeRestaurant?.name,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            itemCount: state.tables.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final table = state.tables[index];
+              final url = _publicUrl('/r/$slug/n/${table.number}/');
+              final svg =
+                  _publicUrl('/r/$slug/qr/n/${table.number}.svg?download=1');
+              final print = _publicUrl('/r/$slug/qr/n/${table.number}/print/');
+              return AppCard(
+                child: Row(children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceAlt,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text('${table.number}', style: T.h3),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: Text(L.tableN(table.number), style: T.bodySemi)),
+                  IconButton(
+                    tooltip: L.t('Open', 'Apri'),
+                    onPressed: () => _openExternal(url),
+                    icon: const Icon(Icons.open_in_new_rounded),
+                  ),
+                  IconButton(
+                    tooltip: L.t('Copy', 'Copia'),
+                    onPressed: () => _copyLink(context, url),
+                    icon: const Icon(Icons.copy_rounded),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: L.t('More', 'Altro'),
+                    onSelected: (action) {
+                      if (action == 'qr') {
+                        _showQr(context, L.tableN(table.number), url);
+                      } else if (action == 'download') {
+                        _openExternal(svg);
+                      } else {
+                        _openExternal(print);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                          value: 'qr',
+                          child: Text(L.t('Show QR', 'Mostra QR'))),
+                      PopupMenuItem(
+                          value: 'download',
+                          child: Text(L.t('Download SVG', 'Scarica SVG'))),
+                      PopupMenuItem(
+                          value: 'print', child: Text(L.t('Print', 'Stampa'))),
+                    ],
+                  ),
+                ]),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _OwnerPortfolio extends StatefulWidget {
+  const _OwnerPortfolio();
+
+  @override
+  State<_OwnerPortfolio> createState() => _OwnerPortfolioState();
+}
+
+class _OwnerPortfolioState extends State<_OwnerPortfolio> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<CafeState>().refreshPortfolio());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<CafeState>();
+    final restaurants = state.portfolioRestaurants;
+    if (state.portfolioLoading && restaurants.isEmpty) {
+      return const Center(
+          child: Padding(
+              padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
+    }
+    return _ManageGroup(
+      title: L.t('Portfolio', 'Portafoglio'),
+      items: restaurants
+          .map((restaurant) => _ManageItem(
+                restaurant.name,
+                '${restaurant.currency} ${restaurant.todaySales.toStringAsFixed(2)} · '
+                '${restaurant.activeTables}/${restaurant.tableCount} ${L.tables.toLowerCase()} · '
+                '${restaurant.openCalls} ${L.t('calls', 'chiamate')} · '
+                '${restaurant.onShiftStaff} ${L.onShift.toLowerCase()}',
+                restaurant.openCalls > 0
+                    ? Icons.notifications_active_outlined
+                    : Icons.storefront_outlined,
+                () => state.switchRestaurant(restaurant),
+              ))
+          .toList(),
+    );
+  }
 }
 
 class _OverviewTab extends StatefulWidget {

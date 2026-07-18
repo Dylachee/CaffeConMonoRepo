@@ -96,9 +96,33 @@ class PlatformRestaurantsView(APIView):
     def get(self, request):
         if not request.user.is_superuser:
             raise PermissionDenied("Only the platform Owner can list restaurants.")
+        today = timezone.localdate()
         restaurants = Restaurant.objects.annotate(
-            staff_count=Count("memberships"), table_count=Count("tables", distinct=True)
+            staff_count=Count("memberships", distinct=True),
+            on_shift_count=Count(
+                "memberships", filter=Q(memberships__is_on_shift=True), distinct=True
+            ),
+            table_count=Count("tables", distinct=True),
+            active_table_count=Count(
+                "tables", filter=~Q(tables__status=Table.Status.FREE), distinct=True
+            ),
+            open_call_count=Count(
+                "attention_signals",
+                filter=Q(attention_signals__ack=False),
+                distinct=True,
+            ),
         )
+        line_total = ExpressionWrapper(
+            F("unit_price") * F("quantity"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+        revenue = {
+            row["order__restaurant"]: float(row["total"] or 0)
+            for row in OrderItem.objects.filter(order__created_at__date=today)
+            .exclude(order__status=Order.Status.CANCELLED)
+            .values("order__restaurant")
+            .annotate(total=Sum(line_total))
+        }
         return Response(
             {
                 "restaurants": [
@@ -106,6 +130,10 @@ class PlatformRestaurantsView(APIView):
                         **RestaurantSerializer(item).data,
                         "staffCount": item.staff_count,
                         "tableCount": item.table_count,
+                        "todaySales": round(revenue.get(item.pk, 0), 2),
+                        "activeTables": item.active_table_count,
+                        "openCalls": item.open_call_count,
+                        "onShiftStaff": item.on_shift_count,
                     }
                     for item in restaurants
                 ]

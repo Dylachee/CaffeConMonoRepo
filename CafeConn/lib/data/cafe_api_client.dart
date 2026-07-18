@@ -78,6 +78,16 @@ class CafeApiClient {
     return RestaurantDto.fromJson(_decodeMap(res));
   }
 
+  Future<List<RestaurantDto>> platformRestaurants() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.platformRestaurants(), headers: _headers()));
+    final body = _decodeMap(res);
+    return ((body['restaurants'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => RestaurantDto.fromJson(item.cast<String, dynamic>()))
+        .toList();
+  }
+
   /// Manager dashboard analytics, aggregated from the full order history.
   Future<StatsDto> stats() async {
     final res =

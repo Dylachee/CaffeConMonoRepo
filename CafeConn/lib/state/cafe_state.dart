@@ -109,6 +109,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   RestaurantDto? activeRestaurant;
   List<RestaurantDto> availableRestaurants = [];
+  List<RestaurantDto> portfolioRestaurants = [];
+  bool portfolioLoading = false;
   bool isPlatformOwner = false;
 
   /// Per-device quiet mode: ladders keep tracking (banners stay), but no
@@ -1937,6 +1939,20 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       backendError = e.message;
       notifyListeners();
       return e.message;
+    }
+  }
+
+  Future<void> refreshPortfolio() async {
+    if (!isPlatformOwner || portfolioLoading) return;
+    portfolioLoading = true;
+    notifyListeners();
+    try {
+      portfolioRestaurants = await _remoteApi.platformRestaurants();
+    } on ApiException catch (error) {
+      backendError = error.message;
+    } finally {
+      portfolioLoading = false;
+      notifyListeners();
     }
   }
 

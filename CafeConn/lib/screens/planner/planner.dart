@@ -144,6 +144,13 @@ class _PlannerScreenState extends State<PlannerScreen> {
         Header(
           title: manage ? L.planner : L.myTasks,
           subtitle: L.plannerSub,
+          leading: Navigator.canPop(context)
+              ? IconButton(
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                )
+              : null,
           actions: [
             if (state.plannerLoading) const CupertinoActivityIndicator(),
           ],

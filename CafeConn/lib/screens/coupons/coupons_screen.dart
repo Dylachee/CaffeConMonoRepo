@@ -57,11 +57,22 @@ class _CouponsScreenState extends State<CouponsScreen>
       bottomNav: null,
       child: Column(
         children: [
-          Header(title: L.coupons, subtitle: L.couponsSub, actions: [
-            IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => GoRouter.of(context).push('/settings')),
-          ]),
+          Header(
+              title: L.coupons,
+              subtitle: L.couponsSub,
+              leading: Navigator.canPop(context)
+                  ? IconButton(
+                      tooltip:
+                          MaterialLocalizations.of(context).backButtonTooltip,
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    )
+                  : null,
+              actions: [
+                IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => GoRouter.of(context).push('/settings')),
+              ]),
           SizedBox(
             height: 38,
             child: TabBar(

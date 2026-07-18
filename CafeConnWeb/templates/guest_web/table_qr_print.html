@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ restaurant.name }} · Table {{ table.number }}</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;color:#171512}.sheet{width:148mm;min-height:200mm;margin:12mm auto;padding:18mm;display:grid;align-content:center;justify-items:center;text-align:center;border:1px solid #ddd;border-radius:8mm}h1{font-size:15mm;line-height:1;margin:0}h2{font-size:7mm;margin:5mm 0 1mm}.hint{font-size:4.5mm;color:#666;margin:0 0 8mm}.qr{width:92mm;height:92mm}.url{font-size:3.5mm;word-break:break-all;margin-top:7mm}.print{margin:24px auto;display:block;padding:12px 18px;border:0;border-radius:12px;background:#171512;color:white;font-weight:700}@media print{.print{display:none}.sheet{margin:0 auto;border:0}}
+</style></head><body><button class="print" onclick="window.print()">Print QR</button><main class="sheet"><h1>{{ table.number }}</h1><h2>{{ restaurant.name }}</h2><p class="hint">Scan to open the menu and call your waiter</p><img class="qr" src="/r/{{ restaurant.slug }}/qr/n/{{ table.number }}.svg" alt="QR code"><p class="url">{{ guest_url }}</p></main></body></html>
