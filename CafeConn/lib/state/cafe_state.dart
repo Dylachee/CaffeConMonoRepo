@@ -1837,6 +1837,20 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<String?> takeOverTable(CafeTable table) async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final dto = await _remoteApi.takeOverTable(table.id);
+      _applyTableUpdate(dto);
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      backendError = error.message;
+      notifyListeners();
+      return error.message;
+    }
+  }
+
   /// The "On shift" toggle: one gesture unlocks audio + notifications, flips
   /// the hub flag, and manages the Web-Push subscription. Returns null on
   /// success or a message for the UI.

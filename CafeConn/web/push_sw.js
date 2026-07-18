@@ -8,7 +8,7 @@
  * registration; they do not need fetch control.)
  *
  * Payload contract (see apps/core/push.py):
- *   { kind: "attention"|"order", action: "created"|"acked"|"handled"|"escalated",
+ *   { kind: "attention"|"order"|"handoff", action: "created"|"acked"|"handled"|"escalated"|"takeover",
  *     table: <number>, signalId|orderId: <id>, tag: "<kind>-<id>" }
  *
  * Tag semantics: one tag per signal/order — repeats REPLACE the banner,
@@ -35,6 +35,12 @@ function bannerText(payload) {
   }
   if (payload.kind === 'order') {
     return { title: '🧾 New guest order · Nuovo ordine', body: table };
+  }
+  if (payload.kind === 'handoff') {
+    return {
+      title: 'Table reassigned · Tavolo riassegnato',
+      body: table + (payload.waiter ? ' · ' + payload.waiter : '')
+    };
   }
   return { title: 'CafeConnect', body: table };
 }

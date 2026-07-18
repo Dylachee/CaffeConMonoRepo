@@ -10,7 +10,7 @@ enum RealtimeEventType {
   connectionReady,
   orderCreated,
   orderUpdated,
-  // Alert ladder L3: some on-shift device saw the event go unhandled for 60s.
+  // A primary waiter's alert went unanswered for 20s and was broadcast.
   orderEscalated,
   tableUpdated,
   attentionCreated,

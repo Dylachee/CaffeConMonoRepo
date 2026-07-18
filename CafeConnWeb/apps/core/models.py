@@ -169,6 +169,38 @@ class Table(models.Model):
         return self.label or f"Table {self.number}"
 
 
+class TableWaiterEvent(models.Model):
+    """Append-only primary-waiter history for a table visit."""
+
+    class Action(models.TextChoices):
+        FIRST_ORDER = "first_order", "Claimed by first order"
+        TAKEOVER = "takeover", "Taken over"
+        ASSIGNED = "assigned", "Assigned by manager"
+
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="table_waiter_events"
+    )
+    table = models.ForeignKey(Table, on_delete=models.CASCADE, related_name="waiter_events")
+    previous_waiter = models.ForeignKey(
+        "Employee", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="table_handoffs_from",
+    )
+    waiter = models.ForeignKey(
+        "Employee", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="table_handoffs_to",
+    )
+    actor = models.ForeignKey(
+        "Employee", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="table_handoffs_made",
+    )
+    action = models.CharField(max_length=24, choices=Action.choices)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "cafe_table_waiter_events"
+        ordering = ["created_at"]
+
+
 class Employee(models.Model):
     class Role(models.TextChoices):
         WAITER = "waiter", "Waiter"

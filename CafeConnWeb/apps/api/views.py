@@ -74,6 +74,7 @@ from apps.core.models import (
     StaffPreference,
     StaffTask,
     Table,
+    TableWaiterEvent,
     VenueSettings,
 )
 
@@ -206,6 +207,22 @@ def log_order_event(order, request, action, detail=""):
         action=action,
         detail=detail[:255],
     )
+
+
+def assign_primary_waiter(table_id, employee):
+    """Atomically let the first placed/approved order claim an open table."""
+    table = Table.objects.select_for_update().get(pk=table_id)
+    if employee is not None and table.waiter_id is None:
+        table.waiter = employee
+        table.save(update_fields=["waiter", "updated_at"])
+        TableWaiterEvent.objects.create(
+            restaurant=table.restaurant,
+            table=table,
+            waiter=employee,
+            actor=employee,
+            action=TableWaiterEvent.Action.FIRST_ORDER,
+        )
+    return table
 
 
 def caps_for_user(user, restaurant=None):
@@ -858,18 +875,57 @@ class TableViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=["post"], url_path="claim")
     def claim(self, request, pk=None):
+        return Response(
+            {"detail": "Tables are claimed by the waiter who places or approves the first order."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    @decorators.action(detail=True, methods=["post"], url_path="takeover")
+    @transaction.atomic
+    def takeover(self, request, pk=None):
         if not capabilities_for_request(request)["wait"]:
-            raise PermissionDenied("You need the Floor capability to claim a table.")
-        table = self.get_object()
-        employee = employee_for_request(request)
-        if table.waiter_id not in (None, employee.pk if employee else None):
+            raise PermissionDenied("You need the Floor capability to take over a table.")
+        if request.data.get("confirmed") is not True:
             return Response(
-                {"detail": f"{table} is already assigned to {table.waiter.name}."},
+                {"detail": "Confirm the takeover first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        employee = employee_for_request(request)
+        table = get_object_or_404(
+            Table.objects.select_for_update().select_related("waiter"),
+            restaurant=self.get_restaurant(),
+            pk=pk,
+        )
+        if table.waiter_id is None:
+            return Response(
+                {"detail": "This table has no primary waiter yet; the first order will assign one."},
                 status=status.HTTP_409_CONFLICT,
             )
+        if table.waiter_id == employee.pk:
+            return Response(TableSerializer(table).data)
+        previous = table.waiter
         table.waiter = employee
         table.save(update_fields=["waiter", "updated_at"])
+        TableWaiterEvent.objects.create(
+            restaurant=table.restaurant,
+            table=table,
+            previous_waiter=previous,
+            waiter=employee,
+            actor=employee,
+            action=TableWaiterEvent.Action.TAKEOVER,
+        )
         broadcast_table_event(table)
+        web_push.push_to_on_shift(
+            {
+                "kind": "handoff",
+                "action": "takeover",
+                "table": table.number,
+                "waiter": employee.name,
+                "tag": f"table-handoff-{table.pk}",
+            },
+            restaurant_id=table.restaurant_id,
+            employee_id=previous.pk,
+        )
         return Response(TableSerializer(table).data)
 
     @decorators.action(detail=True, methods=["post"], url_path="assign")
@@ -887,8 +943,17 @@ class TableViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
             )
             if not employee.capabilities["wait"]:
                 raise ValidationError("The employee needs the Floor capability.")
+        previous = table.waiter
         table.waiter = employee
         table.save(update_fields=["waiter", "updated_at"])
+        TableWaiterEvent.objects.create(
+            restaurant=table.restaurant,
+            table=table,
+            previous_waiter=previous,
+            waiter=employee,
+            actor=employee_for_request(request),
+            action=TableWaiterEvent.Action.ASSIGNED,
+        )
         broadcast_table_event(table)
         return Response(TableSerializer(table).data)
 
@@ -905,6 +970,7 @@ class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     search_fields = ["guest_name", "notes", "table__number"]
     ordering_fields = ["created_at", "updated_at", "status"]
 
+    @transaction.atomic
     def perform_create(self, serializer):
         if not capabilities_for_request(self.request)["wait"]:
             raise PermissionDenied("You need the Floor capability to create an order.")
@@ -917,11 +983,11 @@ class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
         # A waiter placed the order himself — the table is simply occupied
         # (WAITING is reserved for "guests are waiting for a waiter"), and it
         # becomes *his* table so analytics attribute it to him.
-        order.table.status = Table.Status.OCCUPIED
-        order.table.opened_at = order.table.opened_at or timezone.now()
-        if employee is not None and order.table.waiter_id is None:
-            order.table.waiter = employee
-        order.table.save(update_fields=["status", "opened_at", "waiter", "updated_at"])
+        table = assign_primary_waiter(order.table_id, employee)
+        table.status = Table.Status.OCCUPIED
+        table.opened_at = table.opened_at or timezone.now()
+        table.save(update_fields=["status", "opened_at", "updated_at"])
+        order.table = table
         log_order_event(order, self.request, OrderEvent.Action.CREATED)
         broadcast_order_event("created", order)
         broadcast_table_event(order.table)
@@ -987,6 +1053,7 @@ class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
         return Response(data)
 
     @decorators.action(detail=True, methods=["post"], url_path="confirm")
+    @transaction.atomic
     def confirm(self, request, pk=None):
         """Waiter/manager approves a pending guest order: it enters the
         kitchen/bar pipeline (awaiting → new) and the stations see it for the
@@ -1006,14 +1073,11 @@ class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
 
         # The waiter who approved the guest order owns the table now, so its
         # sales attribute to him in the analytics.
-        table = order.table
+        table = assign_primary_waiter(order.table_id, employee)
         table_fields = ["updated_at"]
         if table.status == Table.Status.WAITING:
             table.status = Table.Status.OCCUPIED
             table_fields.append("status")
-        if employee is not None and table.waiter_id is None:
-            table.waiter = employee
-            table_fields.append("waiter")
         table.save(update_fields=table_fields)
 
         log_order_event(order, request, OrderEvent.Action.CONFIRMED)

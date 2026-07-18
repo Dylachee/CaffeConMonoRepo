@@ -82,6 +82,8 @@ class ApiConfig {
   static Uri menuCategory(String id) =>
       Uri.parse('$apiRoot/menu-categories/$id/');
   static Uri tables() => Uri.parse('$apiRoot/tables/');
+  static Uri takeOverTable(String id) =>
+      Uri.parse('$apiRoot/tables/$id/takeover/');
   static Uri orderItem(String itemId) =>
       Uri.parse('$apiRoot/order-items/$itemId/');
   static Uri markItemReady(String itemId) =>

@@ -25,7 +25,7 @@ class ActiveAlert {
   final int tableNumber;
   final DateTime startedAt;
 
-  /// 1 = first chime, 2 = +25s unacked, 3 = +60s escalated.
+  /// 1 = first chime, 2 = +20s broadcast, 3 = +60s urgent.
   int level = 1;
 
   /// Set when ANY on-shift device (this one or another) reached L3 — the
@@ -44,16 +44,16 @@ class ActiveAlert {
 }
 
 /// The calm escalation ladder. L1: one short two-note chime + double buzz +
-/// in-app banner (+ OS banner only when the tab is hidden). L2 (+25s): one
-/// repeat + app-bar accent pulse. L3 (+60s): repeat every 20s and flag the
-/// event server-side so every on-shift device highlights it. Deliberately
+/// in-app banner (+ OS banner only when the tab is hidden). L2 (+20s): one
+/// repeat and broadcast a primary waiter's unanswered call to all floor staff.
+/// L3 (+60s): repeat every 20s. Deliberately
 /// NEVER a continuous siren — repeats are single chimes, spaced out.
 class AlertService extends ChangeNotifier {
   AlertService({required this.platform});
 
   final AlertPlatform platform;
 
-  static const _l2Delay = Duration(seconds: 25);
+  static const _l2Delay = Duration(seconds: 20);
   static const _l3Delay = Duration(seconds: 60);
   static const _l3Repeat = Duration(seconds: 20);
 
@@ -126,17 +126,17 @@ class AlertService extends ChangeNotifier {
       alert.level = 2;
       _fire(alert); // one repeat; the app bar pulses via [hasActive]+level
       notifyListeners();
+      final escalate = onEscalate;
+      if (escalate != null) {
+        escalate(alert).catchError((Object error) {
+          debugPrint('broadcast flag failed: $error');
+        });
+      }
     });
     alert._l3Timer = Timer(_l3Delay, () {
       if (!_alerts.containsKey(id)) return;
       alert.level = 3;
       notifyListeners();
-      final escalate = onEscalate;
-      if (escalate != null) {
-        escalate(alert).catchError((Object error) {
-          debugPrint('escalate flag failed: $error');
-        });
-      }
       alert._repeatTimer = Timer.periodic(_l3Repeat, (_) {
         if (!isEnabled()) return;
         _fire(alert);

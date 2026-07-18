@@ -73,6 +73,14 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                   ],
                 ),
               ),
+              if (state.capWait &&
+                  table.waiterId != null &&
+                  table.waiterId != state.activeEmployeeId?.toString())
+                IconButton(
+                  tooltip: L.t('Take over table', 'Prendi in carico il tavolo'),
+                  onPressed: () => _takeOver(context, state, table),
+                  icon: const Icon(Icons.swap_horiz_rounded),
+                ),
               StatusBadge(table.status, showLabel: true),
             ],
           ),
@@ -200,7 +208,8 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                           ),
                         ),
                         Text('−${discountTotal.rub}',
-                            style: T.bodySemi.copyWith(color: AppTheme.success)),
+                            style:
+                                T.bodySemi.copyWith(color: AppTheme.success)),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -337,6 +346,38 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _takeOver(
+      BuildContext context, CafeState state, CafeTable table) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title:
+            Text(L.t('Take over this table?', 'Prendere in carico il tavolo?')),
+        content: Text(L.t(
+          'You will become the primary waiter. ${table.waiterName} will be notified.',
+          'Diventerai il cameriere principale. ${table.waiterName} verrà avvisato.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(L.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(L.t('Take over', 'Prendi in carico')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final error = await state.takeOverTable(table);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(error ?? L.t('Table taken over', 'Tavolo preso in carico')),
+      backgroundColor: error == null ? AppTheme.success : AppTheme.danger,
+    ));
   }
 
   /// Send everything not yet sent; kitchen/bar routing happens by station.

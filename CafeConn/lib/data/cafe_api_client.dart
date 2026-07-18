@@ -247,6 +247,13 @@ class CafeApiClient {
   Future<void> ackAttention(String signalId) => _send(
       () => _http.post(ApiConfig.ackAttention(signalId), headers: _headers()));
 
+  /// Explicitly replace a table's primary waiter after UI confirmation.
+  Future<TableDto> takeOverTable(String tableId) async {
+    final res = await _send(() => _http.post(ApiConfig.takeOverTable(tableId),
+        headers: _headers(), body: jsonEncode({'confirmed': true})));
+    return TableDto.fromDrf(_decodeMap(res));
+  }
+
   /// Set a menu item's availability (stop-list on/off).
   /// Any staff: pin/unpin an item on the waiter Popular shelf.
   Future<void> toggleMenuItemPopular(String id) => _send(() =>
