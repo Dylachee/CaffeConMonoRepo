@@ -117,10 +117,12 @@ def generate_coupon_code() -> str:
 
 def qr_svg(payload: str, *, scale: int = 4) -> str:
     """Inline-SVG QR (segno). Always dark-on-transparent: QRs sit on a white
-    card area for scan contrast regardless of the venue theme."""
+    card area for scan contrast regardless of the venue theme. Four modules
+    of quiet zone make the live camera reader reliably distinguish the code
+    from the wallet-card decoration."""
     import segno
 
-    return segno.make(payload, error="m").svg_inline(scale=scale, dark="#1e1b16", border=1)
+    return segno.make(payload, error="m").svg_inline(scale=scale, dark="#1e1b16", border=4)
 
 
 # --- claiming ----------------------------------------------------------------

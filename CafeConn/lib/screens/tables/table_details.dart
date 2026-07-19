@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/pending_approval.dart';
+import '../coupons/redeem_coupon.dart';
 
 class TableDetailsScreen extends StatefulWidget {
   const TableDetailsScreen({super.key});
@@ -223,6 +224,23 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  if (state.capCouponRedeem && visitOrders.isNotEmpty) ...[
+                    AppButton(
+                      label: L.t('Scan and apply coupon',
+                          'Scansiona e applica coupon'),
+                      icon: Icons.qr_code_scanner_rounded,
+                      kind: ButtonKind.secondary,
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => RedeemCouponScreen(
+                            orderIds:
+                                visitOrders.map((order) => order.id).toSet(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   AppButton(
                       label: L.clearTable,
                       icon: Icons.cleaning_services,

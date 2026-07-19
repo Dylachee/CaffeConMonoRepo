@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +16,9 @@ import '../../widgets/app_widgets.dart';
 /// Every backend rejection (used / expired / void / tampered) surfaces
 /// verbatim — the hub's message IS the UI message.
 class RedeemCouponScreen extends StatefulWidget {
-  const RedeemCouponScreen({super.key});
+  /// When opened from a table, redemption is limited to that table's orders.
+  const RedeemCouponScreen({super.key, this.orderIds});
+  final Set<String>? orderIds;
   @override
   State<RedeemCouponScreen> createState() => _RedeemCouponScreenState();
 }
@@ -29,6 +32,13 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
   @override
   void initState() {
     super.initState();
+    // Safari can expose a live camera while its native BarcodeDetector fails
+    // to decode the guest wallet QR. Use the package's ZXing WASM reader on
+    // web; native mobile builds keep their platform scanner.
+    if (kIsWeb) {
+      MobileScannerPlatform.instance
+          .setWebBarcodeReader(WebBarcodeReader.zxingWasm);
+    }
     _scanner = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
       formats: const [BarcodeFormat.qrCode],
@@ -84,8 +94,11 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
       {String? token, String? code}) async {
     final state = context.read<CafeState>();
     // Open (not yet paid/cancelled) orders the coupon could attach to.
-    final openOrders =
-        state.orders.where((o) => o.status != OrderStatus.awaiting).toList();
+    final openOrders = state.orders
+        .where((o) => o.status != OrderStatus.awaiting)
+        .where(
+            (o) => widget.orderIds == null || widget.orderIds!.contains(o.id))
+        .toList();
     String? selectedOrderId =
         openOrders.isNotEmpty ? openOrders.first.id : null;
     var busy = false;
@@ -243,7 +256,8 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                           TextButton.icon(
                             onPressed: _retryCamera,
                             icon: const Icon(Icons.camera_alt_outlined),
-                            label: Text(L.t('Enable camera', 'Attiva fotocamera')),
+                            label:
+                                Text(L.t('Enable camera', 'Attiva fotocamera')),
                           ),
                         ],
                       ),
@@ -251,7 +265,7 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                   : MobileScanner(
                       controller: _scanner!,
                       onDetect: _onDetect,
-                      errorBuilder: (context, error, child) {
+                      errorBuilder: (context, error) {
                         // Render the fallback panel and remember the failure
                         // so the manual code path is clearly the way forward.
                         WidgetsBinding.instance.addPostFrameCallback((_) {
