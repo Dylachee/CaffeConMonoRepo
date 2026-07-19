@@ -1223,6 +1223,13 @@ class OrderItemViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     ordering_fields = ["created_at", "updated_at"]
 
     def perform_update(self, serializer):
+        billable_fields = {"menu_item", "quantity", "notes"}
+        if billable_fields.intersection(serializer.validated_data) and not capabilities_for_request(
+            self.request
+        )["wait"]:
+            raise PermissionDenied(
+                "You need the waiter capability to change billable order items."
+            )
         if (
             serializer.instance.order.coupon_id
             and {"menu_item", "quantity"}.intersection(serializer.validated_data)
@@ -1234,6 +1241,10 @@ class OrderItemViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
         broadcast_order_event("updated", item.order)
 
     def perform_destroy(self, instance):
+        if not capabilities_for_request(self.request)["wait"]:
+            raise PermissionDenied(
+                "You need the waiter capability to remove a billable order item."
+            )
         if instance.order.coupon_id:
             raise PermissionDenied(
                 "This bill has a coupon applied. A manager must remove and reapply it before changing items."

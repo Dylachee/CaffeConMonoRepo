@@ -1,8 +1,8 @@
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from rest_framework.authtoken.models import Token
 
-from apps.core.models import Employee, MenuCategory, MenuItem, Table
+from apps.core.models import Employee, MenuCategory, MenuItem, Restaurant, Table
 from apps.core.sissi_menu import catalog_items, menu_categories
 
 User = get_user_model()
@@ -11,7 +11,14 @@ User = get_user_model()
 class Command(BaseCommand):
     help = "Seed production data for Sissi Bistro Bar."
 
+    def add_arguments(self, parser):
+        parser.add_argument("--restaurant", default="sissy-bar", help="Restaurant slug to seed.")
+
     def handle(self, *args, **options):
+        try:
+            self.restaurant = Restaurant.objects.get(slug=options["restaurant"])
+        except Restaurant.DoesNotExist as error:
+            raise CommandError(f"Unknown restaurant: {options['restaurant']}") from error
         self._create_staff()
         self._create_tables()
         self._create_menu()
@@ -32,6 +39,7 @@ class Command(BaseCommand):
             ("bartender", "Bartender", Employee.Role.BAR, False, False, "Bartender2026!"),
         ]
         for username, name, role, is_staff, is_superuser, password in staff:
+            username = self._username(username)
             user, created = User.objects.get_or_create(
                 username=username,
                 defaults={
@@ -44,6 +52,7 @@ class Command(BaseCommand):
                 user.set_password(password)
                 user.save()
             Employee.objects.update_or_create(
+                restaurant=self.restaurant,
                 user=user,
                 defaults={"name": name, "role": role, "is_on_shift": True},
             )
@@ -53,6 +62,7 @@ class Command(BaseCommand):
     def _create_tables(self):
         for number in range(1, 31):
             Table.objects.update_or_create(
+                restaurant=self.restaurant,
                 number=number,
                 defaults={
                     "label": f"Table {number:02d}",
@@ -67,6 +77,7 @@ class Command(BaseCommand):
         for item in catalog_items():
             category_key = item.pop("category_key")
             item["category"] = categories[category_key]
+            item["restaurant"] = self.restaurant
             self._enrich_menu_item(item)
             active_keys.add((item["station"], item["category"].id, item["name"]))
             was_created = self._upsert_menu_item(item)
@@ -82,6 +93,7 @@ class Command(BaseCommand):
     def _upsert_menu_item(self, data):
         matches = list(
             MenuItem.objects.filter(
+                restaurant=self.restaurant,
                 station=data["station"], category=data["category"], name=data["name"]
             ).order_by("id")
         )
@@ -100,7 +112,7 @@ class Command(BaseCommand):
 
     def _archive_missing_menu_items(self, active_keys):
         removed = 0
-        for item in list(MenuItem.objects.all()):
+        for item in list(MenuItem.objects.filter(restaurant=self.restaurant)):
             if (item.station, item.category_id, item.name) in active_keys:
                 continue
             if "archived" in (item.tags or []):
@@ -262,7 +274,7 @@ class Command(BaseCommand):
         ]
         for name in demo_names:
             try:
-                item = MenuItem.objects.get(name=name)
+                item = MenuItem.objects.get(restaurant=self.restaurant, name=name)
             except MenuItem.DoesNotExist:
                 continue
             self._archive_or_delete(item)
@@ -271,6 +283,7 @@ class Command(BaseCommand):
         categories = {}
         for category in menu_categories():
             obj, _ = MenuCategory.objects.update_or_create(
+                restaurant=self.restaurant,
                 key=category["key"],
                 defaults={
                     "name": category["name"],
@@ -282,6 +295,9 @@ class Command(BaseCommand):
         return categories
 
     def _cleanup_empty_categories(self, active_categories):
-        MenuCategory.objects.exclude(
+        MenuCategory.objects.filter(restaurant=self.restaurant).exclude(
             key__in=active_categories.keys()
         ).filter(items__isnull=True).delete()
+
+    def _username(self, base):
+        return base if self.restaurant.slug == "sissy-bar" else f"{self.restaurant.slug}-{base}"

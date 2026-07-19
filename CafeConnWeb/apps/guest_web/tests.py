@@ -97,8 +97,9 @@ class GuestThemeRenderingTests(TestCase):
         settings.save()
         html = self.client.get("/r/sissy-bar/").content.decode()
         self.assertNotIn('data-i18n="about"', html)
-        # Other blocks are backfilled visible.
-        self.assertIn('data-i18n="daily_special"', html)
+        # Other blocks are backfilled visible. The popular block only renders
+        # when this restaurant has featured menu items.
+        self.assertIn('data-testid="hero-menu"', html)
 
     def test_initial_render_loads_zero_social_scripts(self):
         make_post(1)
@@ -110,9 +111,9 @@ class GuestThemeRenderingTests(TestCase):
         self.assertNotIn("instagram-media", html)
         self.assertNotIn("platform.twitter.com", html)
 
-    def test_feed_tab_and_screen_present(self):
+    def test_feed_screen_is_not_primary_navigation(self):
         html = self.client.get("/r/sissy-bar/").content.decode()
-        self.assertIn('data-testid="nav-feed"', html)
+        self.assertNotIn('data-testid="nav-feed"', html)
         self.assertIn('data-screen="feed"', html)
         self.assertIn('data-testid="feed-list"', html)
 

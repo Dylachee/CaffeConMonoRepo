@@ -53,9 +53,6 @@ class StaffCampaignsView(APIView):
 
     def post(self, request):
         restaurant = restaurant_for_request(request)
-        employee = employee_for_request(request)
-        if employee is None or not employee.is_on_shift:
-            return Response({"detail": "Start your shift before issuing a coupon."}, status=status.HTTP_403_FORBIDDEN)
         serializer = CouponCampaignSerializer(
             data=request.data, context={"restaurant": restaurant}
         )
@@ -114,6 +111,12 @@ class StaffCouponIssueView(APIView):
 
     def post(self, request):
         restaurant = restaurant_for_request(request)
+        employee = employee_for_request(request)
+        if employee is None or not employee.is_on_shift:
+            return Response(
+                {"detail": "Start your shift before issuing a coupon."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         campaign = get_object_or_404(
             CouponCampaign,
             restaurant=restaurant,

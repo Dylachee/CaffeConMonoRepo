@@ -1,9 +1,9 @@
 from collections import defaultdict
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.core.models import MenuCategory, MenuItem, Order, Table
+from apps.core.models import MenuCategory, MenuItem, Order, Restaurant, Table
 from apps.core.sissi_menu import MANUAL_CHECK_TAG, STATION_CHECK_TAG, catalog_items, menu_categories
 
 
@@ -19,6 +19,7 @@ class Command(BaseCommand):
             action="store_true",
             help="Confirm: this deletes ALL orders and ALL menu items.",
         )
+        parser.add_argument("--restaurant", default="sissy-bar", help="Restaurant slug to reload.")
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -30,14 +31,18 @@ class Command(BaseCommand):
                 )
             )
             return
+        try:
+            self.restaurant = Restaurant.objects.get(slug=options["restaurant"])
+        except Restaurant.DoesNotExist as error:
+            raise CommandError(f"Unknown restaurant: {options['restaurant']}") from error
 
-        orders = Order.objects.count()
+        orders = Order.objects.filter(restaurant=self.restaurant).count()
         # Order delete cascades OrderItem + OrderEvent; removing the OrderItems
         # frees the PROTECT on MenuItem so the menu can be replaced.
-        Order.objects.all().delete()
+        Order.objects.filter(restaurant=self.restaurant).delete()
 
         # No orders left, so free every table.
-        Table.objects.update(
+        Table.objects.filter(restaurant=self.restaurant).update(
             status=Table.Status.FREE,
             guest_count=0,
             opened_at=None,
@@ -46,8 +51,8 @@ class Command(BaseCommand):
             attention_acknowledged=False,
         )
 
-        old_menu = MenuItem.objects.count()
-        MenuItem.objects.all().delete()
+        old_menu = MenuItem.objects.filter(restaurant=self.restaurant).count()
+        MenuItem.objects.filter(restaurant=self.restaurant).delete()
 
         categories = self._sync_menu_categories()
         stats = {
@@ -60,6 +65,7 @@ class Command(BaseCommand):
         for item in catalog_items():
             category_key = item.pop("category_key")
             item["category"] = categories[category_key]
+            item["restaurant"] = self.restaurant
             was_created = self._upsert_menu_item(item)
             station = item["station"]
             stats["created" if was_created else "updated"][station] += 1
@@ -95,6 +101,7 @@ class Command(BaseCommand):
         for category in menu_categories():
             active_keys.add(category["key"])
             obj, _ = MenuCategory.objects.update_or_create(
+                restaurant=self.restaurant,
                 key=category["key"],
                 defaults={
                     "name": category["name"],
@@ -103,7 +110,9 @@ class Command(BaseCommand):
                 },
             )
             categories[category["key"]] = obj
-        MenuCategory.objects.exclude(key__in=active_keys).filter(items__isnull=True).delete()
+        MenuCategory.objects.filter(restaurant=self.restaurant).exclude(
+            key__in=active_keys
+        ).filter(items__isnull=True).delete()
         return categories
 
     def _upsert_menu_item(self, data):

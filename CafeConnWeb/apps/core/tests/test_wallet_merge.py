@@ -5,7 +5,7 @@ from django.test import TestCase
 
 from apps.core import coupons
 from apps.core.coupons import CouponError
-from apps.core.models import CouponCampaign, GuestWallet, IssuedCoupon
+from apps.core.models import CouponCampaign, GuestWallet, IssuedCoupon, Order, Table
 
 User = get_user_model()
 
@@ -60,7 +60,9 @@ class MergeWalletsTests(TestCase):
     def test_merge_moves_all_coupons_and_leaves_source_empty(self):
         active = claim(self.campaign, self.source)
         redeemed = claim(make_campaign(), self.source)
-        coupons.redeem_coupon(redeemed.pk, redeemed_by=None)
+        table = Table.objects.create(restaurant=redeemed.restaurant, number=99)
+        order = Order.objects.create(restaurant=redeemed.restaurant, table=table)
+        coupons.redeem_coupon(redeemed.pk, redeemed_by=None, order=order)
         kept = claim(make_campaign(), self.target)
 
         coupons.merge_wallets(self.source, self.target)

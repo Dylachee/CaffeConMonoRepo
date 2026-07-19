@@ -1,10 +1,10 @@
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from rest_framework.authtoken.models import Token
 
-from apps.core.models import Employee, MenuCategory, MenuItem, Station, Table
+from apps.core.models import Employee, MenuCategory, MenuItem, Restaurant, Station, Table
 
 User = get_user_model()
 
@@ -12,7 +12,14 @@ User = get_user_model()
 class Command(BaseCommand):
     help = "Create demo CafeConnect data for local development."
 
+    def add_arguments(self, parser):
+        parser.add_argument("--restaurant", default="sissy-bar", help="Restaurant slug to seed.")
+
     def handle(self, *args, **options):
+        try:
+            self.restaurant = Restaurant.objects.get(slug=options["restaurant"])
+        except Restaurant.DoesNotExist as error:
+            raise CommandError(f"Unknown restaurant: {options['restaurant']}") from error
         self._create_staff()
         self._create_tables()
         self._create_menu()
@@ -26,6 +33,7 @@ class Command(BaseCommand):
             ("bar", "Sara Bar", Employee.Role.BAR, True, False),
         ]
         for username, name, role, is_staff, is_superuser in staff:
+            username = self._username(username)
             user, created = User.objects.get_or_create(
                 username=username,
                 defaults={
@@ -39,6 +47,7 @@ class Command(BaseCommand):
                 user.set_password("cafeconnect")
                 user.save()
             Employee.objects.update_or_create(
+                restaurant=self.restaurant,
                 user=user,
                 defaults={"name": name, "role": role, "is_on_shift": True},
             )
@@ -48,6 +57,7 @@ class Command(BaseCommand):
     def _create_tables(self):
         for number in range(1, 13):
             Table.objects.update_or_create(
+                restaurant=self.restaurant,
                 number=number,
                 defaults={
                     "label": f"Table {number:02d}",
@@ -123,12 +133,18 @@ class Command(BaseCommand):
 
         for item in items:
             item["category"] = self._category(item["category"])
-            MenuItem.objects.update_or_create(name=item["name"], defaults=item)
+            MenuItem.objects.update_or_create(
+                restaurant=self.restaurant, name=item["name"], defaults={**item, "restaurant": self.restaurant}
+            )
 
     def _category(self, name):
         key = name.lower().replace(" ", "-")
         category, _ = MenuCategory.objects.get_or_create(
+            restaurant=self.restaurant,
             key=key[:40],
             defaults={"name": name, "color": "#DFAF2B"},
         )
         return category
+
+    def _username(self, base):
+        return base if self.restaurant.slug == "sissy-bar" else f"{self.restaurant.slug}-{base}"

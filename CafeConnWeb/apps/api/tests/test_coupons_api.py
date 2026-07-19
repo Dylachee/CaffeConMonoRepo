@@ -25,6 +25,7 @@ User = get_user_model()
 def make_client(username: str, role: str, **flags) -> tuple[APIClient, Employee]:
     username = f"tsta-{username}"
     user = User.objects.create_user(username=username, password="x-test-pass-1")
+    flags.setdefault("is_on_shift", True)
     employee = Employee.objects.create(user=user, name=username, role=role, **flags)
     token, _ = Token.objects.get_or_create(user=user)
     client = APIClient()
@@ -118,9 +119,10 @@ class CouponCapabilityMatrixTests(TestCase):
             403,
         )
         smm_disc, _ = make_client("smm-rd", Employee.Role.SMM, can_grant_discount=True)
+        order = make_order()
         self.assertEqual(
             smm_disc.post(
-                "/api/staff/coupons/redeem/", {"code": coupon.code}, format="json"
+                "/api/staff/coupons/redeem/", {"code": coupon.code, "order_id": order.pk}, format="json"
             ).status_code,
             200,
         )
@@ -128,12 +130,14 @@ class CouponCapabilityMatrixTests(TestCase):
     def test_void_is_manager_only(self):
         _, coupon = make_wallet_coupon(self.campaign)
         waiter, employee = make_client("w-void", Employee.Role.WAITER, can_grant_discount=True)
-        waiter.post("/api/staff/coupons/redeem/", {"code": coupon.code}, format="json")
+        order = make_order()
+        waiter.post("/api/staff/coupons/redeem/", {"code": coupon.code, "order_id": order.pk}, format="json")
         self.assertEqual(
             waiter.post(f"/api/staff/coupons/{coupon.pk}/void-redemption/").status_code, 403
         )
         manager, _ = make_client("m-void", Employee.Role.MANAGER)
-        # No order bound -> voidable straight away.
+        order.status = Order.Status.CANCELLED
+        order.save(update_fields=["status"])
         response = manager.post(f"/api/staff/coupons/{coupon.pk}/void-redemption/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["coupon"]["status"], "active")
@@ -175,7 +179,7 @@ class CampaignApiTests(TestCase):
         w2, c2 = make_wallet_coupon(campaign, utm_source="instagram_bio")
         w3, c3 = make_wallet_coupon(campaign, utm_source="flyer")
         staff, employee = make_client("m-stats", Employee.Role.MANAGER)
-        coupons.redeem_coupon(c1.pk, redeemed_by=employee)
+        coupons.redeem_coupon(c1.pk, redeemed_by=employee, order=make_order())
 
         payload = self.client_smm.get("/api/staff/coupons/campaigns/").json()["campaigns"]
         row = next(c for c in payload if c["id"] == campaign.pk)
@@ -274,9 +278,10 @@ class IssueRedeemApiTests(TestCase):
 
     def test_second_redeem_is_conflict_with_message(self):
         _, coupon = make_wallet_coupon(self.campaign)
-        self.client_w.post("/api/staff/coupons/redeem/", {"code": coupon.code}, format="json")
+        order = make_order()
+        self.client_w.post("/api/staff/coupons/redeem/", {"code": coupon.code, "order_id": order.pk}, format="json")
         response = self.client_w.post(
-            "/api/staff/coupons/redeem/", {"code": coupon.code}, format="json"
+            "/api/staff/coupons/redeem/", {"code": coupon.code, "order_id": order.pk}, format="json"
         )
         self.assertEqual(response.status_code, 409)
         self.assertIn("already been used", response.json()["detail"])

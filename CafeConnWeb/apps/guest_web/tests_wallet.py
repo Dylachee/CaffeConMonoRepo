@@ -4,7 +4,7 @@ from django.core.cache import cache
 from django.test import TestCase
 
 from apps.core import coupons
-from apps.core.models import CouponCampaign, GuestWallet, IssuedCoupon
+from apps.core.models import CouponCampaign, GuestWallet, IssuedCoupon, MenuCategory, MenuItem, Order, OrderItem, Table
 
 WALLET_COOKIE = "cc_wallet"
 
@@ -37,8 +37,8 @@ class GuestClaimFlowTests(TestCase):
         self.assertIn('data-screen="wallet"', html)
         self.assertIn('data-testid="wallet-list"', html)
         self.assertIn('data-testid="wallet-empty"', html)
-        # Five tabs total: profile, menu, feed, wallet, service.
-        self.assertEqual(html.count('class="tab'), 5)
+        # Four focused tabs: home, menu, coupons, and service.
+        self.assertEqual(html.count('class="tab'), 4)
 
     def test_wallet_read_never_creates_a_wallet(self):
         response = self.client.get("/r/sissy-bar/wallet/")
@@ -136,7 +136,12 @@ class GuestClaimFlowTests(TestCase):
     def test_redeemed_coupon_shows_as_used_without_qr(self):
         self.client.post("/r/sissy-bar/wallet/claim/", {"campaign": "welcome"})
         coupon = IssuedCoupon.objects.get()
-        coupons.redeem_coupon(coupon.pk, redeemed_by=None)
+        table = Table.objects.create(number=899, capacity=2)
+        category = MenuCategory.objects.create(key="wallet-test", name="Wallet test")
+        item = MenuItem.objects.create(name="Wallet dish", price=Decimal("10.00"), category=category)
+        order = Order.objects.create(table=table, status=Order.Status.NEW)
+        OrderItem.objects.create(order=order, menu_item=item, quantity=1, unit_price=Decimal("10.00"))
+        coupons.redeem_coupon(coupon.pk, redeemed_by=None, order=order)
         listing = self.client.get("/r/sissy-bar/wallet/").json()
         entry = listing["coupons"][0]
         self.assertEqual(entry["status"], "redeemed")

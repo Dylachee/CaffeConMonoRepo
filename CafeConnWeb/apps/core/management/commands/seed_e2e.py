@@ -2,12 +2,12 @@ import json
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from rest_framework.authtoken.models import Token
 
 from apps.core.menu_catalog import CLIENT_MENU_TAG
-from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, Table
+from apps.core.models import AttentionSignal, Employee, MenuCategory, MenuItem, Order, Restaurant, Table
 
 User = get_user_model()
 
@@ -20,9 +20,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--json", action="store_true", help="Print machine-readable seed details.")
+        parser.add_argument("--restaurant", default="sissy-bar", help="Restaurant slug to seed.")
 
     @transaction.atomic
     def handle(self, *args, **options):
+        try:
+            self.restaurant = Restaurant.objects.get(slug=options["restaurant"])
+        except Restaurant.DoesNotExist as error:
+            raise CommandError(f"Unknown restaurant: {options['restaurant']}") from error
         self._reset_e2e_rows()
         users = self._create_staff()
         tables = self._create_tables()
@@ -40,7 +45,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("E2E data ready."))
 
     def _reset_e2e_rows(self):
-        tables = Table.objects.filter(number__in=E2E_TABLE_NUMBERS)
+        tables = Table.objects.filter(restaurant=self.restaurant, number__in=E2E_TABLE_NUMBERS)
         AttentionSignal.objects.filter(table__in=tables).delete()
         Order.objects.filter(table__in=tables).delete()
         tables.update(
@@ -62,6 +67,7 @@ class Command(BaseCommand):
         ]
         result = {}
         for username, name, role in specs:
+            username = self._username(username)
             user, _ = User.objects.update_or_create(
                 username=username,
                 defaults={
@@ -73,6 +79,7 @@ class Command(BaseCommand):
             user.set_password(E2E_PASSWORD)
             user.save(update_fields=["password", "first_name", "is_staff", "is_superuser"])
             employee, _ = Employee.objects.update_or_create(
+                restaurant=self.restaurant,
                 user=user,
                 defaults={
                     "name": name,
@@ -96,6 +103,7 @@ class Command(BaseCommand):
         tables = []
         for number in E2E_TABLE_NUMBERS:
             table, _ = Table.objects.update_or_create(
+                restaurant=self.restaurant,
                 number=number,
                 defaults={
                     "label": f"E2E Table {number}",
@@ -158,9 +166,11 @@ class Command(BaseCommand):
         for data in specs:
             category = self._category(data.pop("category"))
             item, _ = MenuItem.objects.update_or_create(
+                restaurant=self.restaurant,
                 name=data["name"],
                 defaults={
                     **data,
+                    "restaurant": self.restaurant,
                     "category": category,
                     "image_url": "",
                     "composition": data["description"],
@@ -176,7 +186,11 @@ class Command(BaseCommand):
     def _category(self, name):
         key = name.lower().replace(" ", "-")[:40]
         category, _ = MenuCategory.objects.get_or_create(
+            restaurant=self.restaurant,
             key=key,
             defaults={"name": name, "color": "#DFAF2B"},
         )
         return category
+
+    def _username(self, base):
+        return base if self.restaurant.slug == "sissy-bar" else f"{self.restaurant.slug}-{base}"

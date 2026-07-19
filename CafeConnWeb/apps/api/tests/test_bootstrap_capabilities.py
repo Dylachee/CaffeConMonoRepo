@@ -70,3 +70,12 @@ class BootstrapCapabilityContractTests(TestCase):
         self.assertEqual(len(body["menu"]), 2)
         self.assertEqual(len(body["orders"]), 1)
         self.assertEqual(body["history"], [])
+
+    def test_station_worker_cannot_delete_a_billable_order_item(self):
+        item = OrderItem.objects.filter(order__restaurant=self.restaurant).first()
+        client = client_for("contract-kitchen-delete", self.restaurant, Employee.Role.KITCHEN)
+
+        response = client.delete(f"/api/order-items/{item.pk}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(OrderItem.objects.filter(pk=item.pk).exists())

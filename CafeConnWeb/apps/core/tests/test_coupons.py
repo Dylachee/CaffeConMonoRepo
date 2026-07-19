@@ -27,6 +27,7 @@ User = get_user_model()
 
 
 def make_employee(username: str, role: str = Employee.Role.WAITER, **flags) -> Employee:
+    flags.setdefault("is_on_shift", True)
     user = User.objects.create_user(username=f"tstc-{username}", password="x-test-pass-1")
     return Employee.objects.create(user=user, name=username, role=role, **flags)
 
@@ -150,13 +151,13 @@ class ClaimCouponTests(TestCase):
         self.assertEqual(first.pk, second.pk)
         self.assertEqual(IssuedCoupon.objects.count(), 1)
 
-    def test_per_wallet_limit_above_one(self):
+    def test_one_coupon_per_campaign_even_if_legacy_limit_is_higher(self):
         campaign = make_campaign(per_wallet_limit=2)
         _, c1 = claim(campaign, self.wallet)
         _, c2 = claim(campaign, self.wallet)
         _, c3 = claim(campaign, self.wallet)
-        self.assertEqual([c1, c2, c3], [True, True, False])
-        self.assertEqual(IssuedCoupon.objects.filter(campaign=campaign).count(), 2)
+        self.assertEqual([c1, c2, c3], [True, False, False])
+        self.assertEqual(IssuedCoupon.objects.filter(campaign=campaign).count(), 1)
 
     def test_max_total_issues_enforced(self):
         campaign = make_campaign(max_total_issues=1)
@@ -254,23 +255,24 @@ class RedeemCouponTests(TestCase):
         self.assertEqual(order.discount_amount, Decimal("3.00"))
 
     def test_double_redeem_rejected(self):
-        coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff)
+        order = make_order()
+        coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff, order=order)
         with self.assertRaises(CouponError) as ctx:
-            coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff)
+            coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff, order=order)
         self.assertIn("already been used", str(ctx.exception))
 
     def test_void_and_expired_rejected(self):
         self.coupon.status = IssuedCoupon.Status.VOID
         self.coupon.save(update_fields=["status"])
         with self.assertRaises(CouponError):
-            coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff)
+            coupons.redeem_coupon(self.coupon.pk, redeemed_by=self.staff, order=make_order())
 
         expired_campaign = make_campaign(valid_until=timezone.now() + timedelta(days=1))
         coupon, _ = claim(expired_campaign, self.wallet)
-        expired_campaign.valid_until = timezone.now() - timedelta(minutes=1)
-        expired_campaign.save(update_fields=["valid_until"])
+        coupon.valid_until_snapshot = timezone.now() - timedelta(minutes=1)
+        coupon.save(update_fields=["valid_until_snapshot"])
         with self.assertRaises(CouponError) as ctx:
-            coupons.redeem_coupon(coupon.pk, redeemed_by=self.staff)
+            coupons.redeem_coupon(coupon.pk, redeemed_by=self.staff, order=make_order())
         self.assertIn("expired", str(ctx.exception))
         coupon.refresh_from_db()
         self.assertEqual(coupon.status, IssuedCoupon.Status.EXPIRED)
@@ -310,8 +312,8 @@ class RedeemCouponTests(TestCase):
 
     def test_display_status_shows_expired_campaign(self):
         self.assertEqual(coupons.display_status(self.coupon), "active")
-        self.campaign.valid_until = timezone.now() - timedelta(minutes=1)
-        self.campaign.save(update_fields=["valid_until"])
+        self.coupon.valid_until_snapshot = timezone.now() - timedelta(minutes=1)
+        self.coupon.save(update_fields=["valid_until_snapshot"])
         self.coupon.refresh_from_db()
         self.assertEqual(coupons.display_status(self.coupon), "expired")
 
@@ -329,6 +331,7 @@ class ConcurrentRedeemTests(TransactionTestCase):
         wallet = GuestWallet.objects.create()
         staff = make_employee("racer", can_grant_discount=True)
         coupon, _ = claim(campaign, wallet)
+        order = make_order()
 
         barrier = threading.Barrier(2, timeout=10)
         results: list[str] = []
@@ -346,7 +349,7 @@ class ConcurrentRedeemTests(TransactionTestCase):
                 # a retry after the winner committed gets "already been used".
                 for attempt in range(4):
                     try:
-                        coupons.redeem_coupon(coupon.pk, redeemed_by=staff)
+                        coupons.redeem_coupon(coupon.pk, redeemed_by=staff, order=order)
                         outcome = "redeemed"
                         break
                     except CouponError:
