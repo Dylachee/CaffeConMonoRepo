@@ -33,11 +33,11 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
   void initState() {
     super.initState();
     // Safari can expose a live camera while its native BarcodeDetector fails
-    // to decode the guest wallet QR. Use the package's ZXing WASM reader on
-    // web; native mobile builds keep their platform scanner.
+    // to decode a QR. Let the package choose its best browser backend (native
+    // BarcodeDetector when supported, ZXing otherwise); native mobile builds
+    // keep their platform scanner.
     if (kIsWeb) {
-      MobileScannerPlatform.instance
-          .setWebBarcodeReader(WebBarcodeReader.zxingWasm);
+      MobileScannerPlatform.instance.setWebBarcodeReader(WebBarcodeReader.auto);
     }
     _scanner = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
@@ -72,7 +72,15 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
     final raw =
         capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
     if (raw == null || raw.isEmpty) return;
-    await _lookUp(token: raw);
+    final scanned = raw.trim();
+    // Wallet cards now encode the compact eight-character code. Continue
+    // accepting older signed-token QR cards during the transition.
+    if (RegExp(r'^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$')
+        .hasMatch(scanned.toUpperCase())) {
+      await _lookUp(code: scanned);
+    } else {
+      await _lookUp(token: scanned);
+    }
   }
 
   Future<void> _lookUp({String? token, String? code}) async {

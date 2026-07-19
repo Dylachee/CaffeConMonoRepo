@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest import mock
 
 from django.core.cache import cache
 from django.test import TestCase
@@ -114,6 +115,18 @@ class GuestClaimFlowTests(TestCase):
         self.assertTrue(coupon["qrSvg"].startswith("<svg"))
         self.assertIn("/r/sissy-bar/wallet/recover/", body["recovery"]["url"])
         self.assertTrue(body["recovery"]["qrSvg"].startswith("<svg"))
+
+    def test_active_coupon_qr_encodes_the_short_coupon_code(self):
+        self.client.post("/r/sissy-bar/wallet/claim/", {"campaign": "welcome"})
+        coupon = IssuedCoupon.objects.get()
+        # Capture the actual payload handed to the QR generator. A short code
+        # makes a far less dense QR for the staff tablet camera to read.
+        with mock.patch(
+            "apps.guest_web.views_wallet.coupons.qr_svg",
+            side_effect=lambda payload, **_: payload,
+        ):
+            payload = self.client.get("/r/sissy-bar/wallet/").json()["coupons"][0]
+        self.assertEqual(payload["qrSvg"], coupon.code)
 
     def test_recovery_link_reattaches_wallet_on_new_device(self):
         self.client.post("/r/sissy-bar/wallet/claim/", {"campaign": "welcome"})

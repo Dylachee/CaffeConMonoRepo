@@ -302,8 +302,8 @@ class OrderCard extends StatelessWidget {
   }
 
   /// Role-aware primary action:
-  ///   station (cook/bartender): New → «Start», Cooking → «Ready»; once the
-  ///     order is ready their part is done — no way to complete or cancel,
+  ///   station (cook/bartender): each item can become ready independently;
+  ///     once the order is ready their part is done — no way to complete or cancel,
   ///     so a second tap can never make the order vanish;
   ///   waiter: sees progress read-only until the order is READY, then gets
   ///     «Delivered to guest» — that (and only that) moves it to the table
@@ -328,14 +328,9 @@ class OrderCard extends StatelessWidget {
       return _StatusStrip(label: L.osCompleted, color: AppTheme.success);
     }
 
-    // Station work first: while anything is still in preparation, whoever
-    // covers this station can start it and mark it ready.
+    // Station work first. Individual rows have their own Ready action; this
+    // remains the quick "ready all" shortcut for a finished ticket.
     if (canWorkStation && !stationReady) {
-      if (order.status == OrderStatus.accepted) {
-        return AppButton(
-            label: L.startCooking,
-            onPressed: () => state.advanceStationStatus(order));
-      }
       return AppButton(
           label: L.markReady,
           onPressed: () => state.markStationItemsReady(order, effectiveZone));
@@ -408,6 +403,21 @@ class _ItemStateLine extends StatelessWidget {
             state.toggleOrderItemDelivered(order, line);
           },
           child: Text(L.markDelivered,
+              style: T.label.copyWith(fontWeight: FontWeight.w900)),
+        ),
+      ],
+      if ((line.item.isBar ? state.capBar : state.capKitchen) &&
+          !line.ready) ...[
+        const SizedBox(width: 8),
+        TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: zoneColor,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () => state.markOrderItemReady(order, line),
+          child: Text(L.markReady,
               style: T.label.copyWith(fontWeight: FontWeight.w900)),
         ),
       ],

@@ -79,3 +79,18 @@ class BootstrapCapabilityContractTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertTrue(OrderItem.objects.filter(pk=item.pk).exists())
+
+    def test_kitchen_can_mark_one_kitchen_item_ready_without_touching_bar(self):
+        kitchen_item = OrderItem.objects.get(station="kitchen")
+        bar_item = OrderItem.objects.get(station="bar")
+        client = client_for("contract-kitchen-ready", self.restaurant, Employee.Role.KITCHEN)
+
+        response = client.post(
+            f"/api/restaurants/contract/order-items/{kitchen_item.pk}/mark-ready/"
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        kitchen_item.refresh_from_db()
+        bar_item.refresh_from_db()
+        self.assertTrue(kitchen_item.ready)
+        self.assertFalse(bar_item.ready)

@@ -234,8 +234,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _resetCapabilities() {
-    capWait = capBar = capKitchen =
-        capMenu = capManage = capContent = capDiscount = capCouponRedeem = capReports = true;
+    capWait = capBar = capKitchen = capMenu = capManage =
+        capContent = capDiscount = capCouponRedeem = capReports = true;
   }
 
   void setLanguage(AppLang value) {
@@ -1357,9 +1357,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Waiter/manager action from the table view: mark one item prepared (ready)
-  /// while it's still in preparation, so item state can be advanced without
-  /// leaving the table.
+  /// Station or floor action: mark one item prepared (ready) without changing
+  /// the other items on the ticket.
   Future<void> markOrderItemReady(CafeOrder order, CartLine line) async {
     if (line.ready || line.done) return;
     final previous = order.status;

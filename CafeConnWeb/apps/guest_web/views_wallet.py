@@ -65,8 +65,10 @@ def _coupon_payload(coupon: IssuedCoupon) -> dict:
         "createdAt": coupon.created_at.isoformat(),
     }
     if display == IssuedCoupon.Status.ACTIVE:
-        # The QR the staff app scans: a signed redeem token, never a bare id.
-        payload["qrSvg"] = coupons.qr_svg(coupons.make_redeem_token(coupon))
+        # The staff scanner also accepts legacy signed tokens, but new guest
+        # cards encode the short random code. It produces a low-density QR
+        # that a tablet camera can read reliably.
+        payload["qrSvg"] = coupons.qr_svg(coupon.code)
     return payload
 
 
