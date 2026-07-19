@@ -102,8 +102,10 @@
   .menu-lead{margin-top:9px;max-width:34rem;color:var(--ink-a64);font-size:14px;line-height:1.45;text-wrap:pretty}
   .search{margin-top:14px;height:46px;border-radius:8px;background:var(--surface-hi);box-shadow:0 0 0 1px rgba(43,36,24,.07),0 2px 8px -6px rgba(43,36,24,.35);display:flex;align-items:center;gap:10px;padding:0 13px}
   .search input{border:0;outline:0;background:transparent;flex:1;font-size:16px;color:var(--ink);min-width:0}
-  .chips{position:sticky;top:48px;z-index:20;display:flex;flex-wrap:wrap;gap:6px;overflow:visible;margin:12px -18px 0;padding:8px 18px;background:var(--bg-a96);backdrop-filter:blur(18px);scrollbar-width:none;border-bottom:1px solid var(--line-a62)}
-  .chip{min-height:34px;max-width:132px;padding:0 10px;border-radius:8px;background:var(--surface-hi);box-shadow:0 0 0 1px rgba(43,36,24,.08);color:var(--ink-a68);font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center;transition-property:background-color,color,box-shadow,transform;transition-duration:.14s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
+  /* The category index is a menu map, not a carousel: every section stays
+     visible and tappable before a guest begins scrolling through dishes. */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;overflow:visible;margin:14px 0 0;padding:0;background:transparent;border:0;scrollbar-width:none}
+  .chip{min-height:42px;max-width:none;padding:0 13px;border-radius:13px;background:var(--surface-hi);box-shadow:0 0 0 1px rgba(43,36,24,.08),0 4px 10px -8px rgba(43,36,24,.32);color:var(--ink-a68);font-size:13px;font-weight:900;white-space:nowrap;overflow:visible;text-overflow:clip;display:inline-flex;align-items:center;justify-content:center;transition-property:background-color,color,box-shadow,transform;transition-duration:.14s;transition-timing-function:cubic-bezier(.22,1,.36,1)}
   .chip.active{background:var(--cat,var(--dark));color:#fff;box-shadow:0 0 0 1px rgba(43,36,24,.1),0 8px 18px -14px rgba(34,31,26,.65)}
   .chip:active{transform:scale(.96)}
   .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:16px}
@@ -116,6 +118,7 @@
      (el.textContent = …) can't wipe it */
   .chip[data-cat]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--cat);margin-right:7px;vertical-align:1px}
   .chip.active[data-cat]::before{background:var(--card)}
+  @media(max-width:440px){.chips{gap:7px}.chip{min-height:40px;padding:0 11px;font-size:12px}}
   .promo-star{color:#B98A3C;font-size:14px;font-weight:900;margin-right:2px}
   .cat-head::after{content:"";flex:1;height:1px;background:transparent}
   .cat-count{margin-left:auto;height:24px;min-width:24px;padding:0 7px;border-radius:7px;background:var(--surface-count);color:var(--accent-deep);font-size:12px;font-weight:950;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}

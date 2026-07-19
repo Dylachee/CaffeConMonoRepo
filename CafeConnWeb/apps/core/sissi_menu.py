@@ -7,6 +7,16 @@ MANUAL_CHECK_TAG = "manual_check"
 SEASONAL_TAG = "seasonal"
 STATION_CHECK_TAG = "station_check"
 
+# Small, intentionally curated guest storefront shelf. These images are only
+# for the four products surfaced on the guest home page; the full printed menu
+# stays fast and text-first.
+GUEST_POPULAR_IMAGES = {
+    "Cappuccino": "https://images.unsplash.com/photo-1518810300173-625a9c46f7d2?auto=format&fit=crop&w=900&q=80",
+    "Bombardino": "https://images.unsplash.com/photo-1559842590-3696b9eb73b1?auto=format&fit=crop&w=900&q=80",
+    "Aperol Spritz": "https://images.unsplash.com/photo-1570598912132-0ba1dc952b7d?auto=format&fit=crop&w=900&q=80",
+    "Strudel di mele": "https://images.pexels.com/photos/36414757/pexels-photo-36414757.jpeg?auto=compress&cs=tinysrgb&w=900",
+}
+
 GELATO_GUSTI = ("Nocciola", "Yogurt", "Fragola", "Vaniglia", "Cacao")
 GELATO_MODIFIER_ITEMS = {
     "Cono/Coppetta 1 gusto",
@@ -468,13 +478,13 @@ def catalog_items():
                 "price": Decimal(price).quantize(Decimal("0.01")),
                 "category": category,
                 "category_key": category_key,
-                "image_url": "",
+                "image_url": GUEST_POPULAR_IMAGES.get(name, ""),
                 "station": station,
                 "tags": tags,
                 "composition": composition,
                 "allergens": content["allergens"],
                 "is_available": True,
-                "is_promoted": False,
+                "is_promoted": name in GUEST_POPULAR_IMAGES,
                 "preparation_minutes": 12 if station == "kitchen" else 5,
                 "portion_weight": "",
                 "calories": None,
