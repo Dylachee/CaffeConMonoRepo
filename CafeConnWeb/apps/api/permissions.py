@@ -32,6 +32,23 @@ class HasDiscountCapability(permissions.BasePermission):
         return bool(capabilities_for_request(request).get("discount"))
 
 
+class HasCouponRedeemCapability(permissions.BasePermission):
+    """An on-shift waiter may attach a guest coupon to an open bill.
+
+    This is intentionally narrower than ``discount``: issuing coupons and
+    campaign administration remain manager-only commercial controls.
+    """
+
+    message = "Start a waiter shift before redeeming a guest coupon."
+
+    def has_permission(self, request, view):
+        from apps.api.tenant import capabilities_for_request
+
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return bool(capabilities_for_request(request).get("coupon_redeem"))
+
+
 class HasManageCapability(permissions.BasePermission):
     """Manager/admin only (e.g. voiding a redeemed coupon)."""
 

@@ -19,9 +19,7 @@ dependencies:
   # Venue logo/cover upload in the Storefront editor (web + Android).
   image_picker: ^1.1.2
   # Coupon redeem: scanning the guest's wallet QR (web + Android).
-  # NOTE for the human build: add camera permissions —
-  #   android/app/src/main/AndroidManifest.xml: <uses-permission android:name="android.permission.CAMERA" />
-  #   ios/Runner/Info.plist: NSCameraUsageDescription
+  # Native camera declarations are in AndroidManifest.xml and Runner/Info.plist.
   mobile_scanner: ^5.2.3
   provider: ^6.1.2
   # Coupon issue: rendering the signed claim link as a QR (pure Dart).

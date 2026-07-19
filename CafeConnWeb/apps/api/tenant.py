@@ -78,6 +78,7 @@ def capabilities_for_request(request) -> dict[str, bool]:
             "manage": True,
             "content": True,
             "discount": True,
+            "coupon_redeem": True,
             "reports": True,
         }
     employee = employee_for_request(request)
@@ -91,6 +92,7 @@ def capabilities_for_request(request) -> dict[str, bool]:
         "manage": False,
         "content": False,
         "discount": False,
+        "coupon_redeem": False,
         "reports": False,
     }
 

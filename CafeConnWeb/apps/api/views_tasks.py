@@ -120,6 +120,11 @@ class StaffTasksView(APIView):
             {
                 "date": day.isoformat(),
                 "tasks": payload,
+                "assignees": list(
+                    Employee.objects.filter(restaurant=restaurant)
+                    .order_by("-is_on_shift", "name")
+                    .values("id", "name", "role", "is_on_shift")
+                ),
                 "mine": [item for item in payload if employee and item.get("assignee") == employee.pk],
                 "available": [item for item in payload if not item.get("assignee")],
                 "done": [item for item in payload if item.get("status") == StaffTask.Status.DONE],

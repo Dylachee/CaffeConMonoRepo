@@ -10,7 +10,8 @@ import 'issue_coupon.dart';
 import 'redeem_coupon.dart';
 
 /// The "Coupons" area. Tabs follow the capability split:
-///   Issue / Redeem — `discount` (a manager-granted flag, boss included);
+///   Issue — `discount` (a manager-granted flag, boss included);
+///   Redeem — `coupon_redeem` (an on-shift waiter or manager);
 ///   Campaigns      — `content` (SMM's marketing job: CRUD + UTM counters).
 /// The shell shows the area when either capability is present; here the tab
 /// set narrows to what this person may actually do.
@@ -36,12 +37,12 @@ class _CouponsScreenState extends State<CouponsScreen>
     final state = context.watch<CafeState>();
     final tabs = <Tab>[
       if (state.capDiscount) Tab(text: L.issueTab),
-      if (state.capDiscount) Tab(text: L.redeemTab),
+      if (state.capCouponRedeem) Tab(text: L.redeemTab),
       if (state.canSeeContent) Tab(text: L.campaignsTab),
     ];
     final pages = <Widget>[
       if (state.capDiscount) const IssueCouponScreen(),
-      if (state.capDiscount) const RedeemCouponScreen(),
+      if (state.capCouponRedeem) const RedeemCouponScreen(),
       if (state.canSeeContent) const CampaignManagerScreen(),
     ];
     // Capabilities can change on re-bootstrap — rebuild the controller when

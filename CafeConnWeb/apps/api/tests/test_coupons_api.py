@@ -68,25 +68,25 @@ class CouponCapabilityMatrixTests(TestCase):
         cache.clear()
         self.campaign = make_campaign()
 
-    def test_issue_and_redeem_gated_on_discount(self):
+    def test_waiters_redeem_but_only_discount_staff_issue(self):
         _, coupon = make_wallet_coupon(self.campaign)
-        for username, role, flags, expected in (
-            ("w-plain", Employee.Role.WAITER, {}, 403),
-            ("w-disc", Employee.Role.WAITER, {"can_grant_discount": True}, 200),
-            ("smm-plain", Employee.Role.SMM, {}, 403),
-            ("kitchen", Employee.Role.KITCHEN, {}, 403),
-            ("boss", Employee.Role.MANAGER, {}, 200),
+        for username, role, flags, issue_expected, redeem_expected in (
+            ("w-plain", Employee.Role.WAITER, {}, 403, 200),
+            ("w-disc", Employee.Role.WAITER, {"can_grant_discount": True}, 200, 200),
+            ("smm-plain", Employee.Role.SMM, {}, 403, 403),
+            ("kitchen", Employee.Role.KITCHEN, {}, 403, 403),
+            ("boss", Employee.Role.MANAGER, {}, 200, 200),
         ):
             with self.subTest(user=username):
                 client, _ = make_client(username, role, **flags)
                 issue = client.post(
                     "/api/staff/coupons/issue/", {"campaign": self.campaign.pk}, format="json"
                 )
-                self.assertEqual(issue.status_code, expected)
+                self.assertEqual(issue.status_code, issue_expected)
                 preview = client.post(
                     "/api/staff/coupons/redeem-preview/", {"code": coupon.code}, format="json"
                 )
-                self.assertEqual(preview.status_code, expected)
+                self.assertEqual(preview.status_code, redeem_expected)
 
     def test_campaign_crud_gated_on_content(self):
         payload = {
@@ -109,7 +109,7 @@ class CouponCapabilityMatrixTests(TestCase):
                 )
                 self.assertEqual(response.status_code, expected)
 
-    def test_smm_cannot_redeem_without_flag_but_can_with_it(self):
+    def test_smm_cannot_redeem_even_with_campaign_issue_grant(self):
         _, coupon = make_wallet_coupon(self.campaign)
         smm_plain, _ = make_client("smm-r", Employee.Role.SMM)
         self.assertEqual(
@@ -119,12 +119,21 @@ class CouponCapabilityMatrixTests(TestCase):
             403,
         )
         smm_disc, _ = make_client("smm-rd", Employee.Role.SMM, can_grant_discount=True)
-        order = make_order()
         self.assertEqual(
             smm_disc.post(
-                "/api/staff/coupons/redeem/", {"code": coupon.code, "order_id": order.pk}, format="json"
+                "/api/staff/coupons/redeem-preview/", {"code": coupon.code}, format="json"
             ).status_code,
-            200,
+            403,
+        )
+
+    def test_off_shift_waiter_cannot_redeem(self):
+        _, coupon = make_wallet_coupon(self.campaign)
+        client, _ = make_client("waiter-off", Employee.Role.WAITER, is_on_shift=False)
+        self.assertEqual(
+            client.post(
+                "/api/staff/coupons/redeem-preview/", {"code": coupon.code}, format="json"
+            ).status_code,
+            403,
         )
 
     def test_void_is_manager_only(self):
@@ -142,13 +151,15 @@ class CouponCapabilityMatrixTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["coupon"]["status"], "active")
 
-    def test_bootstrap_exposes_discount_capability(self):
+    def test_bootstrap_separates_issue_from_waiter_redemption(self):
         client, _ = make_client("w-boot", Employee.Role.WAITER, can_grant_discount=True)
         caps = client.get("/api/staff/bootstrap/").json()["currentUser"]["capabilities"]
         self.assertTrue(caps["discount"])
+        self.assertTrue(caps["coupon_redeem"])
         client2, _ = make_client("w-boot2", Employee.Role.WAITER)
         caps2 = client2.get("/api/staff/bootstrap/").json()["currentUser"]["capabilities"]
         self.assertFalse(caps2["discount"])
+        self.assertTrue(caps2["coupon_redeem"])
 
 
 class CampaignApiTests(TestCase):

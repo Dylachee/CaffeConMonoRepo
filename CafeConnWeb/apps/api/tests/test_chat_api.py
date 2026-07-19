@@ -240,6 +240,12 @@ class TasksApiTests(TestCase):
         manager_view = self.client_m.get("/api/staff/tasks/").json()
         self.assertTrue(any(r["id"] == rule.pk for r in manager_view["rules"]))
 
+    def test_day_view_includes_restaurant_scoped_assignment_directory(self):
+        payload = self.client_w.get("/api/staff/tasks/").json()
+        names = {item["name"] for item in payload["assignees"]}
+        self.assertIn(self.waiter.name, names)
+        self.assertIn(self.manager.name, names)
+
     def test_regular_staff_only_receive_mine_available_and_own_done(self):
         _, other = make_client("hidden")
         StaffTask.objects.create(title="other active", assignee=other, status="in_progress")

@@ -49,6 +49,8 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
   bool _showTasks = false;
   String _taskFilter = 'mine';
 
+  String get _tasksLabel => L.t('Tasks', 'Attività');
+
   @override
   void initState() {
     super.initState();
@@ -61,7 +63,7 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
     final state = context.watch<CafeState>();
     final tasks = state.plannerTasks.where((task) {
       return switch (_taskFilter) {
-        'available' => task.isAvailable,
+        'team' => !task.isDone,
         'done' => task.isDone && task.assigneeId == state.activeEmployeeId,
         _ => !task.isDone && task.assigneeId == state.activeEmployeeId,
       };
@@ -70,6 +72,12 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
       bottomNav: null,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Header(title: L.team, subtitle: L.teamOnline, actions: [
+          if (_showTasks)
+            IconButton(
+              tooltip: L.t('Create task', 'Crea attività'),
+              icon: const Icon(Icons.add_task_outlined, color: AppTheme.ink),
+              onPressed: () => _showTaskComposer(state),
+            ),
           IconButton(
             tooltip: L.planner,
             icon: const Icon(Icons.event_note_outlined, color: AppTheme.ink),
@@ -100,7 +108,7 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
             ),
             Expanded(
               child: _TeamSegment(
-                label: L.myTasks,
+                label: _tasksLabel,
                 icon: Icons.task_alt_outlined,
                 selected: _showTasks,
                 onTap: () => setState(() => _showTasks = true),
@@ -130,9 +138,9 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
                       onTap: () => setState(() => _taskFilter = 'mine'),
                     ),
                     CategoryChip(
-                      label: L.availableTasks,
-                      active: _taskFilter == 'available',
-                      onTap: () => setState(() => _taskFilter = 'available'),
+                      label: L.t('Team', 'Team'),
+                      active: _taskFilter == 'team',
+                      onTap: () => setState(() => _taskFilter = 'team'),
                     ),
                     CategoryChip(
                       label: L.done,
@@ -150,7 +158,7 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
                       ? ListView(children: [
                           EmptyState(
                             icon: Icons.task_alt_outlined,
-                            title: L.myTasks,
+                            title: _tasksLabel,
                             sub: L.plannerEmpty,
                           ),
                         ])
@@ -223,6 +231,170 @@ class _StaffChatListScreenState extends State<StaffChatListScreen> {
           ),
       ]),
     );
+  }
+
+  Future<void> _showTaskComposer(CafeState state) async {
+    final title = TextEditingController();
+    TaskAssigneeDto? assignee = state.capManage
+        ? null
+        : state.taskAssignees.firstWhereOrNull(
+            (item) => item.id == state.activeEmployeeId,
+          );
+    TimeOfDay? dueTime;
+    var saving = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) {
+          final lastToken = title.text.split(' ').last;
+          final query = lastToken.startsWith('@')
+              ? lastToken.substring(1).toLowerCase()
+              : '';
+          final suggestions = query.isEmpty && !lastToken.startsWith('@')
+              ? const <TaskAssigneeDto>[]
+              : state.taskAssignees
+                  .where((item) => item.isOnShift)
+                  .where((item) => item.name.toLowerCase().startsWith(query))
+                  .take(5)
+                  .toList();
+
+          void applyMention(TaskAssigneeDto person) {
+            final words = title.text.split(' ')..removeLast();
+            words.add('@${person.name.split(' ').first}');
+            title.text = '${words.join(' ')} ';
+            title.selection = TextSelection.fromPosition(
+                TextPosition(offset: title.text.length));
+            setSheet(() => assignee = person);
+          }
+
+          Future<void> submit() async {
+            var input = title.text.trim();
+            if (input.isEmpty || saving) return;
+            if (state.capManage && assignee != null && !input.contains('@')) {
+              input = '$input @${assignee!.name.split(' ').first}';
+            }
+            if (dueTime != null) {
+              final hour = dueTime!.hour.toString().padLeft(2, '0');
+              final minute = dueTime!.minute.toString().padLeft(2, '0');
+              input = '$input $hour:$minute';
+            }
+            setSheet(() => saving = true);
+            final error = await state.plannerQuickAdd(input);
+            if (!sheetContext.mounted) return;
+            if (error != null) {
+              setSheet(() => saving = false);
+              ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+              return;
+            }
+            Navigator.pop(sheetContext);
+          }
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+                20, 18, 20, MediaQuery.viewInsetsOf(sheetContext).bottom + 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(L.t('New task', 'Nuova attività'), style: T.h2),
+              const SizedBox(height: 14),
+              TextField(
+                controller: title,
+                autofocus: true,
+                minLines: 1,
+                maxLines: 3,
+                onChanged: (_) => setSheet(() {}),
+                decoration: InputDecoration(
+                  hintText: L.t('What needs doing? Type @ to assign',
+                      'Cosa bisogna fare? Scrivi @ per assegnare'),
+                ),
+              ),
+              if (suggestions.isNotEmpty) ...[
+                const SizedBox(height: 9),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: [
+                      for (final person in suggestions)
+                        ActionChip(
+                          avatar: const Icon(Icons.person_outline, size: 16),
+                          label: Text(person.name),
+                          onPressed: () => applyMention(person),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              if (state.capManage) ...[
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(assignee?.id ?? 'team'),
+                  initialValue: assignee?.id.toString() ?? 'team',
+                  decoration: InputDecoration(
+                    labelText: L.t('Assign to', 'Assegna a'),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'team',
+                      child: Text(L.t('Team — anyone can claim', 'Team — chiunque può prenderla')),
+                    ),
+                    for (final person in state.taskAssignees)
+                      DropdownMenuItem(
+                        value: person.id.toString(),
+                        child: Text('${person.name}${person.isOnShift ? '' : ' · off shift'}'),
+                      ),
+                  ],
+                  onChanged: (value) => setSheet(() {
+                    assignee = value == 'team'
+                        ? null
+                        : state.taskAssignees.firstWhereOrNull(
+                            (item) => item.id.toString() == value,
+                          );
+                  }),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                Text(L.t('This task will be assigned to you.',
+                    'Questa attività sarà assegnata a te.'),
+                    style: T.small.copyWith(color: AppTheme.ink2)),
+              ],
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final picked = await showTimePicker(
+                        context: sheetContext,
+                        initialTime: dueTime ?? TimeOfDay.now());
+                    if (picked != null) setSheet(() => dueTime = picked);
+                  },
+                  icon: const Icon(Icons.schedule_outlined),
+                  label: Text(dueTime == null
+                      ? L.t('Add a time (optional)', 'Aggiungi un orario (facoltativo)')
+                      : L.t('Today at ${dueTime!.format(sheetContext)}',
+                          'Oggi alle ${dueTime!.format(sheetContext)}')),
+                ),
+              ),
+              const SizedBox(height: 18),
+              PrimaryButton(
+                label: L.t('Create task', 'Crea attività'),
+                icon: Icons.add_task,
+                enabled: !saving && title.text.trim().isNotEmpty,
+                onTap: submit,
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+    title.dispose();
   }
 }
 

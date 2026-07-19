@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 
 from apps.api.permissions import (
     HasContentCapability,
+    HasCouponRedeemCapability,
     HasDiscountCapability,
     HasManageCapability,
 )
@@ -167,7 +168,7 @@ class StaffCouponPreviewView(APIView):
     """Read-only look-up before the confirmation sheet: campaign, discount,
     display status, and the computed discount for an optional order."""
 
-    permission_classes = [permissions.IsAuthenticated, HasDiscountCapability]
+    permission_classes = [permissions.IsAuthenticated, HasCouponRedeemCapability]
 
     def post(self, request):
         try:
@@ -190,7 +191,7 @@ class StaffCouponPreviewView(APIView):
 
 
 class StaffCouponRedeemView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasDiscountCapability]
+    permission_classes = [permissions.IsAuthenticated, HasCouponRedeemCapability]
 
     def post(self, request):
         from apps.api.events import broadcast_order_event

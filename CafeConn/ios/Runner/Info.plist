@@ -6,6 +6,8 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>CafeConnect uses the camera to scan a guest coupon QR code.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Cafeconnect</string>
 	<key>CFBundleExecutable</key>

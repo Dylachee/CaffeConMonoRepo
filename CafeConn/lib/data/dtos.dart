@@ -901,6 +901,28 @@ class VenuePayloadDto {
       );
 }
 
+/// A compact in-venue directory used by task assignment and @ completion.
+class TaskAssigneeDto {
+  final int id;
+  final String name;
+  final String role;
+  final bool isOnShift;
+
+  const TaskAssigneeDto({
+    required this.id,
+    required this.name,
+    required this.role,
+    required this.isOnShift,
+  });
+
+  factory TaskAssigneeDto.fromJson(Map<String, dynamic> j) => TaskAssigneeDto(
+        id: _asInt(j['id']),
+        name: _asString(j['name']),
+        role: _asString(j['role']),
+        isOnShift: _asBool(j['is_on_shift']),
+      );
+}
+
 /// A staff task — the same object behind chat bubbles and the planner.
 class StaffTaskDto {
   final int id;

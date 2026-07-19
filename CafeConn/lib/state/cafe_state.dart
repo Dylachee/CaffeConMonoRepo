@@ -162,6 +162,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   bool capManage = true;
   bool capContent = true;
   bool capDiscount = true;
+  bool capCouponRedeem = true;
   bool capReports = true;
 
   // A "pure station" worker has no waiter capability — floor actions are
@@ -180,7 +181,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Coupons: issuing/redeeming needs `discount`; the Campaigns tab inside
   /// the area needs `content`. The area shows up for either.
-  bool get canSeeCoupons => capDiscount || capContent;
+  bool get canSeeCoupons => capDiscount || capContent || capCouponRedeem;
 
   /// Whether this person works orders at all (floor or a station). A pure
   /// SMM/content account has none of these — orders, menu and tables stay
@@ -212,6 +213,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       // Older hubs omit `discount`: only bosses had it implicitly.
       capDiscount =
           caps.containsKey('discount') ? caps['discount'] == true : capManage;
+      capCouponRedeem = caps.containsKey('coupon_redeem')
+          ? caps['coupon_redeem'] == true
+          : capWait;
       capReports =
           caps.containsKey('reports') ? caps['reports'] == true : capManage;
       return;
@@ -225,12 +229,13 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     capManage = boss;
     capContent = boss || role == UserRole.smm;
     capDiscount = boss;
+    capCouponRedeem = capWait;
     capReports = boss;
   }
 
   void _resetCapabilities() {
     capWait = capBar = capKitchen =
-        capMenu = capManage = capContent = capDiscount = capReports = true;
+        capMenu = capManage = capContent = capDiscount = capCouponRedeem = capReports = true;
   }
 
   void setLanguage(AppLang value) {
@@ -2607,6 +2612,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   List<StaffTaskDto> plannerTasks = [];
   List<StaffTaskDto> plannerRules = [];
+  List<TaskAssigneeDto> taskAssignees = [];
   String? plannerDate; // ISO yyyy-MM-dd currently shown
   bool plannerLoading = false;
 
@@ -2618,6 +2624,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       final result = await _remoteApi.tasksForDay(date: date);
       plannerTasks = result.tasks;
       plannerRules = result.rules;
+      taskAssignees = result.assignees;
       plannerDate = date;
       return null;
     } on ApiException catch (e) {

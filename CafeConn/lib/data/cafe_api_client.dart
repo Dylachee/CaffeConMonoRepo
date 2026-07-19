@@ -493,7 +493,7 @@ class CafeApiClient {
           })));
 
   /// The planner's day view: tasks + (for manage) recurrence rules.
-  Future<({List<StaffTaskDto> tasks, List<StaffTaskDto> rules})> tasksForDay(
+  Future<({List<StaffTaskDto> tasks, List<StaffTaskDto> rules, List<TaskAssigneeDto> assignees})> tasksForDay(
       {String? date}) async {
     final res = await _send(
         () => _http.get(ApiConfig.staffTasks(date: date), headers: _headers()));
@@ -502,7 +502,11 @@ class CafeApiClient {
         .whereType<Map>()
         .map((e) => StaffTaskDto.fromJson(e.cast<String, dynamic>()))
         .toList();
-    return (tasks: parse(body['tasks']), rules: parse(body['rules']));
+    final assignees = ((body['assignees'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => TaskAssigneeDto.fromJson(e.cast<String, dynamic>()))
+        .toList();
+    return (tasks: parse(body['tasks']), rules: parse(body['rules']), assignees: assignees);
   }
 
   /// Planner quick-add — the same syntax as /task ("title @name 21:30").

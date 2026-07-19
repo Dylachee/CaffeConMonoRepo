@@ -48,6 +48,15 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
         SnackBar(content: Text(message), backgroundColor: AppTheme.danger));
   }
 
+  Future<void> _retryCamera() async {
+    setState(() => _scannerFailed = false);
+    try {
+      await _scanner?.start();
+    } catch (_) {
+      if (mounted) setState(() => _scannerFailed = true);
+    }
+  }
+
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_lookingUp) return;
     final raw =
@@ -225,8 +234,19 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                       color: AppTheme.surfaceSunken,
                       alignment: Alignment.center,
                       padding: const EdgeInsets.all(24),
-                      child: Text(L.scannerUnavailable,
-                          textAlign: TextAlign.center, style: T.bodySemi),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(L.scannerUnavailable,
+                              textAlign: TextAlign.center, style: T.bodySemi),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _retryCamera,
+                            icon: const Icon(Icons.camera_alt_outlined),
+                            label: Text(L.t('Enable camera', 'Attiva fotocamera')),
+                          ),
+                        ],
+                      ),
                     )
                   : MobileScanner(
                       controller: _scanner!,

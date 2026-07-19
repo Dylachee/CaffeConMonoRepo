@@ -276,6 +276,9 @@ class Employee(models.Model):
             # Guest-coupon issue/redeem. Campaign CRUD is `content` (SMM's
             # marketing job); touching money at the table needs this grant.
             "discount": boss or self.can_grant_discount,
+            # Redeeming a guest-held coupon is a waiter checkout action. It
+            # deliberately does not grant campaign issue/void access.
+            "coupon_redeem": boss or (self.is_on_shift and (self.role == Employee.Role.WAITER or self.can_wait)),
             "reports": boss or self.can_reports,
         }
 
