@@ -172,6 +172,9 @@ class OrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final table = state.tables.firstWhereOrNull((t) => t.id == order.tableId);
+    // Station accounts deliberately receive no floor dataset. The ticket still
+    // carries this small, non-sensitive table label so cooks know where it goes.
+    final tableNumber = order.tableNumber ?? table?.number;
     // Count from when the waiter accepted the order, not when the guest placed
     // it — a pending order shouldn't look "late" for the time it sat unapproved.
     final age = DateTime.now().difference(order.timerStart);
@@ -218,7 +221,7 @@ class OrderCard extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: zoneColor,
                           borderRadius: BorderRadius.circular(10)),
-                      child: Text(L.tableN(table?.number ?? '??').toUpperCase(),
+                      child: Text(L.tableN(tableNumber ?? '??').toUpperCase(),
                           style: T.priceSmall.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w900)),
@@ -380,8 +383,27 @@ class _ItemStateLine extends StatelessWidget {
         : line.ready
             ? AppTheme.success
             : zoneColor;
+    final canWorkStation = line.item.isBar ? state.capBar : state.capKitchen;
+    Widget? action;
+    if (state.canDeliverOrders && line.ready && !line.done) {
+      action = _ItemActionButton(
+        label: L.markDelivered,
+        icon: Icons.check_circle_outline_rounded,
+        color: AppTheme.success,
+        onPressed: () => state.toggleOrderItemDelivered(order, line),
+      );
+    } else if (canWorkStation && !line.ready && !line.done) {
+      action = _ItemActionButton(
+        label: L.markReady,
+        icon: Icons.check_rounded,
+        color: zoneColor,
+        onPressed: () => state.markOrderItemReady(order, line),
+      );
+    }
+
     return Row(children: [
-      Container(
+      Flexible(
+          child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: color.withValues(alpha: .12),
@@ -389,40 +411,41 @@ class _ItemStateLine extends StatelessWidget {
         ),
         child: Text(label,
             style: T.label.copyWith(color: color, fontWeight: FontWeight.w800)),
-      ),
-      if (state.canDeliverOrders && line.ready && !line.done) ...[
-        const SizedBox(width: 8),
-        TextButton(
-          style: TextButton.styleFrom(
-            foregroundColor: AppTheme.success,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          onPressed: () {
-            state.toggleOrderItemDelivered(order, line);
-          },
-          child: Text(L.markDelivered,
-              style: T.label.copyWith(fontWeight: FontWeight.w900)),
-        ),
-      ],
-      if ((line.item.isBar ? state.capBar : state.capKitchen) &&
-          !line.ready) ...[
-        const SizedBox(width: 8),
-        TextButton(
-          style: TextButton.styleFrom(
-            foregroundColor: zoneColor,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          onPressed: () => state.markOrderItemReady(order, line),
-          child: Text(L.markReady,
-              style: T.label.copyWith(fontWeight: FontWeight.w900)),
-        ),
-      ],
+      )),
+      if (action != null) ...[const SizedBox(width: 8), action],
     ]);
   }
+}
+
+class _ItemActionButton extends StatelessWidget {
+  const _ItemActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: color.withValues(alpha: .13),
+          foregroundColor: color,
+          elevation: 0,
+          minimumSize: const Size(0, 36),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          side: BorderSide(color: color.withValues(alpha: .35)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16),
+        label:
+            Text(label, style: T.label.copyWith(fontWeight: FontWeight.w900)),
+      );
 }
 
 /// Non-interactive status pill shown where a role has no action to take.

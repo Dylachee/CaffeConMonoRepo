@@ -63,6 +63,7 @@ class BootstrapCapabilityContractTests(TestCase):
             {item["station"] for order in body["orders"] for item in order["items"]},
             {"kitchen"},
         )
+        self.assertEqual(body["orders"][0]["tableNumber"], self.table.number)
 
     def test_waiter_receives_floor_and_catalog_datasets(self):
         body = client_for("contract-waiter", self.restaurant, Employee.Role.WAITER).get(self.url).json()

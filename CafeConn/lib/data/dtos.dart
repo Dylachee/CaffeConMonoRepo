@@ -193,6 +193,7 @@ class OrderItemDto {
 class OrderDto {
   final String id;
   final String tableId;
+  final int? tableNumber;
 
   /// Flutter OrderStatus name: accepted | cooking | ready | completed.
   final String status;
@@ -226,6 +227,7 @@ class OrderDto {
   const OrderDto({
     required this.id,
     required this.tableId,
+    this.tableNumber,
     required this.status,
     required this.station,
     required this.items,
@@ -242,6 +244,7 @@ class OrderDto {
   factory OrderDto.fromBootstrap(Map<String, dynamic> j) => OrderDto(
         id: _asString(j['id']),
         tableId: _asString(j['tableId']),
+        tableNumber: j['tableNumber'] == null ? null : _asInt(j['tableNumber']),
         status: _asString(j['status'], 'accepted'),
         station: _asString(j['station'], 'kitchen'),
         waiterId: j['waiterId'] == null ? null : _asString(j['waiterId']),
@@ -265,6 +268,7 @@ class OrderDto {
     return OrderDto(
       id: _asString(j['id']),
       tableId: _asString(table?['id'] ?? j['table_id']),
+      tableNumber: table?['number'] == null ? null : _asInt(table?['number']),
       status: flutterOrderStatusFromDjango(_asString(j['status'], 'new')),
       station: _asString(j['station_scope'], 'kitchen'),
       waiterId: employee == null ? null : _asString(employee['id']),

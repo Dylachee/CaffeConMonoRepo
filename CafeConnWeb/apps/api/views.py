@@ -349,6 +349,9 @@ def serialize_for_flutter_order(order: Order) -> dict:
     return {
         "id": str(order.id),
         "tableId": str(order.table_id),
+        # Station accounts do not receive the floor/table dataset, but they
+        # still need the table number printed on each ticket.
+        "tableNumber": order.table.number,
         "status": flutter_order_status(order.status),
         "station": order.station_scope,
         "waiterId": str(order.employee_id) if order.employee_id else None,

@@ -1009,28 +1009,18 @@ class _ActiveDeliverySection extends StatelessWidget {
         // Item still cooking: let the waiter advance it to "ready" right from
         // the table, not only from the kitchen/bar feed.
         if (state.canDeliverOrders && !l.ready && !l.done)
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.warning,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+          _DeliveryActionButton(
+            label: L.markReady,
+            icon: Icons.check_rounded,
+            color: AppTheme.warning,
             onPressed: () => state.markOrderItemReady(order, l),
-            child: Text(L.markReady,
-                style: T.label.copyWith(fontWeight: FontWeight.w900)),
           ),
         if (canDeliver)
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.ok,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+          _DeliveryActionButton(
+            label: L.markDelivered,
+            icon: Icons.check_circle_outline_rounded,
+            color: AppColors.ok,
             onPressed: () => state.toggleOrderItemDelivered(order, l),
-            child: Text(L.markDelivered,
-                style: T.label.copyWith(fontWeight: FontWeight.w900)),
           ),
         // Waiter/manager can remove a sent item (wrong order, guest changed
         // their mind). Stations can't — matches the backend permission.
@@ -1079,4 +1069,35 @@ class _ActiveDeliverySection extends StatelessWidget {
       await state.deleteOrderItem(order, l);
     }
   }
+}
+
+class _DeliveryActionButton extends StatelessWidget {
+  const _DeliveryActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: color.withValues(alpha: .13),
+          foregroundColor: color,
+          elevation: 0,
+          minimumSize: const Size(0, 36),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          side: BorderSide(color: color.withValues(alpha: .35)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16),
+        label:
+            Text(label, style: T.label.copyWith(fontWeight: FontWeight.w900)),
+      );
 }

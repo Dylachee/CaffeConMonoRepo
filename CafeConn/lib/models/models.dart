@@ -563,6 +563,7 @@ class CafeOrder {
   CafeOrder({
     required this.id,
     required this.tableId,
+    this.tableNumber,
     required this.items,
     required this.status,
     required this.createdAt,
@@ -576,6 +577,7 @@ class CafeOrder {
   });
   final String id;
   final String tableId;
+  final int? tableNumber;
   final List<CartLine> items;
   OrderStatus status;
   final DateTime createdAt;
@@ -618,6 +620,7 @@ class CafeOrder {
   Map<String, dynamic> toJson() => {
         'id': id,
         'tableId': tableId,
+        'tableNumber': tableNumber,
         'items': items.map((i) => i.toJson()).toList(),
         'status': status.index,
         'createdAt': createdAt.millisecondsSinceEpoch,
@@ -631,6 +634,7 @@ class CafeOrder {
       CafeOrder(
         id: j['id'],
         tableId: j['tableId'],
+        tableNumber: (j['tableNumber'] as num?)?.toInt(),
         discountAmount: (j['discountAmount'] as num?)?.toDouble() ?? 0,
         couponCode: j['couponCode'] as String? ?? '',
         waiterId: j['waiterId'] as String?,

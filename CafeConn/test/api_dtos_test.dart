@@ -56,6 +56,7 @@ void main() {
         {
           'id': '1201',
           'tableId': '3',
+          'tableNumber': 3,
           'status': 'cooking',
           'station': 'kitchen',
           'createdAt': '2026-06-28T10:05:00Z',
@@ -88,6 +89,7 @@ void main() {
       expect(dto.menu.single.categoryId, '11');
       expect(dto.categories.single.name, 'Caffetteria');
       expect(dto.orders.single.status, 'cooking');
+      expect(dto.orders.single.tableNumber, 3);
       // Server timestamp must survive parsing — the kitchen timer used to
       // reset to 00:00 on every bootstrap because createdAt was dropped.
       expect(dto.orders.single.createdAt, '2026-06-28T10:05:00Z');
@@ -136,6 +138,7 @@ void main() {
           OrderDto.fromDrf((drfOrder['order'] as Map).cast<String, dynamic>());
       expect(order.id, '1201');
       expect(order.tableId, '3');
+      expect(order.tableNumber, 3);
       expect(order.status, 'cooking');
       expect(order.station, 'mixed');
       expect(order.createdAt, '2026-06-28T10:05:00Z');

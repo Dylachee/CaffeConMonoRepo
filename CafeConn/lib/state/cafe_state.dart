@@ -848,6 +848,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       // each other after orders were removed/re-synced.
       id: 'L${DateTime.now().millisecondsSinceEpoch}${feed.index}',
       tableId: table.id,
+      tableNumber: table.number,
       items: lines,
       status: OrderStatus.cooking,
       createdAt: DateTime.now(),
@@ -2979,6 +2980,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     return CafeOrder(
       id: d.id,
       tableId: d.tableId,
+      tableNumber: d.tableNumber,
       items: lines,
       discountAmount: d.discountAmount,
       couponCode: d.couponCode,
