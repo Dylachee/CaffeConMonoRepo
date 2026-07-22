@@ -402,7 +402,7 @@ class _ItemStateLine extends StatelessWidget {
     }
 
     return Row(children: [
-      Flexible(
+      Expanded(
           child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
