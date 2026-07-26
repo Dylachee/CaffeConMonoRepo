@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.menu_page, name="menu"),
     path("t/<int:table_id>/", views.menu_page, name="menu-for-table"),
     path("n/<int:table_number>/", views.menu_page, name="menu-for-table-number"),
+    path("n/<int:table_number>/bill/", views.guest_table_bill, name="table-bill"),
     path("qr/n/<int:table_number>.svg", views.table_qr_svg, name="table-qr-svg"),
     path("qr/n/<int:table_number>/print/", views.table_qr_print, name="table-qr-print"),
     path("feed/", views_feed.feed_posts, name="feed"),

@@ -196,7 +196,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         setState(() => _category = value);
       },
       child: Container(
-        constraints: const BoxConstraints(minHeight: 36, maxWidth: 132),
+        constraints: const BoxConstraints(minHeight: 38),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: active ? color : color.withValues(alpha: 0.13),
@@ -204,7 +204,7 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           border:
               Border.all(color: active ? color : color.withValues(alpha: 0.5)),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           if (icon != null) ...[
             Icon(icon, size: 13, color: active ? onColor : color),
             const SizedBox(width: 4),
@@ -367,15 +367,19 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
           // Category bar, R-Keeper style: ALL buttons visible at once (no
           // horizontal scrolling — that was what made switching slow), one tap
           // to any category, colors matching the tiles below.
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: [
+          LayoutBuilder(builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 700
+                ? 4
+                : constraints.maxWidth >= 430
+                    ? 3
+                    : 2;
+            const gap = 6.0;
+            final width =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            final buttons = <Widget>[
               _categoryBtn(L.popular, _popularFilter, AppColors.famPopular,
                   icon: Icons.star_rounded),
               _categoryBtn(L.all, 'All', AppColors.espresso),
-              // Owner-defined categories when the hub provides them; the
-              // hardcoded list is only an offline fallback.
               if (visibleCategories.isNotEmpty)
                 for (final category in visibleCategories)
                   _categoryBtn(category.name, category.id, category.color)
@@ -383,8 +387,16 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                 for (final category in MenuCategories.all)
                   _categoryBtn(
                       category, category, AppColors.categoryColor(category)),
-            ],
-          ),
+            ];
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final button in buttons)
+                  SizedBox(width: width, child: button),
+              ],
+            );
+          }),
           if (_category == _popularFilter &&
               !state.menu.any((m) => m.isPopular))
             Padding(
@@ -768,12 +780,15 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
   final Map<MenuItem, TextEditingController> _noteCtrl = {};
   final Map<MenuItem, bool> _noteExp = {};
   String? _tableId;
+  late final String _requestId;
 
   @override
   void initState() {
     super.initState();
     _items = Map.from(widget.selectionQty);
     _tableId = widget.fixedTableId;
+    _requestId =
+        '${_tableId ?? 'table'}-${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';
     for (final item in _items.keys) {
       _noteCtrl[item] = TextEditingController();
       _noteExp[item] = false;
@@ -978,7 +993,8 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
         modifiers: note,
       );
     }).toList();
-    final order = await state.submitOrderLines(tableId: tableId, lines: lines);
+    final order = await state.submitOrderLines(
+        tableId: tableId, lines: lines, requestId: _requestId);
 
     if (!context.mounted) return;
     // Centre-screen toast (on the root overlay) so it survives the navigation
@@ -996,8 +1012,9 @@ class _PrecheckSheetState extends State<_PrecheckSheet> {
         icon: Icons.error_outline_rounded,
       );
     }
+    if (order == null) return;
     Navigator.pop(context);
-    widget.onConfirmed?.call(order != null);
+    widget.onConfirmed?.call(true);
   }
 }
 

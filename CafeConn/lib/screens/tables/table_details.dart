@@ -25,6 +25,17 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
   final noteController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<CafeState>();
+      final table = state.currentTable ?? state.tables.firstOrNull;
+      if (table != null) state.refreshTableBill(table.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
     final table = state.currentTable ?? state.tables.first;
@@ -45,16 +56,23 @@ class _TableDetailsScreenState extends State<TableDetailsScreen> {
     final orderItems = tableOrders.expand((o) => o.items).toList();
     final deliveredCount = orderItems.where((l) => l.done).length;
     final totalItems = orderItems.length;
-    final total = orderItems.fold(0.0, (sum, l) => sum + l.total) +
-        drafts.fold(0.0, (sum, l) => sum + l.total);
+    final serverBill = state.tableBills[table.id];
+    double billNumber(String key, double fallback) =>
+        double.tryParse('${serverBill?[key] ?? ''}') ?? fallback;
+    final localOrderTotal = orderItems.fold(0.0, (sum, l) => sum + l.total);
+    final draftTotal = drafts.fold(0.0, (sum, l) => sum + l.total);
+    final total = billNumber('subtotal', localOrderTotal) + draftTotal;
     // Coupon snapshots from the hub (redeemed against this visit's orders).
-    final discountTotal =
+    final localDiscount =
         tableOrders.fold(0.0, (sum, o) => sum + o.discountAmount);
+    final discountTotal = billNumber('discount', localDiscount);
     final couponCodes = tableOrders
         .where((o) => o.couponCode.isNotEmpty)
         .map((o) => o.couponCode)
         .join(', ');
-    final totalDue = (total - discountTotal) > 0 ? total - discountTotal : 0.0;
+    final totalDue = serverBill == null
+        ? ((total - discountTotal) > 0 ? total - discountTotal : 0.0)
+        : billNumber('totalDue', total - discountTotal) + draftTotal;
 
     return AppScaffold(
       child: Column(

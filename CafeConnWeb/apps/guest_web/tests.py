@@ -1,7 +1,21 @@
 from django.core.cache import cache
 from django.test import TestCase
 
-from apps.core.models import SocialPost, VenueSettings
+from decimal import Decimal
+
+from django.utils import timezone
+
+from apps.core.menu_catalog import CLIENT_MENU_TAG
+from apps.core.models import (
+    MenuCategory,
+    MenuItem,
+    Order,
+    OrderItem,
+    Restaurant,
+    SocialPost,
+    Table,
+    VenueSettings,
+)
 from apps.core.social_embed import EMBED_SCRIPTS
 
 
@@ -169,3 +183,65 @@ class GuestFeedEndpointTests(TestCase):
         response = self.client.get("/r/sissy-bar/feed/?cursor=abc&limit=junk")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["posts"]), 1)
+
+
+class GuestTableBillTests(TestCase):
+    def setUp(self):
+        self.restaurant = Restaurant.objects.get(slug="sissy-bar")
+        self.table = Table.objects.create(
+            restaurant=self.restaurant,
+            number=97,
+            status=Table.Status.OCCUPIED,
+            opened_at=timezone.now(),
+        )
+        category = MenuCategory.objects.create(
+            restaurant=self.restaurant, key="bill-test", name="Bill test"
+        )
+        self.item = MenuItem.objects.create(
+            restaurant=self.restaurant,
+            category=category,
+            name="Shared water",
+            price=Decimal("2.50"),
+            tags=[CLIENT_MENU_TAG],
+        )
+
+    def _order(self, source, quantity, discount=None):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            table=self.table,
+            source=source,
+            status=Order.Status.NEW,
+            discount_amount=discount,
+        )
+        OrderItem.objects.create(
+            order=order,
+            menu_item=self.item,
+            quantity=quantity,
+            unit_price=self.item.price,
+        )
+        return order
+
+    def test_bill_contains_guest_and_staff_orders_from_current_visit(self):
+        guest = self._order(Order.Source.GUEST_WEB, 1)
+        staff = self._order(Order.Source.STAFF_APP, 2, Decimal("1.00"))
+
+        payload = self.client.get(f"/r/sissy-bar/n/{self.table.number}/bill/").json()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual({row["id"] for row in payload["orders"]}, {guest.pk, staff.pk})
+        self.assertEqual(payload["subtotal"], "7.50")
+        self.assertEqual(payload["discount"], "1.00")
+        self.assertEqual(payload["totalDue"], "6.50")
+
+    def test_paid_and_cancelled_orders_are_not_in_current_bill(self):
+        paid = self._order(Order.Source.GUEST_WEB, 1)
+        paid.status = Order.Status.PAID
+        paid.save(update_fields=["status"])
+        cancelled = self._order(Order.Source.STAFF_APP, 1)
+        cancelled.status = Order.Status.CANCELLED
+        cancelled.save(update_fields=["status"])
+
+        payload = self.client.get(f"/r/sissy-bar/n/{self.table.number}/bill/").json()
+
+        self.assertEqual(payload["orders"], [])
+        self.assertEqual(payload["totalDue"], "0.00")

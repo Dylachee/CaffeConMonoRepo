@@ -59,10 +59,19 @@ class ApiConfig {
   static Uri bootstrap() => Uri.parse('$apiRoot/staff/bootstrap/');
   static Uri stats() => Uri.parse('$apiRoot/staff/stats/');
   static Uri orderHistory() => Uri.parse('$apiRoot/staff/order-history/');
+  static Uri stationHistory(String station, {String? date}) =>
+      Uri.parse('$apiRoot/staff/station-history/').replace(queryParameters: {
+        'station': station,
+        if (date != null) 'date': date,
+      });
   static Uri tableHistory(String tableId, {String? date}) =>
       Uri.parse('$apiRoot/staff/table-history/').replace(queryParameters: {
         'table': tableId,
         if (date != null) 'date': date,
+      });
+  static Uri tableBill(String tableId) =>
+      Uri.parse('$apiRoot/staff/table-bill/').replace(queryParameters: {
+        'table': tableId,
       });
   static Uri staffAccounts() => Uri.parse('$apiRoot/staff/accounts/');
   static Uri employees() => Uri.parse('$apiRoot/employees/');
@@ -76,6 +85,7 @@ class ApiConfig {
   static Uri rejectOrder(String id) => Uri.parse('$apiRoot/orders/$id/reject/');
   static Uri orderEvents(String id) => Uri.parse('$apiRoot/orders/$id/events/');
   static Uri menuItems() => Uri.parse('$apiRoot/menu-items/');
+  static Uri menuSnapshot() => Uri.parse('$apiRoot/staff/menu-snapshot/');
   static Uri toggleMenuItemPopular(String id) =>
       Uri.parse('$apiRoot/menu-items/$id/toggle-popular/');
   static Uri menuCategories() => Uri.parse('$apiRoot/menu-categories/');

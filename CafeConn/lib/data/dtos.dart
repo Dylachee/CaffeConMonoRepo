@@ -942,6 +942,7 @@ class StaffTaskDto {
 
   /// Wire: none | daily | weekly.
   final String recurrence;
+  final bool recurrenceEnabled;
   final List<int> recurrenceWeekdays;
 
   /// Wire: open | done | cancelled.
@@ -965,6 +966,7 @@ class StaffTaskDto {
     required this.createdByName,
     required this.dueAt,
     required this.recurrence,
+    required this.recurrenceEnabled,
     required this.recurrenceWeekdays,
     required this.status,
     required this.doneByName,
@@ -1001,6 +1003,7 @@ class StaffTaskDto {
         createdByName: createdByName,
         dueAt: dueAt ?? this.dueAt,
         recurrence: recurrence,
+        recurrenceEnabled: recurrenceEnabled,
         recurrenceWeekdays: recurrenceWeekdays,
         status: status ?? this.status,
         doneByName: clearDone ? '' : (doneByName ?? this.doneByName),
@@ -1019,6 +1022,7 @@ class StaffTaskDto {
         createdByName: _asString(j['created_by_name']),
         dueAt: j['due_at'] == null ? null : _asString(j['due_at']),
         recurrence: _asString(j['recurrence'], 'none'),
+        recurrenceEnabled: j['recurrence_enabled'] != false,
         recurrenceWeekdays: ((j['recurrence_weekdays'] as List?) ?? const [])
             .map((e) => _asInt(e))
             .toList(),

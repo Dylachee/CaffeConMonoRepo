@@ -7,6 +7,8 @@ all staff devices stay in sync — the helpers return the saved table to make
 that convenient.
 """
 
+from decimal import Decimal
+
 from django.utils import timezone
 
 from apps.core.models import AttentionSignal, Order, Table
@@ -16,6 +18,59 @@ ATTENTION_BY_SIGNAL = {
     AttentionSignal.Type.CALL_WAITER: Table.Attention.CALL,
     AttentionSignal.Type.BILL_REQUEST: Table.Attention.BILL,
 }
+
+
+def current_table_bill(table: Table) -> dict:
+    """Canonical current-visit bill shared by guest and staff clients."""
+    orders = []
+    if table.opened_at is not None:
+        orders = list(
+            table.orders.exclude(
+                status__in=[Order.Status.PAID, Order.Status.CANCELLED]
+            )
+            .select_related("employee", "coupon")
+            .prefetch_related("items", "items__menu_item")
+            .order_by("created_at", "id")
+        )
+    subtotal = sum((order.total for order in orders), Decimal("0.00"))
+    discount = sum(
+        (order.discount_amount or Decimal("0.00") for order in orders),
+        Decimal("0.00"),
+    )
+    total_due = max(subtotal - discount, Decimal("0.00"))
+    return {
+        "tableId": table.pk,
+        "tableNumber": table.number,
+        "subtotal": f"{subtotal:.2f}",
+        "discount": f"{discount:.2f}",
+        "totalDue": f"{total_due:.2f}",
+        "orders": [
+            {
+                "id": order.pk,
+                "status": order.status,
+                "source": order.source,
+                "employee": order.employee.name if order.employee else "",
+                "createdAt": order.created_at.isoformat(),
+                "subtotal": f"{order.total:.2f}",
+                "discount": f"{(order.discount_amount or Decimal('0.00')):.2f}",
+                "totalDue": f"{order.total_due:.2f}",
+                "items": [
+                    {
+                        "id": item.pk,
+                        "name": item.menu_item.name,
+                        "quantity": item.quantity,
+                        "unitPrice": f"{item.unit_price:.2f}",
+                        "lineTotal": f"{item.line_total:.2f}",
+                        "station": item.station,
+                        "ready": item.ready,
+                        "done": item.done,
+                    }
+                    for item in order.items.all()
+                ],
+            }
+            for order in orders
+        ],
+    }
 
 
 def apply_signal_to_table(signal: AttentionSignal, table: Table) -> Table:

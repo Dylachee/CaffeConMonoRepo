@@ -335,6 +335,7 @@ class Order(models.Model):
     station_scope = models.CharField(max_length=24, choices=StationScope.choices, default=StationScope.MIXED, db_index=True)
     guest_name = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
+    client_request_id = models.CharField(max_length=96, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     # When a waiter approved the order (awaiting → new). The kitchen/bar prep
     # timer counts from here, not from created_at — a guest order shouldn't look
@@ -368,6 +369,13 @@ class Order(models.Model):
             # ordered by recency — bootstrap, station feed, guest tracking.
             models.Index(fields=["status", "-created_at"], name="order_status_created_idx"),
             models.Index(fields=["restaurant", "status", "-created_at"], name="order_rest_status_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["restaurant", "client_request_id"],
+                condition=models.Q(client_request_id__isnull=False),
+                name="order_rest_client_request_unique",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -1170,6 +1178,7 @@ class StaffTask(models.Model):
     recurrence = models.CharField(
         max_length=16, choices=Recurrence.choices, default=Recurrence.NONE
     )
+    recurrence_enabled = models.BooleanField(default=True)
     # Weekly rules: ISO weekday numbers 0=Mon .. 6=Sun.
     recurrence_weekdays = models.JSONField(default=list, blank=True)
     recurring_parent = models.ForeignKey(

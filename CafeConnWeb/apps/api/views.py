@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.http import Http404
@@ -41,6 +42,7 @@ from apps.core import push as web_push
 from apps.core.services import (
     acknowledge_signal_on_table,
     apply_signal_to_table,
+    current_table_bill,
     reset_free_table,
     sync_order_status_from_items,
 )
@@ -56,6 +58,7 @@ from apps.api.serializers import (
     TableSerializer,
 )
 from apps.core.menu_i18n import menu_item_labels
+from apps.core.menu_snapshots import menu_snapshot_payload
 from apps.core.menu_visibility import (
     menu_has_client_items,
     menu_item_archived,
@@ -716,6 +719,97 @@ class StaffOrderHistoryView(APIView):
             .prefetch_related("items", "items__menu_item")
             .order_by("-created_at")
         )
+
+
+class StaffStationHistoryView(APIView):
+    """Venue-local day history for one station, without financial fields."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        restaurant = restaurant_for_request(request)
+        station = request.query_params.get("station", "")
+        if station not in {"kitchen", "bar"}:
+            return Response(
+                {"detail": "station must be kitchen or bar"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not capabilities_for_request(request)[station]:
+            raise PermissionDenied(f"You need the {station.title()} capability.")
+        venue_tz = ZoneInfo(restaurant.timezone or "Europe/Rome")
+        date_text = request.query_params.get("date", "")
+        try:
+            day = datetime.fromisoformat(date_text).date() if date_text else timezone.now().astimezone(venue_tz).date()
+        except ValueError:
+            return Response(
+                {"detail": "date must be YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        day_start = datetime.combine(day, time.min, tzinfo=venue_tz)
+        day_end = day_start + timedelta(days=1)
+        orders = (
+            Order.objects.filter(
+                restaurant=restaurant,
+                created_at__gte=day_start,
+                created_at__lt=day_end,
+                items__station=station,
+            )
+            .exclude(status=Order.Status.AWAITING)
+            .select_related("table")
+            .prefetch_related("items", "items__menu_item")
+            .distinct()
+            .order_by("-created_at")
+        )
+        return Response(
+            {
+                "date": day.isoformat(),
+                "station": station,
+                "orders": [
+                    {
+                        "id": order.pk,
+                        "tableNumber": order.table.number,
+                        "status": order.status,
+                        "notes": order.notes,
+                        "createdAt": order.created_at.isoformat(),
+                        "items": [
+                            {
+                                "id": item.pk,
+                                "name": menu_item_labels(item.menu_item)["name_en"],
+                                "qty": item.quantity,
+                                "notes": item.notes,
+                                "ready": item.ready,
+                                "done": item.done,
+                            }
+                            for item in order.items.all()
+                            if item.station == station
+                        ],
+                    }
+                    for order in orders
+                ],
+            }
+        )
+
+
+class StaffTableBillView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        restaurant = restaurant_for_request(request)
+        if not capabilities_for_request(request)["wait"]:
+            raise PermissionDenied("You need the Floor capability to view a table bill.")
+        table = get_object_or_404(
+            Table, restaurant=restaurant, pk=request.query_params.get("table")
+        )
+        return Response(current_table_bill(table))
+
+
+class StaffMenuSnapshotView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not capabilities_for_request(request)["manage"]:
+            raise PermissionDenied("Only a manager or admin can export the menu.")
+        return Response(menu_snapshot_payload(restaurant_for_request(request)))
         return Response(
             {
                 "orders": [
@@ -1034,6 +1128,25 @@ class OrderViewSet(RestaurantQuerysetMixin, viewsets.ModelViewSet):
     filterset_fields = ["status", "table"]
     search_fields = ["guest_name", "notes", "table__number"]
     ordering_fields = ["created_at", "updated_at", "status"]
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        if not capabilities_for_request(request)["wait"]:
+            raise PermissionDenied("You need the Floor capability to create an order.")
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        table = serializer.validated_data["table"]
+        Table.objects.select_for_update().get(pk=table.pk)
+        request_id = serializer.validated_data.get("client_request_id")
+        if request_id:
+            existing = self.get_queryset().filter(
+                restaurant=self.get_restaurant(), client_request_id=request_id
+            ).first()
+            if existing is not None:
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @transaction.atomic
     def perform_create(self, serializer):

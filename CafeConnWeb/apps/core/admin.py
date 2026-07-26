@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 
@@ -17,6 +18,36 @@ from apps.core.models import (
     Table,
     VenueSettings,
 )
+
+
+class MenuItemAdminForm(forms.ModelForm):
+    show_in_guest_menu = forms.BooleanField(
+        required=False, label="Mostra nel menu ospiti"
+    )
+
+    class Meta:
+        model = MenuItem
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["show_in_guest_menu"].initial = (
+            self.instance.pk is None or "client" in (self.instance.tags or [])
+        )
+
+    def save(self, commit=True):
+        item = super().save(commit=False)
+        tags = list(item.tags or [])
+        visible = self.cleaned_data.get("show_in_guest_menu", True)
+        if visible and "client" not in tags:
+            tags.append("client")
+        if not visible:
+            tags = [tag for tag in tags if tag != "client"]
+        item.tags = tags
+        if commit:
+            item.save()
+            self.save_m2m()
+        return item
 
 
 @admin.register(MenuCategory)
@@ -50,11 +81,13 @@ class MenuItemAdmin(admin.ModelAdmin):
     right in the list, bulk actions for the common tag flips so nobody has to
     hand-edit the tags JSON."""
 
+    form = MenuItemAdminForm
     list_display = (
         "name",
         "category",
         "station",
         "price",
+        "is_guest_visible",
         "is_waiter_popular",
         "is_promoted",
         "is_available",
@@ -81,7 +114,7 @@ class MenuItemAdmin(admin.ModelAdmin):
     ]
     fieldsets = (
         (None, {"fields": ("name", "description", "price", "category", "station")}),
-        ("Visibilità", {"fields": ("is_available", "is_promoted", "tags")}),
+        ("Visibilità", {"fields": ("is_available", "show_in_guest_menu", "is_promoted", "tags")}),
         (
             "Dettagli piatto",
             {
@@ -101,6 +134,10 @@ class MenuItemAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description="★ Camerieri")
     def is_waiter_popular(self, obj):
         return "popular" in (obj.tags or [])
+
+    @admin.display(boolean=True, description="Menu ospiti")
+    def is_guest_visible(self, obj):
+        return "client" in (obj.tags or [])
 
     def _set_tag(self, queryset, tag, on):
         for item in queryset:

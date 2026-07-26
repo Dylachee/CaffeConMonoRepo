@@ -21,6 +21,16 @@ class UnifiedOrderFeedScreen extends StatefulWidget {
 class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
   // 0 = kitchen, 1 = bar — tap-only, no swipe (avoids conflict with main PageView)
   int _zone = 0;
+  bool _today = false;
+
+  Future<void> _showToday(CafeState state, FeedType zone) async {
+    setState(() => _today = true);
+    final error = await state.refreshStationHistory(zone);
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppTheme.danger));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +94,10 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
                   icon: Icons.restaurant,
                   iconColor: AppTheme.warning,
                   selected: zone == FeedType.kitchen,
-                  onTap: () => setState(() => _zone = 0),
+                  onTap: () {
+                    setState(() => _zone = 0);
+                    if (_today) state.refreshStationHistory(FeedType.kitchen);
+                  },
                 ),
                 _ZoneTab(
                   label: L.barU,
@@ -92,26 +105,168 @@ class _UnifiedOrderFeedScreenState extends State<UnifiedOrderFeedScreen> {
                   icon: Icons.local_bar,
                   iconColor: AppTheme.bar,
                   selected: zone == FeedType.bar,
-                  onTap: () => setState(() => _zone = 1),
+                  onTap: () {
+                    setState(() => _zone = 1);
+                    if (_today) state.refreshStationHistory(FeedType.bar);
+                  },
                 ),
               ]),
             ),
           const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+                color: AppTheme.surfaceSunken,
+                borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              _ViewTab(
+                label: L.t('Active', 'Attivi'),
+                selected: !_today,
+                onTap: () => setState(() => _today = false),
+              ),
+              _ViewTab(
+                label: L.today,
+                selected: _today,
+                onTap: () => _showToday(state, zone),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
           Expanded(
-            child: visible.isEmpty
-                ? EmptyState(
-                    icon: Icons.check_circle_outline,
-                    title: L.allDone,
-                    sub: zone == FeedType.kitchen
-                        ? L.noActiveKitchen
-                        : L.noActiveBar)
-                : ListView.builder(
-                    itemCount: visible.length,
-                    itemBuilder: (_, i) =>
-                        OrderCard(order: visible[i], zone: zone, index: i)),
+            child: _today
+                ? _StationHistoryList(
+                    orders: state.stationHistory,
+                    loading: state.stationHistoryLoading,
+                    zone: zone,
+                  )
+                : visible.isEmpty
+                    ? EmptyState(
+                        icon: Icons.check_circle_outline,
+                        title: L.allDone,
+                        sub: zone == FeedType.kitchen
+                            ? L.noActiveKitchen
+                            : L.noActiveBar)
+                    : ListView.builder(
+                        itemCount: visible.length,
+                        itemBuilder: (_, i) =>
+                            OrderCard(order: visible[i], zone: zone, index: i)),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ViewTab extends StatelessWidget {
+  const _ViewTab(
+      {required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(11),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? AppTheme.card : Colors.transparent,
+              borderRadius: BorderRadius.circular(11),
+              boxShadow: selected ? const [AppTheme.shadowCard] : null,
+            ),
+            child: Text(label,
+                style: T.bodySemi
+                    .copyWith(color: selected ? AppTheme.ink : AppTheme.ink2)),
+          ),
+        ),
+      );
+}
+
+class _StationHistoryList extends StatelessWidget {
+  const _StationHistoryList(
+      {required this.orders, required this.loading, required this.zone});
+  final List<Map<String, dynamic>> orders;
+  final bool loading;
+  final FeedType zone;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const Center(child: CircularProgressIndicator());
+    if (orders.isEmpty) {
+      return EmptyState(
+          icon: Icons.history_rounded,
+          title: L.t('No orders today', 'Nessun ordine oggi'),
+          sub: L.t('Finished tickets will appear here.',
+              'I ticket completati appariranno qui.'));
+    }
+    final color = zone == FeedType.kitchen ? AppTheme.warning : AppTheme.bar;
+    return ListView.builder(
+      itemCount: orders.length,
+      itemBuilder: (context, index) {
+        final order = orders[index];
+        final items =
+            ((order['items'] as List?) ?? const []).whereType<Map>().toList();
+        final created = DateTime.tryParse('${order['createdAt']}')?.toLocal();
+        final status = '${order['status'] ?? ''}';
+        final cancelled = status == 'cancelled';
+        return AppCard(
+          borderColor: cancelled ? AppTheme.danger : null,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(9)),
+                child: Text(
+                    L.tableN(order['tableNumber'] ?? '??').toUpperCase(),
+                    style: T.priceSmall.copyWith(
+                        color: Colors.white, fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Text('#${order['id']}', style: T.bodySemi)),
+              Text(
+                created == null
+                    ? ''
+                    : '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}',
+                style: T.bodySemi.copyWith(
+                    color: cancelled ? AppTheme.danger : AppTheme.ink2,
+                    fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+            ]),
+            if (cancelled)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(L.t('Cancelled', 'Annullato'),
+                    style: T.smallSemi.copyWith(color: AppTheme.danger)),
+              ),
+            const Divider(height: 20),
+            for (final item in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(children: [
+                  Text('${item['qty']}×',
+                      style: T.bodySemi.copyWith(color: color)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('${item['name']}', style: T.bodySemi)),
+                  Icon(
+                    item['done'] == true
+                        ? Icons.done_all_rounded
+                        : Icons.check_rounded,
+                    size: 18,
+                    color: AppTheme.success,
+                  ),
+                ]),
+              ),
+            if ('${order['notes'] ?? ''}'.trim().isNotEmpty)
+              OrderNoteBox(note: '${order['notes']}'),
+          ]),
+        );
+      },
     );
   }
 }

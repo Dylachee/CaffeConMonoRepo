@@ -55,6 +55,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   bool statsLoading = false;
   List<OrderHistoryDto> orderHistory = [];
   bool orderHistoryLoading = false;
+  List<Map<String, dynamic>> stationHistory = [];
+  bool stationHistoryLoading = false;
+  final Map<String, Map<String, dynamic>> tableBills = {};
   String? _lastUser;
   String? _lastPass;
   Box get _box => Hive.box('cafeconnect');
@@ -683,7 +686,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     _submittingTables.add(table.id);
     notifyListeners();
     try {
-      return await _submitOrderImpl(table, onlyFor);
+      return await _submitOrderImpl(table, onlyFor,
+          requestId: _newOrderRequestId(table.id));
     } finally {
       _submittingTables.remove(table.id);
       notifyListeners();
@@ -698,6 +702,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   Future<CafeOrder?> submitOrderLines({
     required String tableId,
     required List<CartLine> lines,
+    required String requestId,
   }) async {
     final table = tables.firstWhereOrNull((t) => t.id == tableId);
     if (table == null || lines.isEmpty) return null;
@@ -705,7 +710,8 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     _submittingTables.add(table.id);
     notifyListeners();
     try {
-      return await _submitOrderImpl(table, null, draftLines: lines);
+      return await _submitOrderImpl(table, null,
+          draftLines: lines, requestId: requestId);
     } finally {
       _submittingTables.remove(table.id);
       notifyListeners();
@@ -713,10 +719,11 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<CafeOrder?> _submitOrderImpl(CafeTable table, FeedType? onlyFor,
-      {List<CartLine>? draftLines}) async {
+      {List<CartLine>? draftLines, required String requestId}) async {
     // When connected, send to the hub; realtime echoes it back to all devices.
     if (backendConnected) {
-      return _submitOrderRemote(table, onlyFor, draftLines: draftLines);
+      return _submitOrderRemote(table, onlyFor,
+          draftLines: draftLines, requestId: requestId);
     }
 
     final source = draftLines ?? tableCart(table.id).where((l) => !l.sent);
@@ -773,10 +780,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Online order path: create on the hub, then reflect the server orders
   /// locally (idempotent by id, so the WebSocket echo won't duplicate them).
-  /// Kitchen and bar lines go as two separate orders so each order has a
-  /// single station_scope — a "mixed" order used to disappear from the bar.
+  /// One Send is one atomic server order. Station feeds filter its lines.
   Future<CafeOrder?> _submitOrderRemote(CafeTable table, FeedType? onlyFor,
-      {List<CartLine>? draftLines}) async {
+      {List<CartLine>? draftLines, required String requestId}) async {
     final source = draftLines ?? tableCart(table.id).where((l) => !l.sent);
     final toSend = source.where((l) {
       if (onlyFor == null) return true;
@@ -784,63 +790,26 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     }).toList();
     if (toSend.isEmpty) return null;
 
-    CafeOrder? last;
-    var hadFailure = false;
-    for (final lines in [
-      toSend.where((l) => !l.isBar).toList(),
-      toSend.where((l) => l.isBar).toList(),
-    ]) {
-      if (lines.isEmpty) continue;
-      final dto = await createRemoteOrder(tableId: table.id, lines: lines);
-      if (dto == null) {
-        // Backend rejected/unreachable; these lines stay unsent and the
-        // error is surfaced via backendError. Already-sent lines keep sent.
-        hadFailure = true;
-        if (draftLines != null) {
-          for (final l in lines) {
-            _addDraftLine(table.id, l);
-          }
-          _saveTables();
-        }
-        notifyListeners();
-        continue;
-      }
-      for (final l in lines) {
-        if (draftLines == null) l.sent = true;
-      }
-      final order = _orderFromDto(dto);
-      _upsertLocalOrder(order);
-      last = order;
+    final dto = await createRemoteOrder(
+        tableId: table.id, lines: toSend, requestId: requestId);
+    if (dto == null) return null;
+    for (final line in toSend) {
+      if (draftLines == null) line.sent = true;
     }
-    if (last == null) return null;
+    final order = _orderFromDto(dto);
+    _upsertLocalOrder(order);
 
     // The waiter sent this order himself — the table is occupied, not waiting.
     table.status = TableStatus.occupied;
-    table.currentOrderId = last.id;
+    table.currentOrderId = order.id;
     _saveTables();
     HapticFeedback.mediumImpact();
     notifyListeners();
-    if (hadFailure) return null;
-    return last;
+    return order;
   }
 
-  void _addDraftLine(String tableId, CartLine line) {
-    final lines = tableCart(tableId);
-    final existing = lines.firstWhereOrNull((candidate) =>
-        !candidate.sent &&
-        candidate.item.id == line.item.id &&
-        candidate.modifiers == line.modifiers);
-    if (existing != null) {
-      existing.quantity += line.quantity;
-      return;
-    }
-    lines.add(CartLine(
-      item: line.item,
-      quantity: line.quantity,
-      modifiers: line.modifiers,
-      lockedPrice: line.lockedPrice,
-    ));
-  }
+  String _newOrderRequestId(String tableId) =>
+      '$tableId-${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
 
   CafeOrder _makeOrder(CafeTable table, List<CartLine> lines, FeedType feed) {
     return CafeOrder(
@@ -1223,6 +1192,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       'category': item.categoryId,
       'station': item.station.isEmpty ? 'kitchen' : item.station,
       'tags': item.tags,
+      'show_in_guest_menu': item.tags.contains('client'),
       'is_available': item.available,
       'is_promoted': item.promo,
       'preparation_minutes': item.prepTime,
@@ -1239,6 +1209,18 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       backendError = e.message;
       debugPrint('saveMenuItem push failed: $e');
       notifyListeners();
+      return e.message;
+    }
+  }
+
+  Future<String?> copyMenuSnapshot() async {
+    if (!backendConnected) return L.connectToManage;
+    try {
+      final snapshot = await _remoteApi.menuSnapshot();
+      await Clipboard.setData(ClipboardData(
+          text: const JsonEncoder.withIndent('  ').convert(snapshot)));
+      return null;
+    } on ApiException catch (e) {
       return e.message;
     }
   }
@@ -2017,6 +1999,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         final createdDto = event.order;
         if (createdDto != null) {
           _upsertOrderFromDto(createdDto);
+          if (capWait) unawaited(refreshTableBill(createdDto.tableId));
           // A fresh guest order starts the escalation ladder (L1 chime +
           // banner) on every on-shift floor device. The ladder replaces the
           // old bare heavyImpact buzz.
@@ -2036,6 +2019,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         final dto = event.order;
         if (dto != null) {
           _upsertOrderFromDto(dto);
+          if (capWait) unawaited(refreshTableBill(dto.tableId));
           // Left AWAITING (confirmed/rejected anywhere): the alert is
           // handled — silence this device and close its OS banner.
           if (_orderStatusFromName(dto.status) != OrderStatus.awaiting) {
@@ -2191,6 +2175,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
   Future<OrderDto?> createRemoteOrder({
     required String tableId,
     required List<CartLine> lines,
+    required String requestId,
     String notes = '',
   }) async {
     if (!backendConnected) return null;
@@ -2202,6 +2187,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       return await _remoteApi.createOrder(
         tableId: tableIdInt,
+        clientRequestId: requestId,
         notes: notes,
         items: lines
             .map((l) => {
@@ -2645,6 +2631,90 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       return refreshPlanner(date: plannerDate);
     } on ApiException catch (e) {
       return e.message;
+    }
+  }
+
+  Future<String?> plannerCreateDaily(String input, DateTime day) async {
+    if (!backendConnected) return L.connectToManage;
+    var title = input.trim();
+    if (title.isEmpty) return L.nothingToSend;
+    int? assigneeId;
+    for (final assignee in taskAssignees) {
+      final marker = '@${assignee.name}';
+      if (title.toLowerCase().contains(marker.toLowerCase())) {
+        assigneeId = assignee.id;
+        title = title
+            .replaceFirst(
+                RegExp(RegExp.escape(marker), caseSensitive: false), '')
+            .trim();
+        break;
+      }
+    }
+    final timeMatch =
+        RegExp(r'\b([01]?\d|2[0-3]):([0-5]\d)\b').firstMatch(title);
+    var hour = 9;
+    var minute = 0;
+    if (timeMatch != null) {
+      hour = int.parse(timeMatch.group(1)!);
+      minute = int.parse(timeMatch.group(2)!);
+      title = title.replaceFirst(timeMatch.group(0)!, '').trim();
+    }
+    final due = DateTime(day.year, day.month, day.day, hour, minute);
+    try {
+      await _remoteApi.createTask({
+        'title': title,
+        'recurrence': 'daily',
+        'recurrence_enabled': true,
+        'due_at': due.toIso8601String(),
+        if (assigneeId != null) 'assignee': assigneeId,
+      });
+      return refreshPlanner(date: plannerDate);
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<String?> setPlannerRuleEnabled(StaffTaskDto rule, bool enabled) async {
+    try {
+      await _remoteApi.updateTask(rule.id, {'recurrence_enabled': enabled});
+      return refreshPlanner(date: plannerDate);
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<String?> deletePlannerRule(StaffTaskDto rule) async {
+    try {
+      await _remoteApi.cancelTask(rule.id);
+      return refreshPlanner(date: plannerDate);
+    } on ApiException catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<String?> refreshStationHistory(FeedType zone) async {
+    if (!backendConnected) return L.connectToManage;
+    stationHistoryLoading = true;
+    notifyListeners();
+    try {
+      stationHistory = await _remoteApi
+          .stationHistory(zone == FeedType.kitchen ? 'kitchen' : 'bar');
+      return null;
+    } on ApiException catch (e) {
+      return e.message;
+    } finally {
+      stationHistoryLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshTableBill(String tableId) async {
+    if (!backendConnected || !capWait) return;
+    try {
+      tableBills[tableId] = await _remoteApi.tableBill(tableId);
+      notifyListeners();
+    } on ApiException catch (e) {
+      debugPrint('refreshTableBill failed: $e');
     }
   }
 

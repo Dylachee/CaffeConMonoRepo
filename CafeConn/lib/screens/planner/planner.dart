@@ -26,6 +26,7 @@ class _PlannerScreenState extends State<PlannerScreen> {
   DateTime _day = DateTime.now();
   bool _showDone = false;
   bool _adding = false;
+  bool _everyDay = false;
 
   @override
   void initState() {
@@ -68,13 +69,17 @@ class _PlannerScreenState extends State<PlannerScreen> {
     final input = _quickAdd.text.trim();
     if (input.isEmpty || _adding) return;
     setState(() => _adding = true);
-    final error = await context.read<CafeState>().plannerQuickAdd(input);
+    final state = context.read<CafeState>();
+    final error = _everyDay
+        ? await state.plannerCreateDaily(input, _day)
+        : await state.plannerQuickAdd(input);
     if (!mounted) return;
     setState(() => _adding = false);
     if (error != null) {
       _snack(error);
     } else {
       _quickAdd.clear();
+      setState(() => _everyDay = false);
     }
   }
 
@@ -121,6 +126,18 @@ class _PlannerScreenState extends State<PlannerScreen> {
     final state = context.watch<CafeState>();
     final manage = state.capManage;
     final now = DateTime.now();
+    final mentionToken = _quickAdd.text.split(RegExp(r'\s+')).lastOrNull ?? '';
+    final mentionQuery = mentionToken.startsWith('@')
+        ? mentionToken.substring(1).toLowerCase()
+        : '';
+    final mentionCandidates = mentionToken.startsWith('@')
+        ? state.taskAssignees
+            .where((person) =>
+                mentionQuery.isEmpty ||
+                person.name.toLowerCase().startsWith(mentionQuery))
+            .take(6)
+            .toList()
+        : <TaskAssigneeDto>[];
 
     var tasks = state.plannerTasks;
     if (!manage) {
@@ -198,6 +215,7 @@ class _PlannerScreenState extends State<PlannerScreen> {
             Expanded(
               child: TextField(
                 controller: _quickAdd,
+                onChanged: (_) => setState(() {}),
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submitQuickAdd(),
                 decoration: InputDecoration(
@@ -235,12 +253,72 @@ class _PlannerScreenState extends State<PlannerScreen> {
             ),
           ]),
         ),
+        if (mentionCandidates.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final person in mentionCandidates)
+                  ActionChip(
+                    avatar: Icon(
+                        person.role == 'bar'
+                            ? Icons.local_bar_outlined
+                            : person.role == 'kitchen'
+                                ? Icons.restaurant_outlined
+                                : Icons.person_outline,
+                        size: 16),
+                    label: Text(person.name),
+                    onPressed: () {
+                      final text = _quickAdd.text;
+                      final start = text.lastIndexOf(mentionToken);
+                      _quickAdd.text =
+                          '${text.substring(0, start)}@${person.name} ';
+                      _quickAdd.selection = TextSelection.collapsed(
+                          offset: _quickAdd.text.length);
+                      setState(() {});
+                    },
+                  ),
+              ],
+            ),
+          ),
+        if (manage)
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(L.t('Repeat every day', 'Ripeti ogni giorno'),
+                style: T.bodySemi),
+            subtitle: Text(
+                L.t('Starts on the selected day',
+                    'Inizia dal giorno selezionato'),
+                style: T.small),
+            value: _everyDay,
+            onChanged: (value) => setState(() => _everyDay = value),
+          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _load,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
+                if (manage && state.plannerRules.isNotEmpty) ...[
+                  SectionTitle(L.t('Everyday tasks', 'Attività giornaliere')),
+                  for (final rule in state.plannerRules
+                      .where((item) => item.status != 'cancelled'))
+                    _PlannerRuleRow(
+                      rule: rule,
+                      onToggle: (enabled) async {
+                        final error =
+                            await state.setPlannerRuleEnabled(rule, enabled);
+                        if (error != null && mounted) _snack(error);
+                      },
+                      onDelete: () async {
+                        final error = await state.deletePlannerRule(rule);
+                        if (error != null && mounted) _snack(error);
+                      },
+                    ),
+                ],
                 if (tasks.isEmpty && !state.plannerLoading)
                   EmptyState(
                       icon: Icons.event_available_outlined,
@@ -313,6 +391,53 @@ class _PlannerScreenState extends State<PlannerScreen> {
               ],
             ),
           ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _PlannerRuleRow extends StatelessWidget {
+  const _PlannerRuleRow({
+    required this.rule,
+    required this.onToggle,
+    required this.onDelete,
+  });
+
+  final StaffTaskDto rule;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final due = rule.dueAt == null ? null : DateTime.tryParse(rule.dueAt!);
+    final time = due == null
+        ? ''
+        : '${due.toLocal().hour.toString().padLeft(2, '0')}:${due.toLocal().minute.toString().padLeft(2, '0')}';
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(children: [
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(rule.title, style: T.bodySemi),
+            Text(
+              [
+                if (time.isNotEmpty) time,
+                if (rule.assigneeName.isNotEmpty) rule.assigneeName,
+              ].join(' · '),
+              style: T.small,
+            ),
+          ]),
+        ),
+        Switch.adaptive(
+          value: rule.recurrenceEnabled,
+          onChanged: onToggle,
+        ),
+        IconButton(
+          tooltip: L.t('Delete rule', 'Elimina regola'),
+          onPressed: onDelete,
+          icon: const Icon(Icons.delete_outline, color: AppTheme.danger),
         ),
       ]),
     );

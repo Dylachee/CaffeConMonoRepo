@@ -107,6 +107,40 @@ def post_task_bubble(
     )
 
 
+def materialize_recurring_task(rule: StaffTask, day) -> StaffTask:
+    """Create one independent occurrence for a rule/day, idempotently."""
+    restaurant_tz = ZoneInfo(rule.restaurant.timezone or "Europe/Rome")
+    day_start = timezone.make_aware(datetime.combine(day, datetime.min.time()), restaurant_tz)
+    day_end = day_start + timedelta(days=1)
+    existing = rule.occurrences.filter(
+        due_at__gte=day_start, due_at__lt=day_end
+    ).first()
+    if existing is not None:
+        return existing
+    due = day_start
+    if rule.due_at is not None:
+        local_due = timezone.localtime(rule.due_at, restaurant_tz)
+        due = timezone.make_aware(datetime.combine(day, local_due.time()), restaurant_tz)
+    instance = StaffTask.objects.create(
+        restaurant=rule.restaurant,
+        title=rule.title,
+        note=rule.note,
+        category=rule.category,
+        assignee=rule.assignee,
+        created_by=rule.created_by,
+        due_at=due,
+        source=StaffTask.Source.BOT,
+        recurring_parent=rule,
+        status=(
+            StaffTask.Status.IN_PROGRESS
+            if rule.assignee_id
+            else StaffTask.Status.AVAILABLE
+        ),
+    )
+    post_task_bubble(instance)
+    return instance
+
+
 def _employee_refs(restaurant=None) -> list[EmployeeRef]:
     employees = Employee.objects.select_related("user")
     if restaurant is not None:
@@ -559,8 +593,12 @@ def run_due_bot_jobs(
         stats["reminders"] += 1
 
     # 5) Materialize today's instances of recurring rules.
-    rules = StaffTask.objects.filter(restaurant=restaurant).exclude(
+    rules = StaffTask.objects.filter(
+        restaurant=restaurant, recurrence_enabled=True
+    ).exclude(
         recurrence=StaffTask.Recurrence.NONE
+    ).exclude(
+        status=StaffTask.Status.CANCELLED
     )
     for rule in rules:
         weekday_ok = (
@@ -571,29 +609,7 @@ def run_due_bot_jobs(
             continue
         if not _claim_job(f"recur:{rule.pk}:{today.isoformat()}", restaurant):
             continue
-        due = None
-        if rule.due_at is not None:
-            local_due = timezone.localtime(rule.due_at, restaurant_tz)
-            due = timezone.make_aware(
-                datetime.combine(today, local_due.time()), restaurant_tz
-            )
-        instance = StaffTask.objects.create(
-            restaurant=restaurant,
-            title=rule.title,
-            note=rule.note,
-            category=rule.category,
-            assignee=rule.assignee,
-            created_by=rule.created_by,
-            due_at=due,
-            source=StaffTask.Source.BOT,
-            recurring_parent=rule,
-            status=(
-                StaffTask.Status.IN_PROGRESS
-                if rule.assignee_id
-                else StaffTask.Status.AVAILABLE
-            ),
-        )
-        post_task_bubble(instance)
+        materialize_recurring_task(rule, today)
         stats["recurrences"] += 1
 
     return stats

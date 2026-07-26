@@ -305,3 +305,25 @@ class TasksApiTests(TestCase):
         bodies = [r["body"] for r in thread["replies"]]
         self.assertTrue(any("due" in b for b in bodies))  # the bot nudge
         self.assertIn("fryer was broken, doing it now", bodies)  # the answer
+
+    def test_daily_rule_creates_selected_day_instance_immediately(self):
+        selected_day = timezone.localdate() + timezone.timedelta(days=2)
+        due_at = timezone.make_aware(
+            timezone.datetime.combine(selected_day, timezone.datetime.min.time()).replace(hour=9)
+        )
+        response = self.client_m.post(
+            "/api/staff/tasks/",
+            {
+                "title": "Open terrace",
+                "category": "opening",
+                "due_at": due_at.isoformat(),
+                "recurrence": "daily",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        rule = StaffTask.objects.get(pk=response.json()["task"]["id"])
+        occurrence = StaffTask.objects.get(recurring_parent=rule)
+        self.assertEqual(timezone.localdate(occurrence.due_at), selected_day)
+        self.assertTrue(rule.recurrence_enabled)

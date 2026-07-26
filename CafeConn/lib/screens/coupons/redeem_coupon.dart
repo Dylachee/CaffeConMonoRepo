@@ -28,6 +28,8 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
   MobileScannerController? _scanner;
   bool _scannerFailed = false;
   bool _lookingUp = false;
+  bool _scanLocked = false;
+  bool _scanComplete = false;
 
   @override
   void initState() {
@@ -59,7 +61,11 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
   }
 
   Future<void> _retryCamera() async {
-    setState(() => _scannerFailed = false);
+    setState(() {
+      _scannerFailed = false;
+      _scanLocked = false;
+      _scanComplete = false;
+    });
     try {
       await _scanner?.start();
     } catch (_) {
@@ -68,10 +74,12 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
-    if (_lookingUp) return;
+    if (_lookingUp || _scanLocked) return;
     final raw =
         capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
     if (raw == null || raw.isEmpty) return;
+    _scanLocked = true;
+    await _scanner?.stop();
     final scanned = raw.trim();
     // Wallet cards now encode the compact eight-character code. Continue
     // accepting older signed-token QR cards during the transition.
@@ -85,20 +93,48 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
 
   Future<void> _lookUp({String? token, String? code}) async {
     if (_lookingUp) return;
-    setState(() => _lookingUp = true);
     final state = context.read<CafeState>();
+    _scanLocked = true;
+    await _scanner?.stop();
+    if (!mounted) return;
+    setState(() => _lookingUp = true);
     final (preview, error) =
         await state.couponPreview(token: token, code: code);
     if (!mounted) return;
-    setState(() => _lookingUp = false);
     if (error != null || preview == null) {
+      setState(() => _lookingUp = false);
       _showError(error ?? L.couldNotLoad);
+      await _resumeScanning();
       return;
     }
-    await _showConfirmSheet(preview, token: token, code: code);
+    final redeemed = await _showConfirmSheet(preview, token: token, code: code);
+    if (!mounted) return;
+    setState(() => _lookingUp = false);
+    if (redeemed) {
+      if (widget.orderIds != null) {
+        Navigator.pop(context, true);
+      } else {
+        setState(() => _scanComplete = true);
+      }
+    } else {
+      await _resumeScanning();
+    }
   }
 
-  Future<void> _showConfirmSheet(CouponPreviewDto preview,
+  Future<void> _resumeScanning() async {
+    if (!mounted) return;
+    setState(() {
+      _scanLocked = false;
+      _scanComplete = false;
+    });
+    try {
+      await _scanner?.start();
+    } catch (_) {
+      if (mounted) setState(() => _scannerFailed = true);
+    }
+  }
+
+  Future<bool> _showConfirmSheet(CouponPreviewDto preview,
       {String? token, String? code}) async {
     final state = context.read<CafeState>();
     // Open (not yet paid/cancelled) orders the coupon could attach to.
@@ -111,7 +147,7 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
         openOrders.isNotEmpty ? openOrders.first.id : null;
     var busy = false;
 
-    await showModalBottomSheet(
+    final redeemed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -209,7 +245,7 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
                                       backgroundColor: AppTheme.danger));
                               return;
                             }
-                            Navigator.pop(sheetContext);
+                            Navigator.pop(sheetContext, true);
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content:
@@ -228,6 +264,7 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
         },
       ),
     );
+    return redeemed == true;
   }
 
   String _statusLabel(String status) => switch (status) {
@@ -244,57 +281,73 @@ class _RedeemCouponScreenState extends State<RedeemCouponScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         SectionTitle(L.scanCouponQr),
-        AppCard(
-          padding: const EdgeInsets.all(10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              height: 260,
-              child: _scannerFailed || _scanner == null
-                  ? Container(
-                      color: AppTheme.surfaceSunken,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(L.scannerUnavailable,
-                              textAlign: TextAlign.center, style: T.bodySemi),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            onPressed: _retryCamera,
-                            icon: const Icon(Icons.camera_alt_outlined),
-                            label:
-                                Text(L.t('Enable camera', 'Attiva fotocamera')),
-                          ),
-                        ],
+        if (_scanComplete)
+          AppCard(
+            child: Column(children: [
+              const Icon(Icons.check_circle_rounded,
+                  size: 52, color: AppTheme.success),
+              const SizedBox(height: 10),
+              Text(L.redeemed, style: T.h2),
+              const SizedBox(height: 14),
+              PrimaryButton(
+                label: L.t('Scan another', 'Scansiona un altro'),
+                icon: Icons.qr_code_scanner,
+                onTap: _resumeScanning,
+              ),
+            ]),
+          )
+        else
+          AppCard(
+            padding: const EdgeInsets.all(10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                height: 260,
+                child: _scannerFailed || _scanner == null
+                    ? Container(
+                        color: AppTheme.surfaceSunken,
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(L.scannerUnavailable,
+                                textAlign: TextAlign.center, style: T.bodySemi),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _retryCamera,
+                              icon: const Icon(Icons.camera_alt_outlined),
+                              label: Text(
+                                  L.t('Enable camera', 'Attiva fotocamera')),
+                            ),
+                          ],
+                        ),
+                      )
+                    : MobileScanner(
+                        controller: _scanner!,
+                        onDetect: _onDetect,
+                        errorBuilder: (context, error) {
+                          // Render the fallback panel and remember the failure
+                          // so the manual code path is clearly the way forward.
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && !_scannerFailed) {
+                              setState(() => _scannerFailed = true);
+                            }
+                          });
+                          return Container(
+                            color: AppTheme.surfaceSunken,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                                '${L.scannerUnavailable}\n${error.errorDetails?.message ?? error.errorCode.name}',
+                                textAlign: TextAlign.center,
+                                style: T.small),
+                          );
+                        },
                       ),
-                    )
-                  : MobileScanner(
-                      controller: _scanner!,
-                      onDetect: _onDetect,
-                      errorBuilder: (context, error) {
-                        // Render the fallback panel and remember the failure
-                        // so the manual code path is clearly the way forward.
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted && !_scannerFailed) {
-                            setState(() => _scannerFailed = true);
-                          }
-                        });
-                        return Container(
-                          color: AppTheme.surfaceSunken,
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                              '${L.scannerUnavailable}\n${error.errorDetails?.message ?? error.errorCode.name}',
-                              textAlign: TextAlign.center,
-                              style: T.small),
-                        );
-                      },
-                    ),
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 10),
         SectionTitle(L.couponCode),
         AppCard(

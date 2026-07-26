@@ -30,7 +30,11 @@ from apps.core.models import (
     Table,
     VenueSettings,
 )
-from apps.core.services import acknowledge_signal_on_table, apply_signal_to_table
+from apps.core.services import (
+    acknowledge_signal_on_table,
+    apply_signal_to_table,
+    current_table_bill,
+)
 
 
 # The venue "storefront" (name/texts/badges/palette/layout) lives in
@@ -552,6 +556,15 @@ def guest_order_status(request, order_id, restaurant_slug=None):
         pk=order_id,
     )
     return JsonResponse({"ok": True, "order": _guest_order_payload(order)})
+
+
+@require_GET
+def guest_table_bill(request, table_number, restaurant_slug=None):
+    restaurant = restaurant_for_guest_request(request)
+    table = get_object_or_404(
+        Table, restaurant=restaurant, number=table_number
+    )
+    return JsonResponse({"ok": True, **current_table_bill(table)})
 
 
 @require_POST

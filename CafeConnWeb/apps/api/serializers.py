@@ -84,6 +84,7 @@ class MenuCategorySerializer(serializers.ModelSerializer):
 
 class MenuItemSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=MenuCategory.objects.all())
+    show_in_guest_menu = serializers.BooleanField(required=False)
 
     class Meta:
         model = MenuItem
@@ -103,6 +104,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "preparation_minutes",
             "portion_weight",
             "calories",
+            "show_in_guest_menu",
             "created_at",
             "updated_at",
         ]
@@ -116,21 +118,28 @@ class MenuItemSerializer(serializers.ModelSerializer):
                 restaurant=restaurant
             )
 
-    def _tags_for_clients(self, tags):
+    def _tags_for_clients(self, tags, visible):
         tags = list(tags or [])
-        if CLIENT_MENU_TAG not in tags:
+        if visible and CLIENT_MENU_TAG not in tags:
             tags.append(CLIENT_MENU_TAG)
+        if not visible:
+            tags = [tag for tag in tags if tag != CLIENT_MENU_TAG]
         return tags
 
     def create(self, validated_data):
-        validated_data["tags"] = self._tags_for_clients(validated_data.get("tags"))
+        visible = validated_data.pop("show_in_guest_menu", True)
+        validated_data["tags"] = self._tags_for_clients(
+            validated_data.get("tags"), visible
+        )
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        if "tags" in validated_data:
-            validated_data["tags"] = self._tags_for_clients(validated_data["tags"])
-        else:
-            validated_data["tags"] = self._tags_for_clients(instance.tags)
+        visible = validated_data.pop(
+            "show_in_guest_menu", CLIENT_MENU_TAG in (instance.tags or [])
+        )
+        validated_data["tags"] = self._tags_for_clients(
+            validated_data.get("tags", instance.tags), visible
+        )
         return super().update(instance, validated_data)
 
     def to_representation(self, instance):
@@ -141,6 +150,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         data["description"] = labels["description_en"]
         data["category"] = labels["category_en"]
         data["categoryIt"] = labels["category_it"]
+        data["show_in_guest_menu"] = CLIENT_MENU_TAG in (instance.tags or [])
         return data
 
 
@@ -250,6 +260,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "station_scope",
             "guest_name",
             "notes",
+            "client_request_id",
             "items",
             "total",
             "discount_amount",
@@ -616,6 +627,7 @@ class StaffTaskSerializer(serializers.ModelSerializer):
             "created_by_name",
             "due_at",
             "recurrence",
+            "recurrence_enabled",
             "recurrence_weekdays",
             "recurring_parent",
             "status",

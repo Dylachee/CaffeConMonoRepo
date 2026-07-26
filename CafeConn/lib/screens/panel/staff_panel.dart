@@ -1290,16 +1290,21 @@ class MenuManagementScreen extends StatefulWidget {
 class _MenuManagementScreenState extends State<MenuManagementScreen> {
   String _search = '';
   String _category = 'All';
+  String _visibility = 'all';
 
   List<MenuItem> _filtered(CafeState state) {
     final q = _search.trim().toLowerCase();
     return state.menu.where((m) {
       final okCat = _category == 'All' || state.itemInCategory(m, _category);
+      final guest = m.tags.contains('client');
+      final okVisibility = _visibility == 'all' ||
+          (_visibility == 'guest' && guest) ||
+          (_visibility == 'staff' && !guest);
       final okSearch = q.isEmpty ||
           m.name.toLowerCase().contains(q) ||
           m.nameIt.toLowerCase().contains(q) ||
           m.category.toLowerCase().contains(q);
-      return okCat && okSearch;
+      return okCat && okSearch && okVisibility;
     }).toList()
       ..sort((a, b) =>
           a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
@@ -1356,6 +1361,21 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     return ListView(children: [
       Row(children: [
         Expanded(child: SectionTitle(L.items)),
+        IconButton(
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            final error = await state.copyMenuSnapshot();
+            messenger.showSnackBar(SnackBar(
+              content: Text(error ??
+                  L.t('Full menu snapshot copied',
+                      'Snapshot completo del menu copiato')),
+              backgroundColor:
+                  error == null ? AppTheme.success : AppTheme.danger,
+            ));
+          },
+          tooltip: L.t('Copy full menu snapshot', 'Copia snapshot completo'),
+          icon: const Icon(Icons.content_copy_rounded, color: AppTheme.ink2),
+        ),
         // Owner's category console: rename + recolor menu categories.
         IconButton(
           onPressed: () => _showCategoryEditor(context),
@@ -1382,6 +1402,24 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         ),
       ),
       const SizedBox(height: 10),
+      Row(children: [
+        for (final option in const [
+          ('all', 'All'),
+          ('guest', 'Guest menu'),
+          ('staff', 'Staff only'),
+        ])
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 5),
+              child: ChoiceChip(
+                label: Center(child: Text(option.$2)),
+                selected: _visibility == option.$1,
+                onSelected: (_) => setState(() => _visibility = option.$1),
+              ),
+            ),
+          ),
+      ]),
+      const SizedBox(height: 8),
       Wrap(spacing: 5, runSpacing: 5, children: [
         _categoryBtn(L.all, 'All', AppColors.espresso),
         if (state.menuCategories.isNotEmpty)

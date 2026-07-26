@@ -367,6 +367,7 @@
   data-table-number="{{ table.number }}"
   data-attention="{{ table.attention }}"
   data-create-order-url="{{ guest_base }}order/"
+  data-bill-url="{{ guest_base }}n/{{ table.number }}/bill/"
   data-create-attention-url="{{ guest_base }}attention/"
   data-cancel-url="{{ guest_base }}attention/cancel/"
   data-order-status-base="{{ guest_base }}order/"
@@ -1062,7 +1063,8 @@
     document.getElementById("detail").classList.remove("open");
   });
 
-  function renderOrders(orders){
+  var canonicalBill = null;
+  function renderOrders(orders, billTotal){
     var box = document.getElementById("order-status");
     if (!box) return;
     orders = (orders || []).filter(function(order){ return !isArchivedOrder(order); });
@@ -1073,7 +1075,7 @@
     list.innerHTML = "";
     var checkTotal = 0;
     orders.slice().reverse().forEach(function(order){
-      checkTotal += Number(order.total || 0);
+      checkTotal += Number(order.totalDue || order.total || order.subtotal || 0);
       var card = document.createElement("div");
       card.className = "order-mini";
       var status = tr("status_" + order.status) !== ("status_" + order.status)
@@ -1089,24 +1091,23 @@
       card.innerHTML = html;
       list.appendChild(card);
     });
-    document.getElementById("order-status-total").textContent = tr("current_check") + money(checkTotal);
+    document.getElementById("order-status-total").textContent = tr("current_check") + money(
+      billTotal == null ? checkTotal : Number(billTotal)
+    );
   }
   function pollOrders(){
-    var orders = readOrders();
-    if (!orders.length || !tablePk) {
-      renderOrders(orders);
-      return;
-    }
-    renderOrders(orders);
-    Promise.all(orders.map(function(order){
-      return fetch(body.getAttribute("data-order-status-base") + order.id + "/status/")
-        .then(function(res){ if (!res.ok) throw new Error("missing"); return res.json(); })
-        .then(function(data){ return data.ok ? data.order : order; })
-        .catch(function(){ return order; });
-    })).then(function(updated){
-      writeOrders(updated);
-      renderOrders(readOrders());
-    });
+    if (!tablePk) return;
+    fetch(body.getAttribute("data-bill-url"), {cache:"no-store"})
+      .then(function(res){ if (!res.ok) throw new Error("bill"); return res.json(); })
+      .then(function(data){
+        if (!data.ok) throw new Error("bill");
+        canonicalBill = data;
+        renderOrders(data.orders || [], data.totalDue);
+      })
+      .catch(function(){
+        if (canonicalBill) renderOrders(canonicalBill.orders || [], canonicalBill.totalDue);
+        else renderOrders(readOrders());
+      });
   }
 
   function showSignal(type, id){
@@ -1568,7 +1569,11 @@
   renderCart();
   setLanguage(lang);
   pollOrders();
-  setInterval(pollOrders, 8000);
+  setInterval(pollOrders, 3000);
+  window.addEventListener("focus", pollOrders);
+  document.addEventListener("visibilitychange", function(){
+    if (!document.hidden) pollOrders();
+  });
 })();
 </script>
 </body>

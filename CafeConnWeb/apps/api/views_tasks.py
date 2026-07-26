@@ -229,6 +229,14 @@ class StaffTasksView(APIView):
         )
         if not task.is_recurring_rule:
             chatbot.post_task_bubble(task, author=employee)
+        elif task.recurrence_enabled:
+            venue_tz = timezone.get_current_timezone()
+            selected_day = (
+                timezone.localtime(task.due_at, venue_tz).date()
+                if task.due_at is not None
+                else timezone.localdate()
+            )
+            chatbot.materialize_recurring_task(task, selected_day)
         return Response(
             {"task": StaffTaskSerializer(task).data}, status=status.HTTP_201_CREATED
         )
@@ -279,7 +287,9 @@ class StaffTaskDetailView(APIView):
         restaurant = restaurant_for_request(request)
         task = get_object_or_404(StaffTask, restaurant=restaurant, pk=pk)
         task.status = StaffTask.Status.CANCELLED
-        task.save(update_fields=["status", "updated_at"])
+        if task.is_recurring_rule:
+            task.recurrence_enabled = False
+        task.save(update_fields=["status", "recurrence_enabled", "updated_at"])
         TaskEvent.objects.create(
             restaurant=restaurant,
             task=task,

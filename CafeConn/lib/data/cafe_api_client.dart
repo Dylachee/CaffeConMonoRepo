@@ -107,6 +107,18 @@ class CafeApiClient {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> stationHistory(String station,
+      {String? date}) async {
+    final res = await _send(() => _http.get(
+        ApiConfig.stationHistory(station, date: date),
+        headers: _headers()));
+    final body = _decodeMap(res);
+    return ((body['orders'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => item.cast<String, dynamic>())
+        .toList();
+  }
+
   /// One table's history for a day (default: newest day with orders), plus the
   /// list of days that have orders so the UI can page day-by-day.
   Future<TableHistoryDto> tableHistory(String tableId, {String? date}) async {
@@ -115,12 +127,19 @@ class CafeApiClient {
     return TableHistoryDto.fromJson(_decodeMap(res));
   }
 
+  Future<Map<String, dynamic>> tableBill(String tableId) async {
+    final res = await _send(
+        () => _http.get(ApiConfig.tableBill(tableId), headers: _headers()));
+    return _decodeMap(res);
+  }
+
   /// Create an order. `items` = [{menu_item_id:int, quantity:int, notes:[...]}].
   /// The server auto-splits kitchen/bar by each item's station and broadcasts
   /// `order.created` on the realtime feed.
   Future<OrderDto> createOrder({
     required int tableId,
     required List<Map<String, dynamic>> items,
+    required String clientRequestId,
     String guestName = '',
     String notes = '',
   }) async {
@@ -131,10 +150,17 @@ class CafeApiClient {
             'table_id': tableId,
             'guest_name': guestName,
             'notes': notes,
+            'client_request_id': clientRequestId,
             'items': items,
           }),
         ));
     return OrderDto.fromDrf(_decodeMap(res));
+  }
+
+  Future<Map<String, dynamic>> menuSnapshot() async {
+    final res = await _send(
+        () => _http.get(ApiConfig.menuSnapshot(), headers: _headers()));
+    return _decodeMap(res);
   }
 
   /// Manager/admin action: create a staff login account. `role` is the hub
@@ -493,8 +519,12 @@ class CafeApiClient {
           })));
 
   /// The planner's day view: tasks + (for manage) recurrence rules.
-  Future<({List<StaffTaskDto> tasks, List<StaffTaskDto> rules, List<TaskAssigneeDto> assignees})> tasksForDay(
-      {String? date}) async {
+  Future<
+      ({
+        List<StaffTaskDto> tasks,
+        List<StaffTaskDto> rules,
+        List<TaskAssigneeDto> assignees
+      })> tasksForDay({String? date}) async {
     final res = await _send(
         () => _http.get(ApiConfig.staffTasks(date: date), headers: _headers()));
     final body = _decodeMap(res);
@@ -506,13 +536,24 @@ class CafeApiClient {
         .whereType<Map>()
         .map((e) => TaskAssigneeDto.fromJson(e.cast<String, dynamic>()))
         .toList();
-    return (tasks: parse(body['tasks']), rules: parse(body['rules']), assignees: assignees);
+    return (
+      tasks: parse(body['tasks']),
+      rules: parse(body['rules']),
+      assignees: assignees
+    );
   }
 
   /// Planner quick-add — the same syntax as /task ("title @name 21:30").
   Future<StaffTaskDto> quickAddTask(String input) async {
     final res = await _send(() => _http.post(ApiConfig.staffTasks(),
         headers: _headers(), body: jsonEncode({'input': input})));
+    return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
+        .cast<String, dynamic>());
+  }
+
+  Future<StaffTaskDto> createTask(Map<String, dynamic> fields) async {
+    final res = await _send(() => _http.post(ApiConfig.staffTasks(),
+        headers: _headers(), body: jsonEncode(fields)));
     return StaffTaskDto.fromJson(((_decodeMap(res)['task'] as Map?) ?? const {})
         .cast<String, dynamic>());
   }
