@@ -9,6 +9,7 @@ Permission matrix (also backstopped in apps.core.chatbot):
 """
 
 import datetime
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.db.models import Q
@@ -230,7 +231,7 @@ class StaffTasksView(APIView):
         if not task.is_recurring_rule:
             chatbot.post_task_bubble(task, author=employee)
         elif task.recurrence_enabled:
-            venue_tz = timezone.get_current_timezone()
+            venue_tz = ZoneInfo(restaurant.timezone or "Europe/Rome")
             selected_day = (
                 timezone.localtime(task.due_at, venue_tz).date()
                 if task.due_at is not None
