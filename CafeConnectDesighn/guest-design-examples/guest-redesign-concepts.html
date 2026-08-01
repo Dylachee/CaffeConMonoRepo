@@ -1,0 +1,1387 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CafeConnect Guest Design Concepts</title>
+  <style>
+    :root {
+      --bg: #ede8de;
+      --ink: #1d1a16;
+      --muted: rgba(29, 26, 22, .56);
+      --soft: rgba(29, 26, 22, .1);
+      --line: #ded6c8;
+      --surface: #fffaf2;
+      --espresso: #201b16;
+      --green: #238b5d;
+      --amber: #c97818;
+      --blue: #326fd0;
+      --red: #d65245;
+      --shadow: 0 22px 60px -34px rgba(39, 29, 17, .62);
+      --shadow-ring:
+        0 0 0 1px rgba(0, 0, 0, .06),
+        0 1px 2px -1px rgba(0, 0, 0, .06),
+        0 2px 4px rgba(0, 0, 0, .04);
+      --shadow-ring-hover:
+        0 0 0 1px rgba(0, 0, 0, .08),
+        0 1px 2px -1px rgba(0, 0, 0, .08),
+        0 3px 7px rgba(0, 0, 0, .06);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 18% 0%, #fff8ec 0, transparent 28rem), var(--bg);
+      color: var(--ink);
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    button {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .brand,
+    .concept-title,
+    .hero h3,
+    .panel h3,
+    .sheet h3,
+    .section-head h4,
+    .dish-row h4 {
+      text-wrap: balance;
+    }
+
+    .lead,
+    .note span,
+    .muted,
+    .hero p,
+    .service-card span,
+    .step span {
+      text-wrap: pretty;
+    }
+
+    .status,
+    .badge,
+    .price-row,
+    .meta,
+    .mini b,
+    .balance small,
+    .step .num,
+    .step > b {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .page {
+      max-width: 1420px;
+      margin: 0 auto;
+      padding: 34px 28px 54px;
+    }
+
+    .top {
+      display: grid;
+      grid-template-columns: minmax(220px, 360px) 1fr;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      letter-spacing: -.03em;
+      font-size: 25px;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      background: var(--espresso);
+      color: #fff8ec;
+      display: grid;
+      place-items: center;
+    }
+
+    .lead {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+      max-width: 680px;
+    }
+
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .note {
+      background: rgba(255, 250, 242, .68);
+      border-radius: 16px;
+      padding: 13px 14px;
+      box-shadow: var(--shadow-ring);
+    }
+
+    .note b {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+
+    .note span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .concepts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(320px, 1fr));
+      gap: 24px;
+      align-items: start;
+    }
+
+    .concept {
+      min-width: 0;
+    }
+
+    .concept-title {
+      margin: 0 0 12px;
+      font-size: 17px;
+      letter-spacing: -.02em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .tag {
+      color: rgba(29, 26, 22, .48);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .phone {
+      width: min(100%, 390px);
+      height: 820px;
+      margin: 0 auto;
+      padding: 12px;
+      border-radius: 48px;
+      background: #0d0b08;
+      box-shadow: var(--shadow), inset 0 0 0 2px rgba(255, 255, 255, .08);
+    }
+
+    .screen {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 36px;
+      background: #f7f0e4;
+    }
+
+    .status {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      height: 44px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 24px;
+      font-weight: 800;
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .island {
+      position: absolute;
+      z-index: 21;
+      top: 10px;
+      left: 50%;
+      width: 112px;
+      height: 28px;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: #0d0b08;
+    }
+
+    .bars {
+      display: flex;
+      align-items: end;
+      gap: 2px;
+      height: 12px;
+    }
+
+    .bars i {
+      width: 3px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .bars i:nth-child(1) { height: 5px; }
+    .bars i:nth-child(2) { height: 7px; }
+    .bars i:nth-child(3) { height: 10px; }
+    .content {
+      height: 100%;
+      overflow: auto;
+      padding: 52px 16px 104px;
+      scrollbar-width: none;
+    }
+
+    .content::-webkit-scrollbar,
+    .rail::-webkit-scrollbar { display: none; }
+
+    .view { display: none; }
+    .view.active { display: block; animation: rise .22s ease both; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .bottom-nav {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      z-index: 24;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      padding: 8px;
+      border-radius: 24px;
+      background: rgba(255, 250, 242, .86);
+      backdrop-filter: blur(24px);
+      box-shadow: var(--shadow-ring), 0 14px 34px -24px rgba(39, 29, 17, .65);
+    }
+
+    .tab {
+      border: 0;
+      min-height: 48px;
+      border-radius: 16px;
+      color: rgba(29, 26, 22, .5);
+      background: transparent;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      gap: 2px;
+      font-weight: 800;
+      font-size: 11px;
+      transition-property: transform, background-color, color, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .tab svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .tab.active {
+      background: var(--espresso);
+      color: #fff8ec;
+      box-shadow: 0 10px 22px -14px rgba(29, 26, 22, .8);
+    }
+
+    .hero {
+      position: relative;
+      margin: -52px -16px 0;
+      min-height: 240px;
+      padding: 56px 16px 18px;
+      color: white;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+      background:
+        linear-gradient(180deg, rgba(13, 11, 8, .12), rgba(13, 11, 8, .72)),
+        url("https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=900&q=80") center/cover;
+    }
+
+    .hero.compact {
+      min-height: 190px;
+    }
+
+    .pill {
+      min-height: 30px;
+      padding: 0 11px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, .18);
+      color: inherit;
+      border: 1px solid rgba(255, 255, 255, .22);
+      backdrop-filter: blur(16px);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .hero h3,
+    .panel h3,
+    .sheet h3 {
+      margin: 0;
+      letter-spacing: -.045em;
+      line-height: .98;
+    }
+
+    .hero h3 {
+      max-width: 310px;
+      margin-top: 64px;
+      font-size: 42px;
+    }
+
+    .hero p {
+      margin: 10px 0 0;
+      max-width: 300px;
+      color: rgba(255, 255, 255, .78);
+      line-height: 1.42;
+      font-size: 13px;
+    }
+
+    .table-chip {
+      position: absolute;
+      top: 56px;
+      right: 16px;
+      background: rgba(13, 11, 8, .44);
+    }
+
+    .quick-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .action {
+      border: 0;
+      min-height: 58px;
+      border-radius: 18px;
+      background: var(--espresso);
+      color: #fff8ec;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      font-weight: 850;
+      box-shadow: 0 14px 28px -20px rgba(29, 26, 22, .72);
+      transition-property: transform, box-shadow, background-color, color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .action:active,
+    .card:active,
+    .dish-row:active,
+    .service-card:active,
+    .comfort:active,
+    .tab:active,
+    .chip:active,
+    .sheet .close:active {
+      transform: scale(.96);
+    }
+
+    .action.secondary {
+      background: #fffaf2;
+      color: var(--ink);
+      box-shadow: var(--shadow-ring), 0 10px 22px -18px rgba(39, 29, 17, .52);
+    }
+
+    .section-head {
+      margin: 22px 0 10px;
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .section-head h4 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: -.025em;
+    }
+
+    .section-head span {
+      color: rgba(29, 26, 22, .46);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .rail {
+      display: flex;
+      overflow-x: auto;
+      gap: 10px;
+      margin: 0 -16px;
+      padding: 2px 16px;
+      scrollbar-width: none;
+    }
+
+    .card {
+      flex: 0 0 158px;
+      padding: 8px;
+      border-radius: 24px;
+      background: #fffaf2;
+      box-shadow: var(--shadow-ring), 0 10px 24px -21px rgba(39, 29, 17, .55);
+      cursor: pointer;
+      transition-property: transform, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow-ring-hover), 0 14px 28px -22px rgba(39, 29, 17, .62);
+    }
+
+    .photo {
+      min-height: 126px;
+      border-radius: 16px;
+      background: #ded6c8 center/cover;
+      position: relative;
+      overflow: hidden;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+    }
+
+    .photo::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, .12), transparent 45%, rgba(0, 0, 0, .22));
+    }
+
+    .badge {
+      position: absolute;
+      z-index: 2;
+      top: 8px;
+      left: 8px;
+      min-height: 23px;
+      padding: 0 8px;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      background: rgba(13, 11, 8, .58);
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+      backdrop-filter: blur(10px);
+    }
+
+    .card strong {
+      display: block;
+      margin-top: 9px;
+      font-size: 14px;
+      line-height: 1.18;
+      letter-spacing: -.015em;
+    }
+
+    .price-row {
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--amber);
+      font-weight: 850;
+      font-size: 14px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: var(--green);
+    }
+
+    .panel {
+      border-radius: 23px;
+      background: #fffaf2;
+      padding: 16px;
+      box-shadow: var(--shadow-ring), 0 10px 24px -22px rgba(39, 29, 17, .54);
+    }
+
+    .panel h3 {
+      font-size: 24px;
+    }
+
+    .muted {
+      color: var(--muted);
+      line-height: 1.48;
+      font-size: 13px;
+    }
+
+    .search {
+      position: sticky;
+      top: -52px;
+      z-index: 4;
+      margin: -4px 0 12px;
+      height: 48px;
+      border-radius: 17px;
+      border: 1px solid rgba(29, 26, 22, .08);
+      background: rgba(255, 250, 242, .9);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 14px;
+      backdrop-filter: blur(18px);
+    }
+
+    .search input {
+      min-width: 0;
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .chips {
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      margin: 0 -16px 12px;
+      padding: 0 16px 2px;
+      scrollbar-width: none;
+    }
+
+    .chip {
+      border: 1px solid rgba(29, 26, 22, .08);
+      border-radius: 999px;
+      background: #fffaf2;
+      color: var(--muted);
+      min-height: 40px;
+      padding: 0 13px;
+      white-space: nowrap;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 850;
+      transition-property: transform, background-color, color, border-color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .chip.active {
+      background: var(--espresso);
+      color: #fff8ec;
+      border-color: var(--espresso);
+    }
+
+    .menu-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .dish-row {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 11px;
+      align-items: center;
+      min-height: 100px;
+      background: #fffaf2;
+      border-radius: 24px;
+      padding: 8px;
+      cursor: pointer;
+      box-shadow: var(--shadow-ring);
+      transition-property: transform, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .dish-row:hover {
+      box-shadow: var(--shadow-ring-hover);
+    }
+
+    .dish-row .photo {
+      min-height: 82px;
+      border-radius: 16px;
+    }
+
+    .dish-row h4 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: -.02em;
+    }
+
+    .meta {
+      margin-top: 5px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      color: rgba(29, 26, 22, .48);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .service-stack {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .service-card {
+      min-height: 96px;
+      border: 0;
+      border-radius: 26px;
+      padding: 18px;
+      text-align: left;
+      background: #fffaf2;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      box-shadow: 0 12px 28px -23px rgba(39, 29, 17, .6);
+      transition-property: transform, box-shadow, background-color, color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .service-card.primary {
+      background: var(--espresso);
+      color: #fff8ec;
+    }
+
+    .service-card .icon {
+      width: 50px;
+      height: 50px;
+      flex: 0 0 auto;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, .14);
+    }
+
+    .service-card.secondary .icon {
+      background: rgba(50, 111, 208, .12);
+      color: var(--blue);
+    }
+
+    .service-card b {
+      display: block;
+      font-size: 17px;
+      margin-bottom: 3px;
+    }
+
+    .service-card span {
+      color: currentColor;
+      opacity: .62;
+      font-size: 12px;
+    }
+
+    .signal {
+      display: none;
+      margin-top: 16px;
+      border-radius: 22px;
+      padding: 16px;
+      border: 1px solid rgba(35, 139, 93, .18);
+      background: rgba(35, 139, 93, .1);
+    }
+
+    .signal.show {
+      display: block;
+    }
+
+    .sheet {
+      position: absolute;
+      z-index: 40;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 76%;
+      overflow: auto;
+      padding: 10px 18px 28px;
+      border-radius: 28px 28px 0 0;
+      background: rgba(255, 250, 242, .96);
+      border-top: 1px solid rgba(29, 26, 22, .08);
+      box-shadow: 0 -24px 60px -38px rgba(29, 26, 22, .72);
+      backdrop-filter: blur(24px);
+      transform: translateY(106%);
+      transition: transform .28s ease;
+    }
+
+    .sheet.open {
+      transform: translateY(0);
+    }
+
+    .handle {
+      width: 42px;
+      height: 5px;
+      margin: 0 auto 14px;
+      border-radius: 99px;
+      background: rgba(29, 26, 22, .18);
+    }
+
+    .sheet-photo {
+      height: 180px;
+      margin: 0 0 16px;
+      border-radius: 24px;
+      background: #ded6c8 center/cover;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+    }
+
+    .sheet h3 {
+      font-size: 28px;
+    }
+
+    .sheet .close {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      width: 40px;
+      height: 40px;
+      border: 0;
+      border-radius: 14px;
+      background: rgba(29, 26, 22, .08);
+      cursor: pointer;
+      font-weight: 900;
+      transition-property: transform, background-color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin: 15px 0;
+    }
+
+    .mini {
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(29, 26, 22, .045);
+    }
+
+    .mini span {
+      display: block;
+      color: rgba(29, 26, 22, .48);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    .mini b {
+      font-size: 15px;
+    }
+
+    .concept-b .screen {
+      background: #f3efe7;
+    }
+
+    .concept-b .hero {
+      margin: 0;
+      min-height: auto;
+      padding: 0;
+      color: var(--ink);
+      background: transparent;
+    }
+
+    .balance {
+      margin: 4px 0 16px;
+      padding: 18px;
+      border-radius: 28px;
+      background: #161310;
+      color: #fff8ec;
+      box-shadow: 0 20px 40px -28px rgba(29, 26, 22, .9);
+    }
+
+    .balance small {
+      color: rgba(255, 250, 242, .55);
+      font-weight: 800;
+    }
+
+    .balance h3 {
+      margin: 8px 0 0;
+      font-size: 38px;
+      letter-spacing: -.05em;
+    }
+
+    .comfort-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    .comfort {
+      border: 0;
+      border-radius: 18px;
+      min-height: 62px;
+      background: rgba(255, 250, 242, .12);
+      color: #fff8ec;
+      display: grid;
+      place-items: center;
+      gap: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 850;
+      transition-property: transform, background-color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .comfort svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 18px;
+      background: #fffaf2;
+      box-shadow: var(--shadow-ring);
+    }
+
+    .step .num {
+      width: 36px;
+      height: 36px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(35, 139, 93, .12);
+      color: var(--green);
+      font-weight: 900;
+    }
+
+    .step b {
+      display: block;
+      font-size: 13px;
+    }
+
+    .step span {
+      color: rgba(29, 26, 22, .48);
+      font-size: 11px;
+    }
+
+    .concept-c .screen {
+      background: #15120f;
+      color: #fff8ec;
+    }
+
+    .concept-c .status,
+    .concept-c .muted {
+      color: rgba(255, 248, 236, .7);
+    }
+
+    .concept-c .hero {
+      min-height: 390px;
+      margin: -52px -16px 0;
+      outline-color: rgba(255, 255, 255, .1);
+      background:
+        linear-gradient(180deg, rgba(13, 11, 8, .1), rgba(13, 11, 8, .3) 42%, #15120f 94%),
+        url("https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=900&q=80") center/cover;
+    }
+
+    .concept-c .hero h3 {
+      margin-top: 176px;
+    }
+
+    .concept-c .panel,
+    .concept-c .card,
+    .concept-c .dish-row,
+    .concept-c .service-card,
+    .concept-c .search,
+    .concept-c .chip,
+    .concept-c .bottom-nav,
+    .concept-c .sheet {
+      background: rgba(255, 248, 236, .09);
+      border-color: rgba(255, 248, 236, .12);
+      color: #fff8ec;
+    }
+
+    .concept-c .card,
+    .concept-c .dish-row,
+    .concept-c .panel,
+    .concept-c .step,
+    .concept-c .bottom-nav {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, .08);
+    }
+
+    .concept-c .photo,
+    .concept-c .sheet-photo {
+      outline-color: rgba(255, 255, 255, .1);
+    }
+
+    .concept-c .chip.active,
+    .concept-c .tab.active,
+    .concept-c .action {
+      background: #fff8ec;
+      color: #15120f;
+    }
+
+    .concept-c .sheet {
+      background: rgba(21, 18, 15, .96);
+    }
+
+    .concept-c .mini,
+    .concept-c .tab:not(.active) {
+      color: rgba(255, 248, 236, .58);
+    }
+
+    @media (max-width: 1180px) {
+      .concepts { grid-template-columns: 1fr; }
+      .concept { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
+      .phone { margin: 0; }
+    }
+
+    @media (max-width: 760px) {
+      .page { padding: 22px 14px 36px; }
+      .top, .notes, .concept { grid-template-columns: 1fr; }
+      .phone { width: 100%; max-width: 390px; height: 800px; margin: 0 auto; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="top">
+      <div>
+        <div class="brand">
+          <div class="mark">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 2v3M10 2v3M14 2v3"/></svg>
+          </div>
+          CafeConnect Guest
+        </div>
+        <p class="lead">Три варианта редизайна гостевой части. Функциональность та же: витрина, меню, блюдо, вызов официанта, счёт. Фокус — меньше шума, больше уверенности и быстрые действия как в современных финтех-приложениях.</p>
+      </div>
+      <div class="notes">
+        <div class="note"><b>01. Polish</b><span>Эволюция текущего UI: теплее, аккуратнее, проще сканировать.</span></div>
+        <div class="note"><b>02. Action Hub</b><span>Идея Revolut: главный экран как центр быстрых действий и статусов.</span></div>
+        <div class="note"><b>03. Immersive</b><span>Более дорогой ресторанный профиль: фото, атмосфера, меньше рамок.</span></div>
+      </div>
+    </section>
+
+    <section class="concepts">
+      <article class="concept concept-a" data-concept>
+        <div>
+          <h2 class="concept-title">Comfort Polish <span class="tag">safe upgrade</span></h2>
+          <p class="lead">Самый близкий к текущему дизайну. Можно внедрять постепенно: новый hero, быстрые действия, список меню вместо плотной сетки.</p>
+        </div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="bars"><i></i><i></i><i></i></span></div>
+            <div class="island"></div>
+            <div class="content">
+              <section class="view active" data-view="home">
+                <div class="hero">
+                  <span class="pill table-chip">Стол 12</span>
+                  <span class="pill">Открыто до 23:00</span>
+                  <h3>Тёплый угол</h3>
+                  <p>Авторская кухня, кофе на дровах и сезонные блюда. Официант поможет с заказом и аллергенами.</p>
+                </div>
+                <div class="quick-row">
+                  <button class="action" data-tab-target="menu">Смотреть меню</button>
+                  <button class="action secondary" data-service="call">Позвать</button>
+                </div>
+                <div class="section-head"><h4>Подача дня</h4><span>выбор шефа</span></div>
+                <div class="rail" data-featured></div>
+                <div class="section-head"><h4>О заведении</h4><span>профиль</span></div>
+                <div class="panel">
+                  <p class="muted">Маленькая кофейня-кухня в центре. Готовим на дровах, печём своё, варим спешелти-кофе. Меню меняется по сезону.</p>
+                  <div class="detail-grid">
+                    <div class="mini"><span>Адрес</span><b>ул. Кунаева 12</b></div>
+                    <div class="mini"><span>Среднее ожидание</span><b>8-15 мин</b></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="view" data-view="menu">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Меню</h4><span>Стол 12</span></div>
+                <label class="search">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <input placeholder="Поиск по меню" data-search>
+                </label>
+                <div class="chips" data-cats></div>
+                <div class="menu-list" data-menu></div>
+              </section>
+
+              <section class="view" data-view="service">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Сервис</h4><span>с 19:40</span></div>
+                <div class="signal" data-signal>
+                  <b data-signal-title>Официант идёт к вам</b>
+                  <p class="muted" data-signal-sub>Стол 12 подсвечен у персонала.</p>
+                </div>
+                <div class="service-stack">
+                  <button class="service-card primary" data-service="call">
+                    <span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+                    <span><b>Позвать официанта</b><span>Подойдут к столу 12</span></span>
+                  </button>
+                  <button class="service-card secondary" data-service="bill">
+                    <span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.1"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg></span>
+                    <span><b>Попросить счёт</b><span>Официант принесёт счёт</span></span>
+                  </button>
+                </div>
+                <div class="panel" style="margin-top:16px"><b>Что изменилось</b><p class="muted">Сервисные действия крупнее и не спрятаны в нижней навигации. Гость понимает, что сигнал отправлен и может отменить его.</p></div>
+              </section>
+            </div>
+            <div class="bottom-nav" data-tabs></div>
+            <div class="sheet" data-sheet></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="concept concept-b" data-concept>
+        <div>
+          <h2 class="concept-title">Revolut-Style Hub <span class="tag">quick actions</span></h2>
+          <p class="lead">Главный экран как “кошелёк визита”: стол, время, быстрые кнопки, текущие подсказки. Хорошо для комфорта гостя.</p>
+        </div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="bars"><i></i><i></i><i></i></span></div>
+            <div class="island"></div>
+            <div class="content">
+              <section class="view active" data-view="home">
+                <div class="balance">
+                  <small>Тёплый угол · стол 12</small>
+                  <h3>Добрый вечер</h3>
+                  <p class="muted" style="color:rgba(255,250,242,.68)">Вы за столом 21 минуту. Меню и сервис всегда под рукой.</p>
+                  <div class="comfort-grid">
+                    <button class="comfort" data-tab-target="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>Меню</button>
+                    <button class="comfort" data-service="call"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>Позвать</button>
+                    <button class="comfort" data-service="bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/></svg>Счёт</button>
+                    <button class="comfort" data-open-dish="d5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6 7 .9-5 4.8 1.2 6.8L12 17l-6.2 3.5L7 13.7 2 8.9 9 8z"/></svg>Хит</button>
+                  </div>
+                </div>
+                <div class="timeline">
+                  <div class="step"><span class="num">1</span><span><b>Выберите блюдо</b><span>Фото, состав, аллергены</span></span><b>4.9</b></div>
+                  <div class="step"><span class="num">2</span><span><b>Позовите официанта</b><span>Заказ принимают лично</span></span><b>1 tap</b></div>
+                  <div class="step"><span class="num">3</span><span><b>Попросите счёт</b><span>Без ожидания у стойки</span></span><b>готово</b></div>
+                </div>
+                <div class="section-head"><h4>Рекомендовано</h4><span>сейчас</span></div>
+                <div class="rail" data-featured></div>
+              </section>
+
+              <section class="view" data-view="menu">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Меню</h4><span>быстрый просмотр</span></div>
+                <label class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Поиск по меню" data-search></label>
+                <div class="chips" data-cats></div>
+                <div class="menu-list" data-menu></div>
+              </section>
+
+              <section class="view" data-view="service">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Помощь</h4><span>стол 12</span></div>
+                <div class="signal" data-signal><b data-signal-title></b><p class="muted" data-signal-sub></p></div>
+                <div class="service-stack">
+                  <button class="service-card primary" data-service="call"><span class="icon">01</span><span><b>Официант</b><span>Позвать к столу</span></span></button>
+                  <button class="service-card secondary" data-service="bill"><span class="icon">02</span><span><b>Счёт</b><span>Попросить оплату</span></span></button>
+                </div>
+              </section>
+            </div>
+            <div class="bottom-nav" data-tabs></div>
+            <div class="sheet" data-sheet></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="concept concept-c" data-concept>
+        <div>
+          <h2 class="concept-title">Immersive Restaurant <span class="tag">bold option</span></h2>
+          <p class="lead">Полностью другой тон: меньше “карточного приложения”, больше ощущения места. Подойдёт, если QR-страница должна выглядеть как брендовый профиль.</p>
+        </div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="bars"><i></i><i></i><i></i></span></div>
+            <div class="island"></div>
+            <div class="content">
+              <section class="view active" data-view="home">
+                <div class="hero">
+                  <span class="pill table-chip">Стол 12</span>
+                  <span class="pill">Кухня открыта</span>
+                  <h3>Тёплый угол</h3>
+                  <p>Огонь, кофе, сезонная еда. Выберите блюдо, а официант поможет заказать.</p>
+                </div>
+                <div class="quick-row">
+                  <button class="action" data-tab-target="menu">Меню</button>
+                  <button class="action secondary" data-service="call">Официант</button>
+                </div>
+                <div class="section-head"><h4>Сегодня</h4><span>лучшее</span></div>
+                <div class="rail" data-featured></div>
+                <div class="panel" style="margin-top:18px"><h3>Сидите удобно</h3><p class="muted">Сигналы уходят напрямую персоналу. В приложении нет корзины, чтобы официант мог проверить детали и аллергены.</p></div>
+              </section>
+
+              <section class="view" data-view="menu">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Меню</h4><span>состав и аллергены</span></div>
+                <label class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Поиск по меню" data-search></label>
+                <div class="chips" data-cats></div>
+                <div class="menu-list" data-menu></div>
+              </section>
+
+              <section class="view" data-view="service">
+                <div class="section-head" style="margin-top:0"><h4 style="font-size:30px">Сервис</h4><span>без ожидания</span></div>
+                <div class="signal" data-signal><b data-signal-title></b><p class="muted" data-signal-sub></p></div>
+                <div class="service-stack">
+                  <button class="service-card primary" data-service="call"><span class="icon">CC</span><span><b>Позвать официанта</b><span>Стол подсветится у команды</span></span></button>
+                  <button class="service-card secondary" data-service="bill"><span class="icon">PAY</span><span><b>Попросить счёт</b><span>Принесут к столу</span></span></button>
+                </div>
+              </section>
+            </div>
+            <div class="bottom-nav" data-tabs></div>
+            <div class="sheet" data-sheet></div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const dishes = [
+      {
+        id: "d1",
+        name: "Том-ям с креветками",
+        cat: "Супы",
+        price: "9.80 $",
+        prep: "12 мин",
+        weight: "380 г",
+        kcal: "420 ккал",
+        img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=600&q=80",
+        text: "Креветки, кокосовое молоко, лемонграсс, галангал, листья каффир-лайма, грибы шиитаке, чили, кинза.",
+        allergens: "Морепродукты, глютен",
+        featured: true
+      },
+      {
+        id: "d2",
+        name: "Карбонара",
+        cat: "Горячее",
+        price: "11.50 $",
+        prep: "15 мин",
+        weight: "320 г",
+        kcal: "680 ккал",
+        img: "https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&w=600&q=80",
+        text: "Спагетти, гуанчале, яичный желток, пекорино романо, чёрный перец.",
+        allergens: "Глютен, яйцо, молоко",
+        featured: true
+      },
+      {
+        id: "d3",
+        name: "Флэт-уайт на дровах",
+        cat: "Кофе",
+        price: "3.80 $",
+        prep: "4 мин",
+        weight: "220 мл",
+        kcal: "120 ккал",
+        img: "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?auto=format&fit=crop&w=600&q=80",
+        text: "Двойной эспрессо, цельное молоко, микропенка. Обжарка на дровах.",
+        allergens: "Молоко",
+        featured: true
+      },
+      {
+        id: "d4",
+        name: "Шакшука",
+        cat: "Завтраки",
+        price: "7.40 $",
+        prep: "14 мин",
+        weight: "340 г",
+        kcal: "380 ккал",
+        img: "https://images.unsplash.com/photo-1590412200988-a436970781fa?auto=format&fit=crop&w=600&q=80",
+        text: "Яйца, томатный соус, болгарский перец, лук, паприка, зира, фета, кинза, чиабатта.",
+        allergens: "Яйцо, молоко, глютен"
+      },
+      {
+        id: "d5",
+        name: "Боул с лососем",
+        cat: "Горячее",
+        price: "13.20 $",
+        prep: "10 мин",
+        weight: "360 г",
+        kcal: "520 ккал",
+        img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=600&q=80",
+        text: "Рис, слабосолёный лосось, авокадо, огурец, эдамаме, нори, кунжут, соус понзу.",
+        allergens: "Рыба, соя, кунжут"
+      },
+      {
+        id: "d6",
+        name: "Зелёный салат с авокадо",
+        cat: "Салаты",
+        price: "8.00 $",
+        prep: "8 мин",
+        weight: "240 г",
+        kcal: "260 ккал",
+        img: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80",
+        text: "Микс салатов, авокадо, огурец, эдамаме, тыквенные семечки, лимонная заправка.",
+        allergens: "Без распространённых аллергенов"
+      }
+    ];
+
+    const icon = {
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5V21H5a2 2 0 0 1-2-2z"/><path d="M9 21v-7h6v7"/></svg>',
+      menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>',
+      service: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>'
+    };
+
+    const categories = ["Всё", "Завтраки", "Кофе", "Супы", "Салаты", "Горячее"];
+    const tabLabels = [
+      ["home", "Витрина", icon.home],
+      ["menu", "Меню", icon.menu],
+      ["service", "Сервис", icon.service]
+    ];
+
+    document.querySelectorAll("[data-concept]").forEach(initConcept);
+
+    function initConcept(root) {
+      const state = { view: "home", cat: "Всё", query: "" };
+      const tabs = root.querySelector("[data-tabs]");
+      const cats = root.querySelector("[data-cats]");
+      const menu = root.querySelector("[data-menu]");
+      const featured = root.querySelector("[data-featured]");
+      const sheet = root.querySelector("[data-sheet]");
+
+      tabs.innerHTML = tabLabels.map(([id, label, svg]) => `<button class="tab" data-tab="${id}">${svg}<span>${label}</span></button>`).join("");
+      cats.innerHTML = categories.map(cat => `<button class="chip" data-cat="${cat}">${cat}</button>`).join("");
+      featured.innerHTML = dishes.filter(d => d.featured).map(cardTemplate).join("");
+
+      root.querySelectorAll("[data-search]").forEach(input => {
+        input.addEventListener("input", () => {
+          state.query = input.value.trim().toLowerCase();
+          render();
+        });
+      });
+
+      root.addEventListener("click", event => {
+        const tab = event.target.closest("[data-tab], [data-tab-target]");
+        const cat = event.target.closest("[data-cat]");
+        const dish = event.target.closest("[data-dish], [data-open-dish]");
+        const service = event.target.closest("[data-service]");
+        const close = event.target.closest("[data-close-sheet]");
+
+        if (tab) {
+          state.view = tab.dataset.tab || tab.dataset.tabTarget;
+          render();
+        }
+        if (cat) {
+          state.cat = cat.dataset.cat;
+          render();
+        }
+        if (dish) {
+          openDish(root, sheet, dish.dataset.dish || dish.dataset.openDish);
+        }
+        if (service) {
+          showSignal(root, service.dataset.service);
+          state.view = "service";
+          render();
+        }
+        if (close) {
+          sheet.classList.remove("open");
+        }
+      });
+
+      render();
+
+      function render() {
+        root.querySelectorAll("[data-view]").forEach(view => {
+          view.classList.toggle("active", view.dataset.view === state.view);
+        });
+        root.querySelectorAll("[data-tab]").forEach(tab => {
+          tab.classList.toggle("active", tab.dataset.tab === state.view);
+        });
+        root.querySelectorAll("[data-cat]").forEach(button => {
+          button.classList.toggle("active", button.dataset.cat === state.cat);
+        });
+
+        const filtered = dishes.filter(dish => {
+          const byCat = state.cat === "Всё" || dish.cat === state.cat;
+          const byText = !state.query || dish.name.toLowerCase().includes(state.query) || dish.cat.toLowerCase().includes(state.query);
+          return byCat && byText;
+        });
+        menu.innerHTML = filtered.map(rowTemplate).join("");
+      }
+    }
+
+    function cardTemplate(dish) {
+      return `
+        <button class="card" data-dish="${dish.id}">
+          <span class="photo" style="background-image:url('${dish.img}')"><span class="badge">${dish.prep}</span></span>
+          <strong>${dish.name}</strong>
+          <span class="price-row"><span>${dish.price}</span><span class="dot"></span></span>
+        </button>
+      `;
+    }
+
+    function rowTemplate(dish) {
+      return `
+        <button class="dish-row" data-dish="${dish.id}">
+          <span class="photo" style="background-image:url('${dish.img}')"><span class="badge">${dish.prep}</span></span>
+          <span>
+            <h4>${dish.name}</h4>
+            <span class="meta"><span>${dish.cat}</span><span>${dish.weight}</span><span>${dish.price}</span></span>
+            <span class="muted" style="display:block;margin-top:7px">${dish.allergens}</span>
+          </span>
+        </button>
+      `;
+    }
+
+    function openDish(root, sheet, id) {
+      const dish = dishes.find(item => item.id === id);
+      if (!dish) return;
+      sheet.innerHTML = `
+        <div class="handle"></div>
+        <button class="close" data-close-sheet>×</button>
+        <div class="sheet-photo" style="background-image:url('${dish.img}')"></div>
+        <h3>${dish.name}</h3>
+        <p class="muted">${dish.text}</p>
+        <div class="detail-grid">
+          <div class="mini"><span>Цена</span><b>${dish.price}</b></div>
+          <div class="mini"><span>Время</span><b>${dish.prep}</b></div>
+          <div class="mini"><span>Порция</span><b>${dish.weight}</b></div>
+          <div class="mini"><span>Ккал</span><b>${dish.kcal}</b></div>
+        </div>
+        <div class="panel">
+          <b>Аллергены</b>
+          <p class="muted">${dish.allergens}</p>
+        </div>
+        <button class="action" data-service="call" style="width:100%;margin-top:14px">Позвать официанта, чтобы заказать</button>
+      `;
+      sheet.classList.add("open");
+    }
+
+    function showSignal(root, type) {
+      const signal = root.querySelector("[data-signal]");
+      const title = root.querySelector("[data-signal-title]");
+      const sub = root.querySelector("[data-signal-sub]");
+      if (!signal || !title || !sub) return;
+      if (type === "bill") {
+        title.textContent = "Счёт готовят";
+        sub.textContent = "Официант скоро принесёт счёт к столу 12.";
+      } else {
+        title.textContent = "Официант идёт к вам";
+        sub.textContent = "Стол 12 подсвечен в приложении персонала.";
+      }
+      signal.classList.add("show");
+    }
+  </script>
+</body>
+</html>

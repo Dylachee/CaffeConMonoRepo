@@ -343,6 +343,7 @@ def serialize_for_flutter_table(table: Table) -> dict:
         "attention": table.attention or None,
         "attentionReason": table.attention_reason,
         "attentionSignalId": str(unacked[0].id) if unacked else None,
+        "attentionCreatedAt": unacked[0].created_at.isoformat() if unacked else None,
         "attentionEscalated": unacked[0].alert_escalated if unacked else False,
         "ack": table.attention_acknowledged,
     }

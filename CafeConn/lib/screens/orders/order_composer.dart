@@ -196,28 +196,35 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
         setState(() => _category = value);
       },
       child: Container(
-        constraints: const BoxConstraints(minHeight: 38),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        constraints: const BoxConstraints(minHeight: 40, maxWidth: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
           color: active ? color : color.withValues(alpha: 0.13),
           borderRadius: BorderRadius.circular(9),
           border:
               Border.all(color: active ? color : color.withValues(alpha: 0.5)),
         ),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          if (icon != null) ...[
-            Icon(icon, size: 13, color: active ? onColor : color),
-            const SizedBox(width: 4),
-          ],
-          Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: active ? onColor : AppColors.ink)),
-        ]),
+        child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 13, color: active ? onColor : color),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11.5,
+                        height: 1.05,
+                        fontWeight: FontWeight.w800,
+                        color: active ? onColor : AppColors.ink)),
+              ),
+            ]),
       ),
     );
   }
@@ -364,22 +371,20 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // Category bar, R-Keeper style: ALL buttons visible at once (no
-          // horizontal scrolling — that was what made switching slow), one tap
-          // to any category, colors matching the tiles below.
-          LayoutBuilder(builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 700
-                ? 4
-                : constraints.maxWidth >= 430
-                    ? 3
-                    : 2;
-            const gap = 6.0;
-            final width =
-                (constraints.maxWidth - gap * (columns - 1)) / columns;
-            final buttons = <Widget>[
-              _categoryBtn(L.popular, _popularFilter, AppColors.famPopular,
-                  icon: Icons.star_rounded),
+          // Dense label-width mosaic: every category stays visible without
+          // horizontal scrolling, and short names no longer waste a full grid
+          // column. Colors continue to match the menu tiles below.
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
               _categoryBtn(L.all, 'All', AppColors.espresso),
+              _categoryBtn(
+                L.popular,
+                _popularFilter,
+                AppColors.famPopular,
+                icon: Icons.star_rounded,
+              ),
               if (visibleCategories.isNotEmpty)
                 for (final category in visibleCategories)
                   _categoryBtn(category.name, category.id, category.color)
@@ -387,16 +392,8 @@ class _WaiterOrderScreenState extends State<WaiterOrderScreen> {
                 for (final category in MenuCategories.all)
                   _categoryBtn(
                       category, category, AppColors.categoryColor(category)),
-            ];
-            return Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: [
-                for (final button in buttons)
-                  SizedBox(width: width, child: button),
-              ],
-            );
-          }),
+            ],
+          ),
           if (_category == _popularFilter &&
               !state.menu.any((m) => m.isPopular))
             Padding(

@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CafeConnect Guest - 5 More Functional Ideas</title>
+  <style>
+    :root {
+      --page: #dce3e1;
+      --ink: #151817;
+      --muted: rgba(21, 24, 23, .58);
+      --shadow: 0 30px 80px -50px rgba(12, 14, 13, .88);
+      --ring: 0 0 0 1px rgba(0, 0, 0, .07), 0 12px 28px -24px rgba(0, 0, 0, .8);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.44), transparent 34rem),
+        var(--page);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    h1, h2, h3 { text-wrap: balance; }
+    p, span { text-wrap: pretty; }
+
+    .page {
+      max-width: 1620px;
+      margin: 0 auto;
+      padding: 34px 24px 58px;
+    }
+    .header {
+      display: grid;
+      grid-template-columns: minmax(260px, 430px) 1fr;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 27px;
+      font-weight: 880;
+      letter-spacing: -.04em;
+    }
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: #f7fff9;
+      background: #16221c;
+      box-shadow: var(--ring);
+    }
+    .header p {
+      margin: 10px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .idea-list {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .idea-note {
+      min-height: 76px;
+      border-radius: 20px;
+      padding: 13px;
+      background: rgba(255, 255, 255, .58);
+      box-shadow: var(--ring);
+    }
+    .idea-note b {
+      display: block;
+      font-size: 12px;
+    }
+    .idea-note span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .ideas {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(300px, 1fr));
+      gap: 22px;
+      align-items: start;
+    }
+    .idea h2 {
+      margin: 0 0 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 16px;
+      letter-spacing: -.02em;
+    }
+    .idea h2 span {
+      color: rgba(21, 24, 23, .46);
+      font-size: 11px;
+      font-weight: 820;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .phone {
+      width: 100%;
+      max-width: 372px;
+      height: 796px;
+      margin: 0 auto;
+      padding: 10px;
+      border-radius: 44px;
+      background: #0b0d0c;
+      box-shadow: var(--shadow);
+    }
+    .app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 34px;
+      background: var(--bg);
+      color: var(--fg);
+      --bg: #f7fbf4;
+      --fg: #172019;
+      --sub: rgba(23, 32, 25, .58);
+      --panel: #ffffff;
+      --accent: #2d7a4d;
+      --accent-2: #dc7a2e;
+      --danger: #c94638;
+      --radius: 22px;
+      --display: Inter, ui-sans-serif, system-ui, sans-serif;
+      --body: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+    .status {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 40;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      font-size: 12px;
+      font-weight: 850;
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+    }
+    .island {
+      position: absolute;
+      top: 9px;
+      left: 50%;
+      z-index: 41;
+      width: 108px;
+      height: 27px;
+      border-radius: 999px;
+      transform: translateX(-50%);
+      background: #0b0d0c;
+    }
+    .view {
+      display: none;
+      height: 100%;
+      overflow: auto;
+      padding: 52px 15px 98px;
+      scrollbar-width: none;
+      font-family: var(--body);
+    }
+    .view::-webkit-scrollbar { display: none; }
+    .view.active {
+      display: block;
+      animation: enter .22s cubic-bezier(.2, 0, 0, 1) both;
+    }
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+      to { opacity: 1; transform: translateY(0); filter: blur(0); }
+    }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .pill {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 0 12px;
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      color: var(--fg);
+      font-size: 12px;
+      font-weight: 850;
+      box-shadow: var(--ring);
+      backdrop-filter: blur(18px);
+    }
+    .hero {
+      border-radius: calc(var(--radius) + 8px);
+      padding: 18px;
+      min-height: 246px;
+      position: relative;
+      overflow: hidden;
+      background: var(--hero-bg);
+      box-shadow: var(--ring);
+      isolation: isolate;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background: var(--hero-image) center/cover;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: var(--hero-overlay);
+    }
+    .hero h3 {
+      margin: 116px 0 0;
+      max-width: 300px;
+      font-family: var(--display);
+      font-size: var(--hero-size, 38px);
+      line-height: .95;
+      letter-spacing: -.045em;
+    }
+    .hero p {
+      margin: 10px 0 0;
+      color: var(--hero-sub, var(--sub));
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 12px;
+    }
+    .btn {
+      min-height: 52px;
+      border: 0;
+      border-radius: 17px;
+      padding: 0 14px;
+      background: var(--accent);
+      color: var(--on-accent, #fff);
+      cursor: pointer;
+      font-weight: 850;
+      box-shadow: 0 16px 30px -23px color-mix(in srgb, var(--accent) 70%, #000);
+      transition-property: transform, background-color, color, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .btn.secondary {
+      background: var(--panel);
+      color: var(--fg);
+      box-shadow: var(--ring);
+    }
+    .btn:active,
+    .tab:active,
+    .cat:active,
+    .dish:active,
+    .tile:active,
+    .close:active,
+    .quick:active {
+      transform: scale(.96);
+    }
+    .section {
+      margin-top: 22px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .section-head h4 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 21px;
+      letter-spacing: -.035em;
+    }
+    .section-head span {
+      color: var(--sub);
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .rail {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      margin: 0 -15px;
+      padding: 1px 15px 4px;
+      scrollbar-width: none;
+    }
+    .rail::-webkit-scrollbar { display: none; }
+    .dish {
+      border: 0;
+      border-radius: calc(var(--radius) + 4px);
+      padding: 8px;
+      flex: 0 0 154px;
+      text-align: left;
+      color: var(--fg);
+      background: var(--panel);
+      cursor: pointer;
+      box-shadow: var(--ring);
+      transition-property: transform, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .photo {
+      min-height: 112px;
+      border-radius: var(--radius);
+      background: #d5ded6 center/cover;
+      position: relative;
+      overflow: hidden;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+    }
+    .badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      min-height: 23px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 8px;
+      background: rgba(0, 0, 0, .56);
+      color: white;
+      font-size: 10px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+      backdrop-filter: blur(12px);
+    }
+    .dish b,
+    .menu-row b {
+      display: block;
+      margin-top: 9px;
+      font-size: 14px;
+      line-height: 1.18;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 6px;
+      color: var(--sub);
+      font-size: 11px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+    }
+    .price {
+      color: var(--accent);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+    .panel {
+      border-radius: calc(var(--radius) + 4px);
+      padding: 16px;
+      background: var(--panel);
+      color: var(--sub);
+      box-shadow: var(--ring);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .search {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border-radius: 18px;
+      padding: 0 14px;
+      background: var(--panel);
+      box-shadow: var(--ring);
+      margin-bottom: 11px;
+    }
+    .search input {
+      min-width: 0;
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--fg);
+    }
+    .cats {
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      margin: 0 -15px 12px;
+      padding: 0 15px 2px;
+      scrollbar-width: none;
+    }
+    .cat {
+      min-height: 40px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0 13px;
+      background: var(--panel);
+      color: var(--sub);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 850;
+      box-shadow: var(--ring);
+      white-space: nowrap;
+      transition-property: transform, background-color, color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .cat.active {
+      background: var(--accent);
+      color: var(--on-accent, #fff);
+    }
+    .menu {
+      display: grid;
+      gap: 10px;
+    }
+    .menu-row {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      gap: 11px;
+      align-items: center;
+      border: 0;
+      border-radius: calc(var(--radius) + 4px);
+      padding: 8px;
+      min-height: 99px;
+      background: var(--panel);
+      color: var(--fg);
+      text-align: left;
+      cursor: pointer;
+      box-shadow: var(--ring);
+      transition-property: transform, box-shadow;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .menu-row .photo { min-height: 82px; }
+    .signal {
+      display: none;
+      padding: 14px;
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+      box-shadow: var(--ring);
+      margin-bottom: 12px;
+    }
+    .signal.show { display: block; }
+    .signal span {
+      display: block;
+      margin-top: 4px;
+      color: var(--sub);
+      font-size: 12px;
+    }
+    .service-grid {
+      display: grid;
+      gap: 11px;
+      margin-top: 14px;
+    }
+    .service-card {
+      border-radius: calc(var(--radius) + 8px);
+      padding: 18px;
+      background: var(--panel);
+      box-shadow: var(--ring);
+    }
+    .service-card h4 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 24px;
+      letter-spacing: -.035em;
+    }
+    .service-card p {
+      margin: 6px 0 14px;
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .tabs {
+      position: absolute;
+      z-index: 30;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      padding: 8px;
+      border-radius: 24px;
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      box-shadow: var(--ring);
+      backdrop-filter: blur(20px);
+    }
+    .tab {
+      min-height: 46px;
+      border: 0;
+      border-radius: 16px;
+      background: transparent;
+      color: var(--sub);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 850;
+      transition-property: transform, background-color, color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .tab.active {
+      background: var(--accent);
+      color: var(--on-accent, #fff);
+    }
+    .sheet {
+      position: absolute;
+      z-index: 50;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 78%;
+      overflow: auto;
+      padding: 10px 16px 26px;
+      border-radius: 28px 28px 0 0;
+      background: color-mix(in srgb, var(--panel) 96%, transparent);
+      box-shadow: 0 -26px 70px -42px rgba(0, 0, 0, .75);
+      backdrop-filter: blur(24px);
+      transform: translateY(104%);
+      transition-property: transform;
+      transition-duration: 260ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+    .sheet.open { transform: translateY(0); }
+    .handle {
+      width: 42px;
+      height: 5px;
+      border-radius: 999px;
+      margin: 0 auto 14px;
+      background: color-mix(in srgb, var(--fg) 14%, transparent);
+    }
+    .sheet-photo {
+      min-height: 178px;
+      border-radius: 24px;
+      background: #d5ded6 center/cover;
+      outline: 1px solid rgba(0, 0, 0, .1);
+      outline-offset: -1px;
+      margin-bottom: 15px;
+    }
+    .sheet h3 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 29px;
+      letter-spacing: -.04em;
+      line-height: 1;
+    }
+    .sheet p {
+      color: var(--sub);
+      line-height: 1.52;
+      font-size: 13px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .mini {
+      border-radius: var(--radius);
+      padding: 11px;
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+      color: var(--fg);
+      font-size: 12px;
+    }
+    .mini small {
+      display: block;
+      color: var(--sub);
+      font-weight: 750;
+      margin-bottom: 3px;
+    }
+    .close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 42px;
+      height: 42px;
+      border: 0;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, .78);
+      cursor: pointer;
+      font-size: 22px;
+      font-weight: 850;
+      transition-property: transform, background-color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .assistant {
+      --bg: #edf6ef;
+      --panel: #ffffff;
+      --fg: #162019;
+      --sub: rgba(22, 32, 25, .58);
+      --accent: #23784a;
+      --accent-2: #e28a2b;
+      --radius: 28px;
+      --display: "Avenir Next", Inter, system-ui, sans-serif;
+      --hero-image: url("https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=900&q=80");
+      --hero-overlay: linear-gradient(180deg, rgba(237, 246, 239, .02), rgba(237, 246, 239, .95));
+    }
+    .assistant .hero { min-height: 210px; }
+    .assistant .quick-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 12px;
+    }
+    .quick {
+      min-height: 86px;
+      border: 0;
+      border-radius: 24px;
+      background: var(--panel);
+      color: var(--fg);
+      box-shadow: var(--ring);
+      cursor: pointer;
+      font-weight: 850;
+      transition-property: transform, background-color;
+      transition-duration: 160ms;
+      transition-timing-function: cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .allergen {
+      --bg: #fff7e7;
+      --panel: #fffdf7;
+      --fg: #271b10;
+      --sub: rgba(39, 27, 16, .6);
+      --accent: #cc4b31;
+      --accent-2: #2e7253;
+      --radius: 18px;
+      --display: "Arial Rounded MT Bold", Inter, system-ui, sans-serif;
+      --hero-image: url("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=900&q=80");
+      --hero-overlay: linear-gradient(180deg, rgba(255, 247, 231, .02), rgba(255, 247, 231, .94));
+    }
+    .allergen .safety {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .allergen .safety .mini { text-align: center; }
+
+    .carousel {
+      --bg: #101519;
+      --panel: rgba(255, 255, 255, .1);
+      --fg: #f3fbff;
+      --sub: rgba(243, 251, 255, .64);
+      --accent: #7fd0ff;
+      --accent-2: #ffb86b;
+      --radius: 30px;
+      --display: "Gill Sans", Inter, system-ui, sans-serif;
+      --hero-image: url("https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=900&q=80");
+      --hero-overlay: linear-gradient(180deg, rgba(16, 21, 25, .08), rgba(16, 21, 25, .78));
+      --on-accent: #101519;
+    }
+    .carousel .hero { min-height: 380px; }
+    .carousel .hero h3 { margin-top: 230px; }
+    .carousel .photo,
+    .carousel .sheet-photo,
+    .carousel .hero::before { outline-color: rgba(255, 255, 255, .1); }
+    .carousel .close { background: rgba(255, 255, 255, .14); color: var(--fg); }
+
+    .command {
+      --bg: #e9ebf4;
+      --panel: #ffffff;
+      --fg: #171925;
+      --sub: rgba(23, 25, 37, .58);
+      --accent: #3945c8;
+      --accent-2: #db6332;
+      --radius: 16px;
+      --display: "SF Pro Rounded", Inter, system-ui, sans-serif;
+      --hero-image: url("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80");
+      --hero-overlay: linear-gradient(180deg, rgba(233, 235, 244, .04), rgba(233, 235, 244, .94));
+    }
+    .command .command-bar {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .command .command-bar .btn {
+      min-height: 46px;
+      text-align: left;
+    }
+
+    .large {
+      --bg: #f4f2ea;
+      --panel: #ffffff;
+      --fg: #15120f;
+      --sub: rgba(21, 18, 15, .66);
+      --accent: #111111;
+      --accent-2: #3b7b59;
+      --radius: 20px;
+      --display: Georgia, "Times New Roman", serif;
+      --hero-size: 34px;
+      --hero-image: url("https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80");
+      --hero-overlay: linear-gradient(180deg, rgba(244, 242, 234, .04), rgba(244, 242, 234, .95));
+    }
+    .large .btn,
+    .large .tab,
+    .large .cat {
+      min-height: 56px;
+      font-size: 15px;
+    }
+    .large .menu-row {
+      grid-template-columns: 1fr;
+      font-size: 18px;
+    }
+    .large .menu-row .photo { min-height: 134px; }
+    .large .dish b,
+    .large .menu-row b { font-size: 19px; }
+
+    @media (max-width: 1480px) {
+      .ideas { grid-template-columns: repeat(2, minmax(300px, 1fr)); }
+      .idea-list { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 760px) {
+      .page { padding: 22px 14px 42px; }
+      .header, .ideas, .idea-list { grid-template-columns: 1fr; }
+      .phone { max-width: 390px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header">
+      <div>
+        <div class="brand">
+          <span class="brand-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 2v3M10 2v3M14 2v3"/></svg>
+          </span>
+          Five More Guest Ideas
+        </div>
+        <p>Completely new concepts based on the same guest functionality: venue context, menu, search, category filtering, dish details, allergens, call waiter, request bill, cancel request.</p>
+      </div>
+      <div class="idea-list">
+        <div class="idea-note"><b>Table assistant</b><span>Service-first dashboard for the table.</span></div>
+        <div class="idea-note"><b>Allergen first</b><span>Menu organized around confidence and safety.</span></div>
+        <div class="idea-note"><b>Dish carousel</b><span>Browsing as large full-screen food cards.</span></div>
+        <div class="idea-note"><b>Command palette</b><span>One-hand actions always visible.</span></div>
+        <div class="idea-note"><b>Large type</b><span>Accessible, low-stress, readable at table distance.</span></div>
+      </div>
+    </section>
+
+    <section class="ideas">
+      <article class="idea"><h2>Table Assistant <span>service first</span></h2><div class="phone"><div class="app assistant" data-kind="assistant"></div></div></article>
+      <article class="idea"><h2>Allergen First <span>safety</span></h2><div class="phone"><div class="app allergen" data-kind="allergen"></div></div></article>
+      <article class="idea"><h2>Dish Carousel <span>browsing</span></h2><div class="phone"><div class="app carousel" data-kind="carousel"></div></div></article>
+      <article class="idea"><h2>Command Palette <span>one hand</span></h2><div class="phone"><div class="app command" data-kind="command"></div></div></article>
+      <article class="idea"><h2>Large Type Mode <span>accessible</span></h2><div class="phone"><div class="app large" data-kind="large"></div></div></article>
+    </section>
+  </main>
+
+  <script>
+    const dishes = [
+      { id: "d1", name: "Том-ям с креветками", cat: "Супы", price: "9.80 $", prep: "12 мин", weight: "380 г", kcal: "420 ккал", featured: true, img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=700&q=80", text: "Креветки, кокосовое молоко, лемонграсс, галангал, листья каффир-лайма, грибы шиитаке, чили, кинза.", allergens: "Морепродукты, глютен" },
+      { id: "d2", name: "Карбонара", cat: "Горячее", price: "11.50 $", prep: "15 мин", weight: "320 г", kcal: "680 ккал", featured: true, img: "https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&w=700&q=80", text: "Спагетти, гуанчале, яичный желток, пекорино романо, чёрный перец.", allergens: "Глютен, яйцо, молоко" },
+      { id: "d3", name: "Флэт-уайт на дровах", cat: "Кофе", price: "3.80 $", prep: "4 мин", weight: "220 мл", kcal: "120 ккал", featured: true, img: "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?auto=format&fit=crop&w=700&q=80", text: "Двойной эспрессо, цельное молоко, микропенка. Обжарка на дровах.", allergens: "Молоко" },
+      { id: "d4", name: "Шакшука", cat: "Завтраки", price: "7.40 $", prep: "14 мин", weight: "340 г", kcal: "380 ккал", img: "https://images.unsplash.com/photo-1590412200988-a436970781fa?auto=format&fit=crop&w=700&q=80", text: "Яйца, томатный соус, болгарский перец, лук, паприка, зира, фета, кинза, чиабатта.", allergens: "Яйцо, молоко, глютен" },
+      { id: "d5", name: "Боул с лососем", cat: "Горячее", price: "13.20 $", prep: "10 мин", weight: "360 г", kcal: "520 ккал", img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=700&q=80", text: "Рис, слабосолёный лосось, авокадо, огурец, эдамаме, нори, кунжут, соус понзу.", allergens: "Рыба, соя, кунжут" },
+      { id: "d6", name: "Зелёный салат с авокадо", cat: "Салаты", price: "8.00 $", prep: "8 мин", weight: "240 г", kcal: "260 ккал", img: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=700&q=80", text: "Микс салатов, авокадо, огурец, эдамаме, тыквенные семечки, лимонная заправка.", allergens: "Без распространённых аллергенов" }
+    ];
+    const categories = ["Всё", "Завтраки", "Кофе", "Супы", "Салаты", "Горячее"];
+    const copy = {
+      assistant: { hero: "Ваш стол уже на связи", text: "Меню, официант и счёт открываются с одного экрана.", menu: "Меню стола", service: "Помощь к столу" },
+      allergen: { hero: "Сначала состав", text: "Быстро проверьте аллергены и зовите официанта для заказа.", menu: "Меню с аллергенами", service: "Проверить у официанта" },
+      carousel: { hero: "Листайте блюда", text: "Большие фото, состав и быстрый вызов официанта.", menu: "Карточки меню", service: "Сервис" },
+      command: { hero: "Что сделать сейчас?", text: "Команды для гостя всегда рядом: меню, официант, счёт.", menu: "Найти блюдо", service: "Команды стола" },
+      large: { hero: "Крупное меню", text: "Большие кнопки, простые слова, читаемо на расстоянии.", menu: "Крупный список", service: "Позвать или счёт" }
+    };
+
+    document.querySelectorAll(".app").forEach(init);
+
+    function init(root) {
+      const state = { view: "home", cat: "Всё", query: "", signal: "" };
+      const kind = root.dataset.kind;
+      root.innerHTML = template(kind);
+      root.addEventListener("click", event => {
+        const tab = event.target.closest("[data-tab]");
+        const cat = event.target.closest("[data-cat]");
+        const dish = event.target.closest("[data-dish]");
+        const service = event.target.closest("[data-service]");
+        const cancel = event.target.closest("[data-cancel]");
+        const close = event.target.closest("[data-close]");
+        if (tab) {
+          state.view = tab.dataset.tab;
+          render();
+        }
+        if (cat) {
+          state.cat = cat.dataset.cat;
+          render();
+        }
+        if (dish) openDish(root, dish.dataset.dish);
+        if (service) {
+          state.signal = service.dataset.service;
+          state.view = "service";
+          closeSheet(root);
+          render();
+        }
+        if (cancel) {
+          state.signal = "";
+          render();
+        }
+        if (close) closeSheet(root);
+      });
+      root.querySelector("[data-search]").addEventListener("input", event => {
+        state.query = event.target.value.trim().toLowerCase();
+        render();
+      });
+      render();
+
+      function render() {
+        root.querySelectorAll("[data-view]").forEach(view => view.classList.toggle("active", view.dataset.view === state.view));
+        root.querySelectorAll("[data-tab]").forEach(tab => tab.classList.toggle("active", tab.dataset.tab === state.view));
+        root.querySelector("[data-featured]").innerHTML = dishes.filter(d => d.featured).map(dishCard).join("");
+        root.querySelector("[data-cats]").innerHTML = categories.map(cat => `<button class="cat ${cat === state.cat ? "active" : ""}" data-cat="${cat}">${cat}</button>`).join("");
+        root.querySelector("[data-menu]").innerHTML = filtered().map(menuRow).join("") || '<div class="panel">Ничего не нашли. Попробуйте другую категорию или позовите официанта.</div>';
+        root.querySelector("[data-signal]").classList.toggle("show", Boolean(state.signal));
+        root.querySelector("[data-signal-title]").textContent = state.signal === "bill" ? "Счёт готовят" : "Официант идёт к вам";
+        root.querySelector("[data-signal-sub]").textContent = state.signal === "bill" ? "Официант принесёт счёт к столу 12." : "Стол 12 подсвечен у персонала.";
+      }
+      function filtered() {
+        return dishes.filter(d => {
+          const catOk = state.cat === "Всё" || d.cat === state.cat;
+          const queryOk = !state.query || d.name.toLowerCase().includes(state.query) || d.cat.toLowerCase().includes(state.query) || d.allergens.toLowerCase().includes(state.query);
+          return catOk && queryOk;
+        });
+      }
+    }
+
+    function template(kind) {
+      const c = copy[kind];
+      const customHome = kind === "assistant" ? assistantHome() : kind === "allergen" ? allergenHome() : kind === "command" ? commandHome() : "";
+      return `
+        <div class="status"><span>9:41</span><span>LTE</span></div>
+        <div class="island"></div>
+        <section class="view active" data-view="home">
+          <div class="topline"><span class="pill">Тёплый угол</span><span class="pill">Стол 12</span></div>
+          <div class="hero"><span class="pill">Открыто до 23:00</span><h3>${c.hero}</h3><p>${c.text}</p></div>
+          ${customHome || '<div class="actions"><button class="btn" data-tab="menu">Смотреть меню</button><button class="btn secondary" data-service="call">Позвать</button></div>'}
+          <section class="section"><div class="section-head"><h4>Рекомендуем</h4><span>сейчас</span></div><div class="rail" data-featured></div></section>
+          <section class="section"><div class="panel">Кухня принимает заказ через официанта, чтобы уточнить состав, прожарку и аллергены. Сигналы со стола уходят персоналу сразу.</div></section>
+        </section>
+        <section class="view" data-view="menu">
+          <div class="topline"><span class="pill">${c.menu}</span><span class="pill">Стол 12</span></div>
+          <label class="search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Поиск по блюдам или аллергенам" data-search></label>
+          <div class="cats" data-cats></div>
+          <div class="menu" data-menu></div>
+        </section>
+        <section class="view" data-view="service">
+          <div class="topline"><span class="pill">${c.service}</span><span class="pill">с 19:40</span></div>
+          <div class="signal" data-signal><b data-signal-title></b><span data-signal-sub></span><button class="btn secondary" data-cancel style="width:100%;margin-top:12px">Отменить запрос</button></div>
+          <div class="service-grid">
+            <div class="service-card"><h4>Позвать официанта</h4><p>Подойдёт к столу 12 и поможет оформить заказ.</p><button class="btn" data-service="call" style="width:100%">Позвать официанта</button></div>
+            <div class="service-card"><h4>Попросить счёт</h4><p>Счёт подготовят и принесут к столу.</p><button class="btn secondary" data-service="bill" style="width:100%">Попросить счёт</button></div>
+          </div>
+        </section>
+        <nav class="tabs"><button class="tab active" data-tab="home">Главная</button><button class="tab" data-tab="menu">Меню</button><button class="tab" data-tab="service">Сервис</button></nav>
+        <div class="sheet" data-sheet></div>
+      `;
+    }
+    function assistantHome() {
+      return '<div class="quick-grid"><button class="quick" data-tab="menu">Открыть меню</button><button class="quick" data-service="call">Официант</button><button class="quick" data-service="bill">Счёт</button><button class="quick" data-dish="d5">Хит дня</button></div>';
+    }
+    function allergenHome() {
+      return '<div class="actions"><button class="btn" data-tab="menu">Проверить состав</button><button class="btn secondary" data-service="call">Спросить официанта</button></div><div class="safety"><div class="mini">Аллергены</div><div class="mini">Состав</div><div class="mini">Время</div></div>';
+    }
+    function commandHome() {
+      return '<div class="command-bar"><button class="btn" data-tab="menu">/ menu — открыть меню</button><button class="btn secondary" data-service="call">/ call — позвать официанта</button><button class="btn secondary" data-service="bill">/ bill — попросить счёт</button></div>';
+    }
+    function dishCard(dish) {
+      return `<button class="dish" data-dish="${dish.id}"><span class="photo" style="background-image:url('${dish.img}')"><span class="badge">${dish.prep}</span></span><b>${dish.name}</b><span class="meta"><span class="price">${dish.price}</span><span>${dish.cat}</span></span></button>`;
+    }
+    function menuRow(dish) {
+      return `<button class="menu-row" data-dish="${dish.id}"><span class="photo" style="background-image:url('${dish.img}')"><span class="badge">${dish.prep}</span></span><span><b>${dish.name}</b><span class="meta"><span class="price">${dish.price}</span><span>${dish.weight}</span><span>${dish.allergens}</span></span></span></button>`;
+    }
+    function openDish(root, id) {
+      const dish = dishes.find(d => d.id === id);
+      if (!dish) return;
+      const sheet = root.querySelector("[data-sheet]");
+      sheet.innerHTML = `
+        <div class="handle"></div>
+        <button class="close" data-close>×</button>
+        <div class="sheet-photo" style="background-image:url('${dish.img}')"></div>
+        <h3>${dish.name}</h3>
+        <p>${dish.text}</p>
+        <div class="detail-grid"><div class="mini"><small>Цена</small><span class="price">${dish.price}</span></div><div class="mini"><small>Время</small>${dish.prep}</div><div class="mini"><small>Порция</small>${dish.weight}</div><div class="mini"><small>Ккал</small>${dish.kcal}</div></div>
+        <div class="panel"><b>Аллергены</b><br>${dish.allergens}</div>
+        <button class="btn" data-service="call" style="width:100%;margin-top:12px">Позвать официанта, чтобы заказать</button>
+      `;
+      sheet.classList.add("open");
+    }
+    function closeSheet(root) {
+      root.querySelector("[data-sheet]").classList.remove("open");
+    }
+  </script>
+</body>
+</html>

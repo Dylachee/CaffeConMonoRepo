@@ -96,6 +96,9 @@ class CafeTable {
   // back to the hub. Transient (not persisted): after a restart the bootstrap
   // brings fresh state anyway.
   String? lastSignalId;
+  // Server timestamp of the unresolved signal, used to keep the oldest call
+  // at the front of the floor. Transient like lastSignalId.
+  DateTime? attentionCreatedAt;
   // The unacked signal reached alert ladder L3 somewhere — highlight it.
   // Transient like lastSignalId.
   bool attentionEscalated = false;

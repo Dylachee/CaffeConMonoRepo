@@ -514,6 +514,7 @@ class TableDto {
   /// Latest unacked attention-signal id (bootstrap only) — lets the staff app
   /// ack a signal that fired before this device connected.
   final String? attentionSignalId;
+  final String? attentionCreatedAt;
 
   /// The unacked signal reached alert ladder L3 somewhere — highlight it.
   final bool attentionEscalated;
@@ -534,6 +535,7 @@ class TableDto {
     required this.attention,
     required this.attentionReason,
     this.attentionSignalId,
+    this.attentionCreatedAt,
     this.attentionEscalated = false,
     required this.ack,
   });
@@ -556,6 +558,9 @@ class TableDto {
         attentionSignalId: j['attentionSignalId'] == null
             ? null
             : _asString(j['attentionSignalId']),
+        attentionCreatedAt: j['attentionCreatedAt'] == null
+            ? null
+            : _asString(j['attentionCreatedAt']),
         attentionEscalated: _asBool(j['attentionEscalated']),
         ack: _asBool(j['ack']),
       );
@@ -1254,12 +1259,14 @@ class AttentionDto {
   final String signalType; // arrived | call_waiter | bill_request
   final String reason;
   final bool ack;
+  final DateTime? createdAt;
   const AttentionDto({
     required this.id,
     required this.tableId,
     required this.signalType,
     required this.reason,
     required this.ack,
+    this.createdAt,
   });
 
   factory AttentionDto.fromDrf(Map<String, dynamic> j) {
@@ -1270,6 +1277,7 @@ class AttentionDto {
       signalType: _asString(j['signal_type']),
       reason: _asString(j['reason']),
       ack: _asBool(j['ack']),
+      createdAt: DateTime.tryParse(_asString(j['created_at'])),
     );
   }
 }

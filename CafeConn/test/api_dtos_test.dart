@@ -23,6 +23,7 @@ void main() {
           'attention': 'call',
           'attentionReason': '',
           'attentionSignalId': '17',
+          'attentionCreatedAt': '2026-06-28T10:01:00Z',
           'ack': false,
         }
       ],
@@ -83,6 +84,7 @@ void main() {
       expect(dto.currentUser?.name, 'Елена Соколова');
       expect(dto.tables.single.status, 'waiting');
       expect(dto.tables.single.attentionSignalId, '17');
+      expect(dto.tables.single.attentionCreatedAt, '2026-06-28T10:01:00Z');
       expect(dto.tables.single.seats, 4);
       expect(dto.menu.single.station, 'bar');
       expect(dto.menu.single.price, 4.5);
@@ -163,10 +165,12 @@ void main() {
         'signal_type': 'bill_request',
         'reason': 'счёт',
         'ack': false,
+        'created_at': '2026-06-28T10:01:00Z',
       };
       final dto = AttentionDto.fromDrf(signal);
       expect(dto.tableId, '3');
       expect(dto.signalType, 'bill_request');
+      expect(dto.createdAt, DateTime.utc(2026, 6, 28, 10, 1));
     });
   });
 

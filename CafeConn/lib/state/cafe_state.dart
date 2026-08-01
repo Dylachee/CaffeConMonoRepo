@@ -481,6 +481,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     final signalId = table.lastSignalId;
     table.attention = null;
     table.lastSignalId = null;
+    table.attentionCreatedAt = null;
     // Waiter accepted the call: the guests are no longer "waiting".
     if (table.status == TableStatus.waiting) {
       table.status = TableStatus.occupied;
@@ -950,6 +951,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
       table.guestCount = 0;
       table.attention = null;
       table.lastSignalId = null;
+      table.attentionCreatedAt = null;
       tableChecks[table.id]?.clear();
       // Clearing the table ARCHIVES its orders into history — it does not
       // delete them. They move out of the active list (so the total/feed are
@@ -2109,7 +2111,13 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     table.status = _tableStatusFromName(dto.status);
     table.guestCount = dto.guestCount;
     table.attention = dto.ack ? null : dto.attention;
-    if (table.attention == null) table.lastSignalId = null;
+    if (table.attention == null) {
+      table.lastSignalId = null;
+      table.attentionCreatedAt = null;
+    } else if (dto.attentionCreatedAt != null) {
+      table.attentionCreatedAt =
+          DateTime.tryParse(dto.attentionCreatedAt!)?.toLocal();
+    }
     if (dto.waiter.isNotEmpty) table.waiterName = dto.waiter;
     table.waiterId = dto.waiterId;
     table.openedAt =
@@ -2154,6 +2162,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     if (acked) {
       table.attention = null;
       table.lastSignalId = null;
+      table.attentionCreatedAt = null;
     } else {
       table.attention = switch (signal.signalType) {
         'call_waiter' => 'call',
@@ -2162,6 +2171,7 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
         _ => null,
       };
       table.lastSignalId = signal.id;
+      table.attentionCreatedAt = signal.createdAt?.toLocal() ?? DateTime.now();
       HapticFeedback.mediumImpact();
     }
     _saveTables();
@@ -3026,6 +3036,9 @@ class CafeState extends ChangeNotifier with WidgetsBindingObserver {
     // acknowledge it) survives an app restart.
     table.attention = d.ack ? null : d.attention;
     table.lastSignalId = d.ack ? null : d.attentionSignalId;
+    table.attentionCreatedAt = d.ack || d.attentionCreatedAt == null
+        ? null
+        : DateTime.tryParse(d.attentionCreatedAt!)?.toLocal();
     table.attentionEscalated = d.ack ? false : d.attentionEscalated;
     return table;
   }

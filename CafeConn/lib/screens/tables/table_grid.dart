@@ -16,6 +16,7 @@ import '../../models/models.dart';
 import '../../state/cafe_state.dart';
 import '../../widgets/app_widgets.dart';
 import '../../widgets/pending_approval.dart';
+import 'table_sort.dart';
 
 class WaiterTableGridScreen extends StatefulWidget {
   const WaiterTableGridScreen({super.key});
@@ -30,29 +31,15 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<CafeState>();
-    final filtered = state.tables.where((t) {
-      final okFilter = filter == null || t.status == filter;
-      final okSearch = search.isEmpty || t.number.toString().contains(search);
-      return okFilter && okSearch;
-    }).toList();
-    // Anything the waiter must not miss floats to the top: a guest call/bill
-    // signal, a table waiting for the waiter, or a guest order pending approval.
-    bool needsAttention(CafeTable t) =>
-        t.attention != null ||
-        t.status == TableStatus.waiting ||
-        state.orders
-            .any((o) => o.tableId == t.id && o.status == OrderStatus.awaiting);
-    filtered.sort((a, b) {
-      int priority(CafeTable table) {
-        if (needsAttention(table)) return 0;
-        if (table.waiterId == state.activeEmployeeId?.toString()) return 1;
-        return 2;
-      }
-
-      final pa = priority(a);
-      final pb = priority(b);
-      return pa != pb ? pa - pb : a.number.compareTo(b.number);
-    });
+    final filtered = sortTablesForWaiter(
+      state.tables.where((t) {
+        final okFilter = filter == null || t.status == filter;
+        final okSearch = search.isEmpty || t.number.toString().contains(search);
+        return okFilter && okSearch;
+      }),
+      orders: state.orders,
+      activeEmployeeId: state.activeEmployeeId?.toString(),
+    );
 
     return AppScaffold(
       bottomNav: null,
@@ -167,30 +154,14 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
                 : RefreshIndicator(
                     color: AppTheme.cta,
                     onRefresh: () async => context.read<CafeState>().refresh(),
-                    child: GridView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: state.tablesPerRow,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                          childAspectRatio: 0.85),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final table = filtered[i];
-                        return RepaintBoundary(
-                          child: TableCard(
-                            table: table,
-                            index: i,
-                            onTap: () {
-                              state.currentTable = table;
-                              GoRouter.of(context).push('/table-details');
-                            },
-                            onLongPress: () {
-                              _showQuickCheck(context, table);
-                            },
-                          ),
-                        );
+                    child: _AnimatedTableGrid(
+                      tables: filtered,
+                      columns: state.tablesPerRow,
+                      onTap: (table) {
+                        state.currentTable = table;
+                        GoRouter.of(context).push('/table-details');
                       },
+                      onLongPress: (table) => _showQuickCheck(context, table),
                     ),
                   ),
           ),
@@ -330,6 +301,66 @@ class _WaiterTableGridScreenState extends State<WaiterTableGridScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AnimatedTableGrid extends StatelessWidget {
+  const _AnimatedTableGrid({
+    required this.tables,
+    required this.columns,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final List<CafeTable> tables;
+  final int columns;
+  final ValueChanged<CafeTable> onTap;
+  final ValueChanged<CafeTable> onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    const spacing = 14.0;
+    final duration = MediaQuery.of(context).disableAnimations
+        ? Duration.zero
+        : const Duration(milliseconds: 220);
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final cardWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final cardHeight = cardWidth / 0.85;
+        final rows = (tables.length / columns).ceil();
+        final gridHeight =
+            rows == 0 ? 0.0 : rows * cardHeight + (rows - 1) * spacing;
+
+        return SizedBox(
+          height: gridHeight,
+          child: Stack(
+            children: [
+              for (var i = 0; i < tables.length; i++)
+                AnimatedPositioned(
+                  key: ValueKey(tables[i].id),
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  left: (i % columns) * (cardWidth + spacing),
+                  top: (i ~/ columns) * (cardHeight + spacing),
+                  width: cardWidth,
+                  height: cardHeight,
+                  child: RepaintBoundary(
+                    child: TableCard(
+                      table: tables[i],
+                      index: i,
+                      onTap: () => onTap(tables[i]),
+                      onLongPress: () => onLongPress(tables[i]),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

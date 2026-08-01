@@ -149,3 +149,4 @@ class EscalateEndpointTests(TestCase):
         row = next(t for t in body["tables"] if t["number"] == self.table.number)
         self.assertTrue(row["attentionEscalated"])
         self.assertEqual(row["attentionSignalId"], str(signal.pk))
+        self.assertEqual(row["attentionCreatedAt"], signal.created_at.isoformat())
