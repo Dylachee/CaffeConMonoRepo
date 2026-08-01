@@ -60,7 +60,7 @@ class Command(BaseCommand):
             self.stdout.write(f"  {username}: Token {token.key}")
 
     def _create_tables(self):
-        for number in range(1, 31):
+        for number in range(0, 31):
             Table.objects.update_or_create(
                 restaurant=self.restaurant,
                 number=number,

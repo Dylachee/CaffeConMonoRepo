@@ -49,7 +49,7 @@ docker compose exec web python manage.py migrate
 
 # 4. Seed / re-seed real bar data
 #    Safe: uses update_or_create — does NOT wipe existing orders or duplicate rows.
-#    Run this every launch to ensure 30 tables and 56 items are current.
+#    Run this every launch to ensure 31 tables and 56 items are current.
 docker compose exec web python manage.py seed_bar
 ```
 
@@ -195,7 +195,7 @@ Generate QRs with any free QR generator (one per table, numbered 1–30).
 □ None of the four can reach http://192.168.179.75:8000/system-admin/ (is_superuser=False)
 □ Scan a printed QR for table 7 → menu opens with «стол 7» badge, no dropdown
 □ Tap «Позвать официанта» → staff PWA shows the call within ~1 s, 5/5 times; «Счёт» works too
-□ Staff PWA shows real bar data (56 items, 30 tables), not seed_demo placeholders
+□ Staff PWA shows real bar data (56 items, 31 tables), not seed_demo placeholders
 □ All 30 QR codes open the correct scoped table
 ```
 
